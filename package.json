@@ -33,7 +33,9 @@
     "express": "^4.21.1",
     "multer": "^2.0.0",
     "pyodide": "^0.28.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.7",
@@ -53,7 +55,7 @@
   },
   "os": [
     "darwin",
-    "linux",
+    "linux", 
     "win32"
   ],
   "cpu": [
@@ -79,7 +81,10 @@
     "scientific-computing",
     "server",
     "backend",
-    "microservice"
+    "microservice",
+    "swagger",
+    "openapi",
+    "documentation"
   ],
   "author": {
     "name": "Your Name",

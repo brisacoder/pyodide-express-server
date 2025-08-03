@@ -1,0 +1,360 @@
+/**
+ * Swagger/OpenAPI Configuration for Pyodide Express Server
+ * 
+ * This file configures the API documentation using OpenAPI 3.0 specification
+ * and provides interactive testing interface similar to FastAPI's docs.
+ */
+
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
+
+// Basic API information
+const swaggerDefinition = {
+  openapi: '3.0.0',
+  info: {
+    title: 'Pyodide Express Server API',
+    version: '1.0.0',
+    description: `
+    A powerful REST API for executing Python code using Pyodide (WebAssembly).
+    
+    ## Features
+    - Execute Python code with full pandas, numpy, matplotlib support
+    - Install Python packages via micropip
+    - Upload and process CSV files
+    - Environment management and health monitoring
+    - Real-time execution with output capture
+    
+    ## Getting Started
+    1. Check if Pyodide is ready using \`/api/status\`
+    2. Execute Python code using \`/api/execute\`
+    3. Upload CSV files using \`/api/upload-csv\`
+    4. Install packages using \`/api/install-package\`
+    
+    **Note**: All Python code executes in a sandboxed WebAssembly environment.
+    `,
+    contact: {
+      name: 'API Support',
+      email: 'support@example.com'
+    },
+    license: {
+      name: 'MIT',
+      url: 'https://opensource.org/licenses/MIT'
+    }
+  },
+  servers: [
+    {
+      url: 'http://localhost:3000',
+      description: 'Development server'
+    },
+    {
+      url: 'https://your-domain.com',
+      description: 'Production server'
+    }
+  ],
+  tags: [
+    {
+      name: 'Python Execution',
+      description: 'Execute Python code and manage the environment'
+    },
+    {
+      name: 'Package Management',
+      description: 'Install and list Python packages'
+    },
+    {
+      name: 'File Operations',
+      description: 'Upload and process files'
+    },
+    {
+      name: 'System',
+      description: 'Health checks and system information'
+    }
+  ],
+  components: {
+    schemas: {
+      ExecuteRequest: {
+        type: 'object',
+        required: ['code'],
+        properties: {
+          code: {
+            type: 'string',
+            description: 'Python code to execute',
+            example: `import pandas as pd
+import numpy as np
+
+# Create sample data
+data = {'x': [1, 2, 3, 4, 5], 'y': [2, 4, 6, 8, 10]}
+df = pd.DataFrame(data)
+
+print("DataFrame created:")
+print(df)
+
+# Return correlation
+df.corr().to_dict()`
+          },
+          context: {
+            type: 'object',
+            description: 'Variables to make available in Python execution context',
+            additionalProperties: true,
+            example: {
+              "user_name": "Alice",
+              "multiplier": 2
+            }
+          },
+          timeout: {
+            type: 'integer',
+            description: 'Execution timeout in milliseconds',
+            example: 30000,
+            minimum: 1000,
+            maximum: 300000
+          }
+        }
+      },
+      ExecuteResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean',
+            description: 'Whether execution was successful'
+          },
+          result: {
+            description: 'The result of the Python expression (if any)',
+            example: {"x": {"0": 1.0, "1": 1.0}, "y": {"0": 1.0, "1": 1.0}}
+          },
+          stdout: {
+            type: 'string',
+            description: 'Standard output from the Python code',
+            example: "DataFrame created:\n   x   y\n0  1   2\n1  2   4\n2  3   6\n3  4   8\n4  5  10"
+          },
+          stderr: {
+            type: 'string',
+            description: 'Standard error output'
+          },
+          error: {
+            type: 'string',
+            description: 'Error message if execution failed'
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Execution timestamp'
+          }
+        }
+      },
+      PackageRequest: {
+        type: 'object',
+        required: ['package'],
+        properties: {
+          package: {
+            type: 'string',
+            description: 'Name of the Python package to install',
+            example: 'scikit-learn'
+          }
+        }
+      },
+      StatusResponse: {
+        type: 'object',
+        properties: {
+          isReady: {
+            type: 'boolean',
+            description: 'Whether Pyodide is ready for code execution'
+          },
+          initialized: {
+            type: 'boolean',
+            description: 'Whether Pyodide has been initialized'
+          },
+          executionTimeout: {
+            type: 'integer',
+            description: 'Default execution timeout in milliseconds'
+          },
+          version: {
+            type: 'string',
+            description: 'Pyodide version'
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time'
+          }
+        }
+      },
+      HealthResponse: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['ok', 'error']
+          },
+          server: {
+            type: 'string',
+            example: 'running'
+          },
+          pyodide: {
+            $ref: '#/components/schemas/StatusResponse'
+          },
+          logging: {
+            type: 'object',
+            properties: {
+              isFileLoggingEnabled: { type: 'boolean' },
+              logFile: { type: 'string' },
+              logDirectory: { type: 'string' }
+            }
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time'
+          },
+          uptime: {
+            type: 'number',
+            description: 'Server uptime in seconds'
+          },
+          memory: {
+            type: 'object',
+            properties: {
+              rss: { type: 'number' },
+              heapTotal: { type: 'number' },
+              heapUsed: { type: 'number' },
+              external: { type: 'number' },
+              arrayBuffers: { type: 'number' }
+            }
+          }
+        }
+      },
+      UploadResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean'
+          },
+          file: {
+            type: 'object',
+            properties: {
+              originalName: { type: 'string' },
+              size: { type: 'number' },
+              pyodideFilename: { type: 'string' }
+            }
+          },
+          analysis: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              filename: { type: 'string' },
+              shape: {
+                type: 'array',
+                items: { type: 'number' },
+                example: [100, 5]
+              },
+              columns: {
+                type: 'array',
+                items: { type: 'string' },
+                example: ['name', 'age', 'city', 'salary', 'department']
+              },
+              sample: {
+                type: 'array',
+                items: { type: 'object' }
+              }
+            }
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time'
+          }
+        }
+      },
+      ErrorResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean',
+            example: false
+          },
+          error: {
+            type: 'string',
+            description: 'Error message'
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time'
+          }
+        }
+      }
+    },
+    responses: {
+      BadRequest: {
+        description: 'Bad request - invalid input',
+        content: {
+          'application/json': {
+            schema: {
+              $ref: '#/components/schemas/ErrorResponse'
+            }
+          }
+        }
+      },
+      InternalError: {
+        description: 'Internal server error',
+        content: {
+          'application/json': {
+            schema: {
+              $ref: '#/components/schemas/ErrorResponse'
+            }
+          }
+        }
+      },
+      ServiceUnavailable: {
+        description: 'Service unavailable - Pyodide not ready',
+        content: {
+          'application/json': {
+            schema: {
+              $ref: '#/components/schemas/ErrorResponse'
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
+// Options for swagger-jsdoc
+const swaggerOptions = {
+  definition: swaggerDefinition,
+  apis: [
+    './src/routes/*.js',
+    './src/server.js'
+  ]
+};
+
+// Generate OpenAPI specification
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+
+// Swagger UI options
+const swaggerUiOptions = {
+  customCss: `
+    .swagger-ui .topbar { display: none; }
+    .swagger-ui .info { margin: 20px 0; }
+    .swagger-ui .info .title { color: #3b4151; }
+    .swagger-ui .scheme-container { background: #f7f7f7; padding: 15px; margin: 20px 0; }
+    .swagger-ui .btn.try-out__btn { background: #4990e2; color: white; }
+    .swagger-ui .btn.execute { background: #61affe; color: white; }
+    .swagger-ui .response-col_status { color: #61affe; }
+    .swagger-ui .opblock.opblock-post { border-color: #49cc90; background: rgba(73, 204, 144, 0.1); }
+    .swagger-ui .opblock.opblock-get { border-color: #61affe; background: rgba(97, 175, 254, 0.1); }
+    .swagger-ui .opblock.opblock-delete { border-color: #f93e3e; background: rgba(249, 62, 62, 0.1); }
+  `,
+  customSiteTitle: 'Pyodide Express API Documentation',
+  customfavIcon: '/favicon.ico',
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    filter: true,
+    tryItOutEnabled: true,
+    defaultModelsExpandDepth: 2,
+    defaultModelExpandDepth: 2,
+    docExpansion: 'list',
+    operationsSorter: 'alpha',
+    tagsSorter: 'alpha'
+  }
+};
+
+module.exports = {
+  swaggerSpec,
+  swaggerUi,
+  swaggerUiOptions
+};

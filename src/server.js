@@ -18,6 +18,9 @@ const executeRoutes = require('./routes/execute')
 // Import middleware
 const { validateCode, validatePackage } = require('./middleware/validation');
 
+// Import Swagger configuration
+const { swaggerSpec, swaggerUi, swaggerUiOptions } = require('./swagger-config');
+
 // Configuration
 const PORT = process.env.PORT || 3000;
 const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024; // 10MB
@@ -63,8 +66,8 @@ const upload = multer({
 });
 
 // Middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '30mb' }));
+app.use(express.urlencoded({ extended: true, limit: '30mb' }));
 
 // CORS middleware
 app.use((req, res, next) => {
@@ -88,10 +91,57 @@ app.use((req, res, next) => {
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Swagger Documentation
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: Web interface for testing the API
+ *     description: Serves an interactive HTML interface for testing Python code execution
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: HTML interface loaded successfully
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ */
+
+// API Documentation endpoint - Swagger UI
+app.use('/docs', swaggerUi.serve);
+app.get('/docs', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+
+// API Documentation JSON endpoint
+app.get('/docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
 // Use the execute routes
 app.use('/api', executeRoutes);
 
-// Health check endpoint
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Main health check endpoint
+ *     description: Comprehensive health check including server status, Pyodide status, and system information
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: Health check completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ *       500:
+ *         description: Health check failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 app.get('/health', (req, res) => {
   const status = pyodideService.getStatus();
   const logInfo = logger.getLogInfo();
@@ -107,8 +157,44 @@ app.get('/health', (req, res) => {
   });
 });
 
-
-// Upload and process CSV file endpoint
+/**
+ * @swagger
+ * /api/upload-csv:
+ *   post:
+ *     summary: Upload and process CSV file
+ *     description: Upload a CSV file, load it into Pyodide's virtual filesystem, and return basic analysis
+ *     tags: [File Operations]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               csvFile:
+ *                 type: string
+ *                 format: binary
+ *                 description: CSV file to upload (max 10MB)
+ *     responses:
+ *       200:
+ *         description: File uploaded and processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UploadResponse'
+ *       400:
+ *         description: No file provided or invalid file type
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: File processing failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
   try {
     if (!req.file) {
@@ -163,7 +249,6 @@ app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
   }
 });
 
-
 // Serve simple web interface for testing
 app.get('/', (req, res) => {
   res.send(`
@@ -177,6 +262,28 @@ app.get('/', (req, res) => {
             margin: 2rem; 
             max-width: 1200px; 
             line-height: 1.6;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+        }
+        .header h1 { margin: 0; }
+        .docs-link {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 20px;
+            margin: 10px 5px;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        .docs-link:hover {
+            background: rgba(255,255,255,0.3);
         }
         .container { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
         .section { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; }
@@ -218,12 +325,17 @@ app.get('/', (req, res) => {
         }
         .status.loading { background: #fff3cd; color: #856404; }
         .status.ready { background: #d4edda; color: #155724; }
-        h1 { color: #333; text-align: center; margin-bottom: 2rem; }
         h3 { color: #495057; margin-top: 0; }
     </style>
 </head>
 <body>
-    <h1>🐍 Pyodide Express Server</h1>
+    <div class="header">
+        <h1>🐍 Pyodide Express Server</h1>
+        <p>Execute Python code in your browser with full data science capabilities</p>
+        <a href="/docs" class="docs-link">📚 API Documentation</a>
+        <a href="/docs.json" class="docs-link">📄 OpenAPI Spec</a>
+        <a href="/health" class="docs-link">🔍 Health Check</a>
+    </div>
     
     <div id="status" class="status loading">Checking Pyodide status...</div>
     
@@ -518,6 +630,7 @@ async function startServer() {
       
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📖 Web interface: http://localhost:${PORT}`);
+      logger.info(`📚 API Documentation: http://localhost:${PORT}/docs`);
       logger.info(`🔧 API base URL: http://localhost:${PORT}/api`);
       logger.info(`📊 Health check: http://localhost:${PORT}/health`);
       
