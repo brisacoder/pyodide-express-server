@@ -305,4 +305,24 @@ npm run dev
 # Should see "Pyodide ready" message
 ```
 
-That's it! The `npm ci` command will install all the packages listed in your `package.json` file.
+# Execution
+POST /api/execute          # Execute Python code
+POST /api/execute-stream   # Execute with streaming output
+
+# Package management  
+POST /api/install-package  # Install new packages
+GET  /api/packages         # List installed packages
+
+# Status and health
+GET  /api/status           # Pyodide status
+GET  /api/health           # Python execution health test
+GET  /api/stats            # Server statistics
+
+# Environment
+POST /api/reset            # Reset Python environment
+
+# Files (still in server.js)
+POST /api/upload-csv       # Upload CSV files
+
+# Server health (still in server.js)
+GET  /health               # Overall server health

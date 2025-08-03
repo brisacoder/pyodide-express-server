@@ -13,6 +13,7 @@ const fs = require('fs');
 // Import services and utilities
 const pyodideService = require('./services/pyodide-service');
 const logger = require('./utils/logger');
+const executeRoutes = require('./routes/execute')
 
 // Import middleware
 const { validateCode, validatePackage } = require('./middleware/validation');
@@ -87,6 +88,9 @@ app.use((req, res, next) => {
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Use the execute routes
+app.use('/api', executeRoutes);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   const status = pyodideService.getStatus();
@@ -103,50 +107,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Get Pyodide status
-app.get('/api/status', (req, res) => {
-  try {
-    const status = pyodideService.getStatus();
-    res.json(status);
-  } catch (error) {
-    logger.error('Status check failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Execute Python code endpoint
-app.post('/api/execute', validateCode, async (req, res) => {
-  try {
-    const { code, context, timeout } = req.body;
-    
-    logger.info('Executing Python code:', { 
-      codeLength: code.length,
-      hasContext: !!context,
-      timeout: timeout || 'default'
-    });
-
-    const result = await pyodideService.executeCode(code, context, timeout);
-    
-    if (result.success) {
-      logger.info('Code execution successful');
-    } else {
-      logger.warn('Code execution failed:', result.error);
-    }
-    
-    res.json(result);
-    
-  } catch (error) {
-    logger.error('Execution endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
 
 // Upload and process CSV file endpoint
 app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
@@ -203,70 +163,6 @@ app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
   }
 });
 
-// Install Python package endpoint
-app.post('/api/install-package', validatePackage, async (req, res) => {
-  try {
-    const { package: packageName } = req.body;
-    
-    logger.info('Installing package:', packageName);
-    
-    const result = await pyodideService.installPackage(packageName);
-    
-    if (result.success) {
-      logger.info('Package installed successfully:', packageName);
-    } else {
-      logger.warn('Package installation failed:', packageName, result.error);
-    }
-    
-    res.json(result);
-    
-  } catch (error) {
-    logger.error('Package installation endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Get installed packages endpoint
-app.get('/api/packages', async (req, res) => {
-  try {
-    const result = await pyodideService.getInstalledPackages();
-    res.json(result);
-  } catch (error) {
-    logger.error('Package list endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Reset Pyodide environment endpoint
-app.post('/api/reset', async (req, res) => {
-  try {
-    await pyodideService.reset();
-    
-    logger.info('Pyodide environment reset successfully');
-    
-    res.json({
-      success: true,
-      message: 'Pyodide environment reset successfully',
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    logger.error('Reset endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
 
 // Serve simple web interface for testing
 app.get('/', (req, res) => {
