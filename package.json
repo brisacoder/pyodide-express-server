@@ -87,9 +87,9 @@
     "documentation"
   ],
   "author": {
-    "name": "Your Name",
+    "name": "Reinaldo Penno",
     "email": "your.email@example.com",
-    "url": "https://github.com/yourusername"
+    "url": "https://github.com/brisacoder"
   },
   "contributors": [],
   "maintainers": [
@@ -99,18 +99,18 @@
     }
   ],
   "license": "MIT",
-  "homepage": "https://github.com/yourusername/pyodide-express-server#readme",
+  "homepage": "https://github.com/brisacoder/pyodide-express-server#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/pyodide-express-server.git"
+    "url": "git+https://github.com/brisacoder/pyodide-express-server.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/pyodide-express-server/issues",
+    "url": "https://github.com/brisacoder/pyodide-express-server/issues",
     "email": "your.email@example.com"
   },
   "funding": {
     "type": "github",
-    "url": "https://github.com/sponsors/yourusername"
+    "url": "https://github.com/sponsors/brisacoder"
   },
   "files": [
     "src/",
