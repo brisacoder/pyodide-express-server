@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pyodide Express Server</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            margin: 2rem; 
+            max-width: 1200px; 
+            line-height: 1.6;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+        }
+        .header h1 { margin: 0; }
+        .docs-link {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 20px;
+            margin: 10px 5px;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        .docs-link:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .container { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .section { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; }
+        textarea { 
+            width: 100%; 
+            font-family: 'Courier New', monospace; 
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .result { 
+            background: #ffffff; 
+            border: 1px solid #dee2e6;
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 4px; 
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .error { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+        .success { background: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .status { 
+            padding: 10px; 
+            margin: 10px 0; 
+            border-radius: 4px; 
+            font-weight: bold;
+        }
+        .status.loading { background: #fff3cd; color: #856404; }
+        .status.ready { background: #d4edda; color: #155724; }
+        h3 { color: #495057; margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🐍 Pyodide Express Server</h1>
+        <p>Execute Python code in your browser with full data science capabilities</p>
+        <a href="/docs" class="docs-link">📚 API Documentation</a>
+        <a href="/docs.json" class="docs-link">📄 OpenAPI Spec</a>
+        <a href="/health" class="docs-link">🔍 Health Check</a>
+        <a href="/api/uploaded-files" class="docs-link">📁 Uploaded Files</a>
+    </div>
+    
+    <div id="status" class="status loading">Checking Pyodide status...</div>
+    
+    <div class="container">
+        <div class="section">
+            <h3>Python Code Execution</h3>
+                <textarea id="code" rows="12" placeholder="Enter Python code here...">
+# Example: Advanced data analysis with complex Python syntax
+import pandas as pd
+import numpy as np
+
+def analyze_battery_data():
+    """
+    Analyze battery performance with complex Python features.
+    This now works with f-strings, docstrings, and any Python syntax!
+    """
+    # Create sample data with f-strings
+    user_name = "Data Scientist"
+    print(f"Analysis started by: {user_name}")
+    
+    data = {
+        'battery_id': [f'BAT_{i:03d}' for i in range(1, 6)],
+        'soh': [95.2, 87.8, 92.1, 89.5, 94.3],
+        'temperature': [25.5, 32.1, 28.7, 30.2, 26.8],
+        'cycles': [1250, 2100, 1680, 1950, 1320]
+    }
+    
+    df = pd.DataFrame(data)
+    print("Battery Data:")
+    print(df)
+    
+    # Complex analysis with multiple quotes and f-strings
+    avg_soh = df['soh'].mean()
+    best_battery = df.loc[df['soh'].idxmax(), 'battery_id']
+    
+    summary = f"""
+    📊 Battery Analysis Summary:
+    - Average SOH: {avg_soh:.1f}%
+    - Best performing battery: {best_battery}
+    - Total batteries analyzed: {len(df)}
+    """
+    
+    print(summary)
+    
+    # Return structured results
+    return {
+        'average_soh': round(avg_soh, 2),
+        'best_battery': best_battery,
+        'total_count': len(df),
+        'data_preview': df.head(3).to_dict('records')
+    }
+
+# Execute the analysis
+result = analyze_battery_data()
+result
+            </textarea><br>
+            
+            <button onclick="executeCode()" id="runBtn">Run Python Code</button>
+            <button onclick="clearResult()">Clear Output</button>
+            <button onclick="resetEnvironment()">Reset Environment</button>
+            
+            <h3>File Upload</h3>
+            <input type="file" id="csvFile" accept=".csv,.json,.txt,.py">
+            <button onclick="uploadFile()">Upload File</button>
+            <button onclick="listFiles()">List Files</button>
+            
+            <h3>Package Management</h3>
+            <input type="text" id="packageName" placeholder="Package name (e.g., requests)" style="width: 200px;">
+            <button onclick="installPackage()">Install Package</button>
+            <button onclick="listPackages()">List Packages</button>
+        </div>
+        
+        <div class="section">
+            <h3>Output</h3>
+            <div id="result" class="result">Ready to execute Python code...</div>
+        </div>
+    </div>
+
+<script>
+        // Check Pyodide status on load
+        window.addEventListener('load', checkStatus);
+        
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const status = await response.json();
+                const statusDiv = document.getElementById('status');
+                
+                if (status.isReady) {
+                    statusDiv.className = 'status ready';
+                    statusDiv.textContent = '✅ Pyodide is ready! Complex Python syntax fully supported.';
+                } else {
+                    statusDiv.className = 'status loading';
+                    statusDiv.textContent = '⏳ Pyodide is initializing... Please wait.';
+                    // Check again in 2 seconds
+                    setTimeout(checkStatus, 2000);
+                }
+            } catch (error) {
+                const statusDiv = document.getElementById('status');
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '❌ Failed to connect to server: ' + error.message;
+            }
+        }
+        
+        // UPDATED: Use raw endpoint to handle complex Python syntax
+        async function executeCode() {
+            const code = document.getElementById('code').value;
+            const resultDiv = document.getElementById('result');
+            const runBtn = document.getElementById('runBtn');
+            
+            if (!code.trim()) {
+                resultDiv.innerHTML = '<div class="error">Please enter some Python code</div>';
+                return;
+            }
+            
+            runBtn.disabled = true;
+            runBtn.textContent = 'Running...';
+            resultDiv.innerHTML = '<div>Executing Python code...</div>';
+            
+            try {
+                // Use raw endpoint - handles f-strings, docstrings, any Python syntax!
+                const response = await fetch('/api/execute-raw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: code  // Send as plain text, not JSON
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    let output = '';
+                    if (result.stdout) {
+                        output += `Output:\n${result.stdout}\n`;
+                    }
+                    if (result.result !== undefined && result.result !== null) {
+                        output += `\nReturn Value:\n${JSON.stringify(result.result, null, 2)}`;
+                    }
+                    resultDiv.innerHTML = `<div class="success">${output || 'Code executed successfully (no output)'}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error:\n${result.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Request Error:\n${error.message}</div>`;
+            } finally {
+                runBtn.disabled = false;
+                runBtn.textContent = 'Run Python Code';
+            }
+        }
+        
+        async function uploadFile() {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            const resultDiv = document.getElementById('result');
+            
+            if (!file) {
+                resultDiv.innerHTML = '<div class="error">Please select a file</div>';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('csvFile', file);
+            
+            resultDiv.innerHTML = '<div>Uploading file...</div>';
+            
+            try {
+                const response = await fetch('/api/upload-csv', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const analysis = result.analysis;
+                    var output = "File uploaded successfully!\n\n";
+                    output += "Original name: " + result.file.originalName + "\n";
+                    output += "Size: " + (result.file.size / 1024).toFixed(1) + " KB\n";
+                    output += "Available as: " + result.file.pyodideFilename + "\n";
+                    output += "Temp path: " + result.file.tempPath + "\n\n";
+                    
+                    if (analysis) {
+                        if (analysis.shape && analysis.shape.length === 2) {
+                            output += "Shape: " + analysis.shape[0] + " rows × " + analysis.shape[1] + " columns\n";
+                        }
+                        if (analysis.columns && analysis.columns.length > 0) {
+                            output += "Columns: " + analysis.columns.join(', ') + "\n";
+                        }
+                        if (analysis.memory_usage) {
+                            output += "Memory usage: " + (analysis.memory_usage / 1024).toFixed(1) + " KB\n";
+                        }
+                        if (analysis.message) {
+                            output += "\n" + analysis.message + "\n";
+                        }
+                    }
+                    
+                    // Add debug info if available
+                    if (result.debug && result.debug.note) {
+                        output += "\nNote: " + result.debug.note + "\n";
+                    }
+                    
+                    resultDiv.innerHTML = '<div class="success">' + output + '</div>';
+                } else {
+                    resultDiv.innerHTML = '<div class="error">Upload Error:\n' + result.error + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">Upload Error:\n' + error.message + '</div>';
+            }
+        }
+        
+        async function listFiles() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Listing files...</div>';
+            
+            try {
+                const [uploadedResponse, pyodideResponse] = await Promise.all([
+                    fetch('/api/uploaded-files'),
+                    fetch('/api/pyodide-files')
+                ]);
+                
+                const uploadedResult = await uploadedResponse.json();
+                const pyodideResult = await pyodideResponse.json();
+                
+                let output = 'FILE LISTING\n===========\n\n';
+                
+                // Uploaded files
+                output += 'UPLOADED FILES (' + (uploadedResult.count || 0) + '):\n';
+                if (uploadedResult.success && uploadedResult.files.length > 0) {
+                    uploadedResult.files.forEach(file => {
+                        output += '  📁 ' + file.filename + ' (' + (file.size / 1024).toFixed(1) + ' KB)\n';
+                    });
+                } else {
+                    output += '  (none)\n';
+                }
+                
+                output += '\n';
+                
+                // Pyodide files
+                if (pyodideResult.success && pyodideResult.result) {
+                    const pyodideFiles = pyodideResult.result.files || [];
+                    output += 'PYODIDE FILES (' + pyodideFiles.length + '):\n';
+                    if (pyodideFiles.length > 0) {
+                        pyodideFiles.forEach(file => {
+                            output += '  🐍 ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)\n';
+                        });
+                    } else {
+                        output += '  (none)\n';
+                    }
+                } else {
+                    output += 'PYODIDE FILES: (error getting list)\n';
+                }
+                
+                resultDiv.innerHTML = '<div class="success">' + output + '</div>';
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">File Listing Error:\n${error.message}</div>`;
+            }
+        }
+        
+        async function installPackage() {
+            const packageName = document.getElementById('packageName').value.trim();
+            const resultDiv = document.getElementById('result');
+            
+            if (!packageName) {
+                resultDiv.innerHTML = '<div class="error">Please enter a package name</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div>Installing package: ' + packageName + '...</div>';
+            
+            try {
+                const response = await fetch('/api/install-package', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ package: packageName })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `<div class="success">Package installed successfully!\n${result.stdout}</div>`;
+                    document.getElementById('packageName').value = '';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Installation failed:\n${result.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Installation Error:\n${error.message}</div>`;
+            }
+        }
+        
+        async function listPackages() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Getting package list...</div>';
+            
+            try {
+                const response = await fetch('/api/packages');
+                const result = await response.json();
+                
+                if (result.success && result.result) {
+                    const packages = result.result.installed_packages || [];
+                    let output = 'Installed Packages (' + packages.length + '):\n\n';
+                    output += packages.join('\n');
+                    resultDiv.innerHTML = `<div class="success">${output}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Failed to get package list:\n${result.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">Request Error:\n' + error.message + '</div>';
+            }
+        }
+        
+        async function resetEnvironment() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Resetting environment...</div>';
+            
+            try {
+                const response = await fetch('/api/reset', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = '<div class="success">Environment reset successfully!</div>';
+                } else {
+                    resultDiv.innerHTML = '<div class="error">Reset failed:<br>' + result.error + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">Reset Error:\n' + error.message + '</div>';
+            }
+        }
+        
+        function clearResult() {
+            document.getElementById('result').innerHTML = 'Ready to execute Python code...';
+        }
+        
+        // Allow Ctrl+Enter to run code
+        document.getElementById('code').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                executeCode();
+            }
+        });
+    </script>
+</body>
+</html>
