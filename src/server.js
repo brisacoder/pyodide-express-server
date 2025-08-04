@@ -57,7 +57,7 @@ const upload = multer({
     // Accept CSV, JSON, TXT, and Python files
     const allowedTypes = ['.csv', '.json', '.txt', '.py'];
     const ext = path.extname(file.originalname).toLowerCase();
-    
+
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
@@ -75,7 +75,7 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
+
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
   } else {
@@ -147,7 +147,7 @@ app.use('/api', fileRoutes);     // ← NEW: File management routes
 app.get('/health', (req, res) => {
   const status = pyodideService.getStatus();
   const logInfo = logger.getLogInfo();
-  
+
   res.json({
     status: 'ok',
     server: 'running',
@@ -157,6 +157,122 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     memory: process.memoryUsage()
   });
+});
+
+// Add this endpoint to your server.js (before error handling middleware)
+
+/**
+ * @swagger
+ * /api/execute-raw:
+ *   post:
+ *     summary: Execute Python code from raw text
+ *     description: Execute Python code sent as plain text (bypasses JSON escaping issues)
+ *     tags: [Python Execution]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         text/plain:
+ *           schema:
+ *             type: string
+ *             example: |
+ *               import pandas as pd
+ *               import numpy as np
+ *               
+ *               def analyze_data():
+ *                   """
+ *                   Triple quoted docstring works fine!
+ *                   """
+ *                   name = "Alice"
+ *                   result = f"Hello {name}!"  # f-strings work!
+ *                   return result
+ *               
+ *               analyze_data()
+ *         application/x-python:
+ *           schema:
+ *             type: string
+ *     responses:
+ *       200:
+ *         description: Code execution completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ExecuteResponse'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       500:
+ *         $ref: '#/components/responses/InternalError'
+ */
+app.post('/api/execute-raw', express.text({ limit: '10mb' }), async (req, res) => {
+  try {
+    const code = req.body;
+
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'No Python code provided in request body',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    logger.info('Executing raw Python code:', {
+      codeLength: code.length,
+      ip: req.ip,
+      contentType: req.get('Content-Type')
+    });
+
+    // Execute the code using the same service
+    const result = await pyodideService.executeCode(code);
+
+    if (result.success) {
+      logger.info('Raw code execution successful');
+    } else {
+      logger.warn('Raw code execution failed:', result.error);
+    }
+
+    res.json(result);
+
+  } catch (error) {
+    logger.error('Raw execution endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Also add context support for raw text
+app.post('/api/execute-raw-with-context', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const { code, context, timeout } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'No Python code provided',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    logger.info('Executing raw Python code with context:', {
+      codeLength: code.length,
+      hasContext: !!context,
+      timeout: timeout || 'default',
+      ip: req.ip
+    });
+
+    const result = await pyodideService.executeCode(code, context, timeout);
+
+    res.json(result);
+
+  } catch (error) {
+    logger.error('Raw execution with context error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 /**
@@ -203,6 +319,8 @@ app.get('/health', (req, res) => {
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
+// Replace your upload endpoint in server.js with this debugging version
+
 app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
   let tempFilePath = null;
   
@@ -215,50 +333,178 @@ app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
     }
 
     tempFilePath = req.file.path;
-
-    logger.info('Processing uploaded file:', {
+    
+    logger.info('=== CSV UPLOAD DEBUG START ===');
+    logger.info('File info:', {
       originalName: req.file.originalname,
       size: req.file.size,
       mimetype: req.file.mimetype,
       tempPath: tempFilePath
     });
 
+    // Check Pyodide status
+    const pyodideStatus = pyodideService.getStatus();
+    logger.info('Pyodide status:', pyodideStatus);
+    
+    if (!pyodideStatus.isReady) {
+      return res.status(503).json({
+        success: false,
+        error: 'Pyodide is not ready yet',
+        pyodideStatus: pyodideStatus
+      });
+    }
+
     // Read the uploaded file
     const fileContent = fs.readFileSync(tempFilePath, 'utf8');
+    logger.info('File content read:', {
+      length: fileContent.length,
+      firstLine: fileContent.split('\n')[0],
+      lineCount: fileContent.split('\n').length
+    });
 
     // Use original filename (sanitized) in Pyodide
     const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
     const pyodideFilename = sanitizedName;
+    logger.info('Using Pyodide filename:', pyodideFilename);
 
-    // Load the file into Pyodide
-    logger.info(`Loading file into Pyodide as: ${pyodideFilename}`);
-    const loadResult = await pyodideService.loadCSVFile(pyodideFilename, fileContent);
+    // Test if we can execute basic Python first
+    logger.info('Testing basic Python execution...');
+    try {
+      const basicTest = await pyodideService.executeCode('2 + 2');
+      logger.info('Basic test result:', basicTest);
+      
+      if (!basicTest.success || basicTest.result !== 4) {
+        throw new Error('Basic Python execution failed');
+      }
+    } catch (basicError) {
+      logger.error('Basic Python test failed:', basicError);
+      return res.status(500).json({
+        success: false,
+        error: 'Pyodide is not working properly',
+        details: basicError.message
+      });
+    }
 
-    // Keep file in uploads folder by default (don't delete)
-    // Uncomment the next line if you want to auto-delete after processing:
-    // fs.unlinkSync(tempFilePath);
+    // Test pandas availability
+    logger.info('Testing pandas availability...');
+    try {
+      const pandasTest = await pyodideService.executeCode('import pandas as pd; pd.__version__');
+      logger.info('Pandas test result:', pandasTest);
+      
+      if (!pandasTest.success) {
+        throw new Error('Pandas not available');
+      }
+    } catch (pandasError) {
+      logger.error('Pandas test failed:', pandasError);
+      return res.status(500).json({
+        success: false,
+        error: 'Pandas is not available',
+        details: pandasError.message
+      });
+    }
 
-    logger.info('File processed successfully:', {
-      originalName: req.file.originalname,
-      pyodideFilename: pyodideFilename,
-      loadResult: loadResult.success
-    });
+    // Now try to load the CSV file step by step
+    logger.info('Step 1: Writing file to Pyodide filesystem...');
+    try {
+      pyodideService.pyodide.FS.writeFile(pyodideFilename, fileContent);
+      logger.info('File written successfully');
+    } catch (writeError) {
+      logger.error('Failed to write file to Pyodide FS:', writeError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to write file to Pyodide filesystem',
+        details: writeError.message
+      });
+    }
 
-    res.json({
-      success: true,
-      file: {
-        originalName: req.file.originalname,
-        size: req.file.size,
-        pyodideFilename: pyodideFilename,
-        tempPath: tempFilePath,
-        keepFile: true  // Indicate file is kept
-      },
-      analysis: loadResult.success ? loadResult.result : loadResult,
-      timestamp: new Date().toISOString()
-    });
+    // Step 2: Test if file exists in Pyodide
+    logger.info('Step 2: Checking if file exists in Pyodide...');
+    try {
+      const fileExistsTest = await pyodideService.executeCode(`
+import os
+exists = os.path.exists('${pyodideFilename}')
+size = os.path.getsize('${pyodideFilename}') if exists else 0
+{'exists': exists, 'size': size}
+      `);
+      logger.info('File exists test:', fileExistsTest);
+      
+      if (!fileExistsTest.success || !fileExistsTest.result.exists) {
+        throw new Error('File does not exist in Pyodide filesystem');
+      }
+    } catch (existsError) {
+      logger.error('File exists test failed:', existsError);
+      return res.status(500).json({
+        success: false,
+        error: 'File was not written to Pyodide filesystem correctly',
+        details: existsError.message
+      });
+    }
+
+    // Step 3: Try to load with pandas
+    logger.info('Step 3: Loading CSV with pandas...');
+    try {
+      const csvLoadTest = await pyodideService.executeCode(`
+import pandas as pd
+try:
+    df = pd.read_csv('${pyodideFilename}')
+    {
+        'success': True,
+        'shape': df.shape,
+        'columns': list(df.columns)[:10],  # First 10 columns only
+        'memory_usage': float(df.memory_usage(deep=True).sum()),
+        'has_data': len(df) > 0
+    }
+except Exception as e:
+    {
+        'success': False,
+        'error': str(e),
+        'error_type': type(e).__name__
+    }
+      `);
+      
+      logger.info('CSV load test result:', csvLoadTest);
+      
+      if (!csvLoadTest.success) {
+        throw new Error(`CSV load failed: ${csvLoadTest.result?.error || 'Unknown error'}`);
+      }
+      
+      // If we get here, the CSV loaded successfully
+      const analysis = csvLoadTest.result;
+      
+      logger.info('=== CSV UPLOAD DEBUG END - SUCCESS ===');
+      
+      res.json({
+        success: true,
+        file: {
+          originalName: req.file.originalname,
+          size: req.file.size,
+          pyodideFilename: pyodideFilename,
+          tempPath: tempFilePath,
+          keepFile: true
+        },
+        analysis: analysis,
+        debug: {
+          pyodideStatus: pyodideStatus,
+          fileWritten: true,
+          pandasAvailable: true,
+          csvLoaded: true
+        },
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (csvError) {
+      logger.error('CSV loading failed:', csvError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to load CSV with pandas',
+        details: csvError.message
+      });
+    }
 
   } catch (error) {
-    logger.error('CSV upload error:', error);
+    logger.error('=== CSV UPLOAD DEBUG END - ERROR ===');
+    logger.error('Upload error:', error);
+    logger.error('Error stack:', error.stack);
 
     // Clean up on error
     if (tempFilePath && fs.existsSync(tempFilePath)) {
@@ -273,6 +519,7 @@ app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
       timestamp: new Date().toISOString()
     });
   }
@@ -372,26 +619,55 @@ app.get('/', (req, res) => {
     <div class="container">
         <div class="section">
             <h3>Python Code Execution</h3>
-            <textarea id="code" rows="12" placeholder="Enter Python code here...">
-# Example: Data analysis with pandas
+                <textarea id="code" rows="12" placeholder="Enter Python code here...">
+# Example: Advanced data analysis with complex Python syntax
 import pandas as pd
 import numpy as np
 
-# Create sample data
-data = {
-    'name': ['Alice', 'Bob', 'Charlie', 'Diana'],
-    'age': [25, 30, 35, 28],
-    'score': [85, 92, 78, 96]
-}
+def analyze_battery_data():
+    """
+    Analyze battery performance with complex Python features.
+    This now works with f-strings, docstrings, and any Python syntax!
+    """
+    # Create sample data with f-strings
+    user_name = "Data Scientist"
+    print(f"Analysis started by: {user_name}")
+    
+    data = {
+        'battery_id': [f'BAT_{i:03d}' for i in range(1, 6)],
+        'soh': [95.2, 87.8, 92.1, 89.5, 94.3],
+        'temperature': [25.5, 32.1, 28.7, 30.2, 26.8],
+        'cycles': [1250, 2100, 1680, 1950, 1320]
+    }
+    
+    df = pd.DataFrame(data)
+    print("Battery Data:")
+    print(df)
+    
+    # Complex analysis with multiple quotes and f-strings
+    avg_soh = df['soh'].mean()
+    best_battery = df.loc[df['soh'].idxmax(), 'battery_id']
+    
+    summary = f"""
+    📊 Battery Analysis Summary:
+    - Average SOH: {avg_soh:.1f}%
+    - Best performing battery: {best_battery}
+    - Total batteries analyzed: {len(df)}
+    """
+    
+    print(summary)
+    
+    # Return structured results
+    return {
+        'average_soh': round(avg_soh, 2),
+        'best_battery': best_battery,
+        'total_count': len(df),
+        'data_preview': df.head(3).to_dict('records')
+    }
 
-df = pd.DataFrame(data)
-print("Sample DataFrame:")
-print(df)
-print(f"\\nAverage age: {df['age'].mean():.1f}")
-print(f"Top score: {df['score'].max()}")
-
-# Return summary statistics
-df.describe().to_dict()
+# Execute the analysis
+result = analyze_battery_data()
+result
             </textarea><br>
             
             <button onclick="executeCode()" id="runBtn">Run Python Code</button>
@@ -415,7 +691,7 @@ df.describe().to_dict()
         </div>
     </div>
 
-    <script>
+<script>
         // Check Pyodide status on load
         window.addEventListener('load', checkStatus);
         
@@ -427,7 +703,7 @@ df.describe().to_dict()
                 
                 if (status.isReady) {
                     statusDiv.className = 'status ready';
-                    statusDiv.textContent = '✅ Pyodide is ready! You can now execute Python code.';
+                    statusDiv.textContent = '✅ Pyodide is ready! Complex Python syntax fully supported.';
                 } else {
                     statusDiv.className = 'status loading';
                     statusDiv.textContent = '⏳ Pyodide is initializing... Please wait.';
@@ -441,6 +717,7 @@ df.describe().to_dict()
             }
         }
         
+        // UPDATED: Use raw endpoint to handle complex Python syntax
         async function executeCode() {
             const code = document.getElementById('code').value;
             const resultDiv = document.getElementById('result');
@@ -456,10 +733,11 @@ df.describe().to_dict()
             resultDiv.innerHTML = '<div>Executing Python code...</div>';
             
             try {
-                const response = await fetch('/api/execute', {
+                // Use raw endpoint - handles f-strings, docstrings, any Python syntax!
+                const response = await fetch('/api/execute-raw', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code })
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: code  // Send as plain text, not JSON
                 });
                 
                 const result = await response.json();
@@ -670,7 +948,7 @@ df.describe().to_dict()
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);
-  
+
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
@@ -679,7 +957,7 @@ app.use((err, req, res, next) => {
       });
     }
   }
-  
+
   res.status(500).json({
     success: false,
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
@@ -702,23 +980,23 @@ app.use((req, res) => {
 async function startServer() {
   try {
     logger.info('Starting Pyodide Express Server...');
-    
+
     // Initialize Pyodide
     logger.info('Initializing Pyodide...');
     await pyodideService.initialize();
     logger.info('Pyodide initialization completed!');
-    
+
     // Start the Express server
     const server = app.listen(PORT, () => {
       const logInfo = logger.getLogInfo();
-      
+
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📖 Web interface: http://localhost:${PORT}`);
       logger.info(`📚 API Documentation: http://localhost:${PORT}/docs`);
       logger.info(`🔧 API base URL: http://localhost:${PORT}/api`);
       logger.info(`📊 Health check: http://localhost:${PORT}/health`);
       logger.info(`📁 File management: http://localhost:${PORT}/api/uploaded-files`);
-      
+
       if (logInfo.isFileLoggingEnabled) {
         logger.info(`📝 Logs writing to: ${logInfo.logFile}`);
         logger.info(`📁 Log directory: ${logInfo.logDirectory}`);
@@ -726,7 +1004,7 @@ async function startServer() {
         logger.info(`📺 Console-only logging (no file output)`);
       }
     });
-    
+
     // Graceful shutdown
     process.on('SIGTERM', () => {
       logger.info('SIGTERM received, shutting down gracefully...');
@@ -735,7 +1013,7 @@ async function startServer() {
         process.exit(0);
       });
     });
-    
+
     process.on('SIGINT', () => {
       logger.info('SIGINT received, shutting down gracefully...');
       server.close(() => {
@@ -743,9 +1021,9 @@ async function startServer() {
         process.exit(0);
       });
     });
-    
+
     return server;
-    
+
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
