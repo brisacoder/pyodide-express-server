@@ -1,8 +1,11 @@
 /**
- * Pyodide Service - Simple, Working Implementation
+ * Pyodide Service - Complete Implementation
  * 
- * This version avoids the CDN URL resolution issues by using
- * the default Pyodide configuration that works in Node.js.
+ * This service handles all Pyodide-related operations including:
+ * - Python code execution
+ * - Package management
+ * - File operations
+ * - Environment management
  */
 
 const logger = require('../utils/logger');
@@ -89,7 +92,7 @@ class PyodideService {
       for (const packageName of micropipPackages) {
         try {
           logger.info(`Installing ${packageName} via micropip...`);
-await this.pyodide.runPythonAsync(`
+          await this.pyodide.runPythonAsync(`
 import micropip
 await micropip.install("${packageName}")
 print("✅ ${packageName} installed successfully")
@@ -337,7 +340,7 @@ print("🎉 Pyodide environment ready!")
 try:
     import micropip
     await micropip.install("${packageName}")
-    f"Successfully installed {packageName}"
+    f"Successfully installed ${packageName}"
 except ImportError:
     "Micropip not available - cannot install packages"
 except Exception as e:
@@ -391,40 +394,165 @@ except Exception as e:
     }
 
     try {
+      logger.info(`Loading CSV file into Pyodide: ${filename}`);
+      
       // Write file to Pyodide's virtual filesystem
       this.pyodide.FS.writeFile(filename, csvContent);
+      logger.info(`File written to Pyodide filesystem: ${filename}`);
 
-      // Verify the file was loaded correctly
+      // Verify the file was loaded correctly and analyze it
       const verificationResult = await this.executeCode(`
 # Check if pandas is available and load the file
+import sys
 try:
     import pandas as pd
+    print(f"Loading file: ${filename}")
+    
+    # Read the CSV file
     df = pd.read_csv('${filename}')
-    {
+    print(f"File loaded successfully. Shape: {df.shape}")
+    
+    # Get basic info about the file
+    analysis = {
         'success': True,
         'filename': '${filename}',
         'shape': df.shape,
         'columns': list(df.columns),
-        'sample': df.head(3).to_dict('records') if len(df) > 0 else []
+        'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+        'memory_usage': df.memory_usage(deep=True).sum(),
+        'null_counts': df.isnull().sum().to_dict(),
+        'sample_data': df.head(3).to_dict('records') if len(df) > 0 else []
     }
-except ImportError:
+    
+    # Add numeric column statistics if available
+    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    if numeric_cols:
+        analysis['numeric_columns'] = numeric_cols
+        analysis['statistics'] = df[numeric_cols].describe().to_dict()
+    
+    print(f"Analysis completed: {len(df)} rows, {len(df.columns)} columns")
+    analysis
+    
+except ImportError as e:
+    print(f"ImportError: {str(e)}")
     {
         'success': False,
         'error': 'Pandas not available - cannot process CSV',
-        'filename': '${filename}'
+        'filename': '${filename}',
+        'python_error': str(e)
     }
-except Exception as e:
+except pd.errors.EmptyDataError as e:
+    print(f"EmptyDataError: {str(e)}")
     {
         'success': False,
-        'error': str(e),
-        'filename': '${filename}'
+        'error': 'CSV file is empty or has no data',
+        'filename': '${filename}',
+        'python_error': str(e)
+    }
+except pd.errors.ParserError as e:
+    print(f"ParserError: {str(e)}")
+    {
+        'success': False,
+        'error': f'CSV parsing error: {str(e)}',
+        'filename': '${filename}',
+        'python_error': str(e)
+    }
+except Exception as e:
+    print(f"General error: {str(e)}")
+    print(f"Error type: {type(e).__name__}")
+    import traceback
+    traceback.print_exc()
+    {
+        'success': False,
+        'error': f'Error processing CSV: {str(e)}',
+        'filename': '${filename}',
+        'python_error': str(e),
+        'error_type': type(e).__name__
     }
       `);
+
+      logger.info('CSV file verification completed:', {
+        filename: filename,
+        success: verificationResult.success,
+        hasResult: !!verificationResult.result
+      });
 
       return verificationResult;
 
     } catch (error) {
+      logger.error(`Failed to load CSV file ${filename}:`, error);
       throw new Error(`Failed to load CSV file: ${error.message}`);
+    }
+  }
+
+  /**
+   * List files in Pyodide's virtual filesystem
+   * @returns {Promise<Object>} List of files
+   */
+  async listPyodideFiles() {
+    if (!this.isReady) {
+      throw new Error('Pyodide is not ready');
+    }
+
+    try {
+      const result = await this.executeCode(`
+import os
+try:
+    # List files in current directory
+    files = []
+    for item in os.listdir('.'):
+        if os.path.isfile(item):
+            stat_info = os.stat(item)
+            files.append({
+                'name': item,
+                'size': stat_info.st_size,
+                'modified': stat_info.st_mtime
+            })
+    
+    {
+        'success': True,
+        'files': files,
+        'count': len(files)
+    }
+except Exception as e:
+    {
+        'success': False,
+        'error': str(e)
+    }
+      `);
+
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to list Pyodide files: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete a file from Pyodide's virtual filesystem
+   * @param {string} filename - Name of file to delete
+   * @returns {Promise<Object>} Deletion result
+   */
+  async deletePyodideFile(filename) {
+    if (!this.isReady) {
+      throw new Error('Pyodide is not ready');
+    }
+
+    try {
+      const result = await this.executeCode(`
+import os
+try:
+    if os.path.exists('${filename}'):
+        os.remove('${filename}')
+        f"File ${filename} deleted successfully"
+    else:
+        f"File ${filename} not found"
+except Exception as e:
+    f"Error deleting ${filename}: {str(e)}"
+      `);
+
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to delete Pyodide file: ${error.message}`);
     }
   }
 
@@ -477,6 +605,113 @@ print("Environment reset completed")
     } catch (error) {
       logger.error('Failed to reset Pyodide environment:', error);
       throw new Error(`Reset failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if a file exists in Pyodide's virtual filesystem
+   * @param {string} filename - Name of file to check
+   * @returns {Promise<Object>} File existence result
+   */
+  async fileExists(filename) {
+    if (!this.isReady) {
+      throw new Error('Pyodide is not ready');
+    }
+
+    try {
+      const result = await this.executeCode(`
+import os
+try:
+    exists = os.path.exists('${filename}')
+    if exists:
+        stat_info = os.stat('${filename}')
+        {
+            'exists': True,
+            'filename': '${filename}',
+            'size': stat_info.st_size,
+            'modified': stat_info.st_mtime,
+            'is_file': os.path.isfile('${filename}')
+        }
+    else:
+        {
+            'exists': False,
+            'filename': '${filename}'
+        }
+except Exception as e:
+    {
+        'exists': False,
+        'filename': '${filename}',
+        'error': str(e)
+    }
+      `);
+
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to check file existence: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get detailed information about Pyodide environment
+   * @returns {Promise<Object>} Environment information
+   */
+  async getEnvironmentInfo() {
+    if (!this.isReady) {
+      throw new Error('Pyodide is not ready');
+    }
+
+    try {
+      const result = await this.executeCode(`
+import sys
+import os
+import platform
+
+try:
+    # Get basic Python info
+    info = {
+        'python_version': sys.version,
+        'python_version_info': list(sys.version_info),
+        'platform': platform.platform(),
+        'architecture': platform.architecture(),
+        'python_executable': sys.executable,
+        'python_path': sys.path[:5],  # First 5 entries only
+        'current_directory': os.getcwd(),
+        'environment_variables': dict(list(os.environ.items())[:10]),  # First 10 only
+    }
+    
+    # Get available modules
+    try:
+        available_modules = []
+        import pkgutil
+        for importer, modname, ispkg in pkgutil.iter_modules():
+            if len(available_modules) < 50:  # Limit to first 50
+                available_modules.append(modname)
+        info['available_modules'] = sorted(available_modules)
+    except:
+        info['available_modules'] = 'Unable to determine'
+    
+    # Get memory info if possible
+    try:
+        import gc
+        info['garbage_collector'] = {
+            'count': gc.get_count(),
+            'stats': gc.get_stats()[:2] if hasattr(gc, 'get_stats') else 'Not available'
+        }
+    except:
+        info['garbage_collector'] = 'Not available'
+    
+    info
+    
+except Exception as e:
+    {
+        'error': str(e),
+        'error_type': type(e).__name__
+    }
+      `);
+
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to get environment info: ${error.message}`);
     }
   }
 }

@@ -13,7 +13,8 @@ const fs = require('fs');
 // Import services and utilities
 const pyodideService = require('./services/pyodide-service');
 const logger = require('./utils/logger');
-const executeRoutes = require('./routes/execute')
+const executeRoutes = require('./routes/execute');
+const fileRoutes = require('./routes/files');  // ← NEW IMPORT
 
 // Import middleware
 const { validateCode, validatePackage } = require('./middleware/validation');
@@ -118,8 +119,9 @@ app.get('/docs.json', (req, res) => {
   res.send(swaggerSpec);
 });
 
-// Use the execute routes
-app.use('/api', executeRoutes);
+// Use route modules
+app.use('/api', executeRoutes);  // Python execution routes
+app.use('/api', fileRoutes);     // ← NEW: File management routes
 
 /**
  * @swagger
@@ -162,7 +164,21 @@ app.get('/health', (req, res) => {
  * /api/upload-csv:
  *   post:
  *     summary: Upload and process CSV file
- *     description: Upload a CSV file, load it into Pyodide's virtual filesystem, and return basic analysis
+ *     description: |
+ *       Upload a CSV file, load it into Pyodide's virtual filesystem, and return detailed analysis.
+ *       
+ *       **File Handling:**
+ *       - Files are temporarily stored in the uploads folder with unique names
+ *       - Files are loaded into Pyodide's virtual filesystem with their original names (sanitized)
+ *       - By default, files are kept in the uploads folder (can be configured to auto-delete)
+ *       
+ *       **Analysis Includes:**
+ *       - File dimensions (rows × columns)
+ *       - Column names and data types
+ *       - Memory usage
+ *       - Null value counts
+ *       - Sample data (first 3 rows)
+ *       - Statistical summary for numeric columns
  *     tags: [File Operations]
  *     requestBody:
  *       required: true
@@ -183,19 +199,13 @@ app.get('/health', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/UploadResponse'
  *       400:
- *         description: No file provided or invalid file type
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *         $ref: '#/components/responses/BadRequest'
  *       500:
- *         description: File processing failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *         $ref: '#/components/responses/InternalError'
  */
 app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
+  let tempFilePath = null;
+  
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -204,32 +214,46 @@ app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
       });
     }
 
+    tempFilePath = req.file.path;
+
     logger.info('Processing uploaded file:', {
       originalName: req.file.originalname,
       size: req.file.size,
-      mimetype: req.file.mimetype
+      mimetype: req.file.mimetype,
+      tempPath: tempFilePath
     });
 
     // Read the uploaded file
-    const fileContent = fs.readFileSync(req.file.path, 'utf8');
+    const fileContent = fs.readFileSync(tempFilePath, 'utf8');
+
+    // Use original filename (sanitized) in Pyodide
+    const sanitizedName = req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const pyodideFilename = sanitizedName;
 
     // Load the file into Pyodide
-    const filename = 'uploaded_file.csv';
-    const loadResult = await pyodideService.loadCSVFile(filename, fileContent);
+    logger.info(`Loading file into Pyodide as: ${pyodideFilename}`);
+    const loadResult = await pyodideService.loadCSVFile(pyodideFilename, fileContent);
 
-    // Clean up uploaded file
-    fs.unlinkSync(req.file.path);
+    // Keep file in uploads folder by default (don't delete)
+    // Uncomment the next line if you want to auto-delete after processing:
+    // fs.unlinkSync(tempFilePath);
 
-    logger.info('File processed successfully:', loadResult.result);
+    logger.info('File processed successfully:', {
+      originalName: req.file.originalname,
+      pyodideFilename: pyodideFilename,
+      loadResult: loadResult.success
+    });
 
     res.json({
       success: true,
       file: {
         originalName: req.file.originalname,
         size: req.file.size,
-        pyodideFilename: filename
+        pyodideFilename: pyodideFilename,
+        tempPath: tempFilePath,
+        keepFile: true  // Indicate file is kept
       },
-      analysis: loadResult.result,
+      analysis: loadResult.success ? loadResult.result : loadResult,
       timestamp: new Date().toISOString()
     });
 
@@ -237,8 +261,13 @@ app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
     logger.error('CSV upload error:', error);
 
     // Clean up on error
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+        logger.info('Cleaned up temp file on error');
+      } catch (cleanupError) {
+        logger.warn('Failed to cleanup temp file:', cleanupError.message);
+      }
     }
 
     res.status(500).json({
@@ -335,6 +364,7 @@ app.get('/', (req, res) => {
         <a href="/docs" class="docs-link">📚 API Documentation</a>
         <a href="/docs.json" class="docs-link">📄 OpenAPI Spec</a>
         <a href="/health" class="docs-link">🔍 Health Check</a>
+        <a href="/api/uploaded-files" class="docs-link">📁 Uploaded Files</a>
     </div>
     
     <div id="status" class="status loading">Checking Pyodide status...</div>
@@ -371,6 +401,7 @@ df.describe().to_dict()
             <h3>File Upload</h3>
             <input type="file" id="csvFile" accept=".csv,.json,.txt,.py">
             <button onclick="uploadFile()">Upload File</button>
+            <button onclick="listFiles()">List Files</button>
             
             <h3>Package Management</h3>
             <input type="text" id="packageName" placeholder="Package name (e.g., requests)" style="width: 200px;">
@@ -481,11 +512,15 @@ df.describe().to_dict()
                     let output = \`File uploaded successfully!\\n\\n\`;
                     output += \`Original name: \${result.file.originalName}\\n\`;
                     output += \`Size: \${(result.file.size / 1024).toFixed(1)} KB\\n\`;
-                    output += \`Available as: \${result.file.pyodideFilename}\\n\\n\`;
+                    output += \`Available as: \${result.file.pyodideFilename}\\n\`;
+                    output += \`Temp path: \${result.file.tempPath}\\n\\n\`;
                     
-                    if (analysis.success) {
+                    if (analysis && analysis.success) {
                         output += \`Shape: \${analysis.shape[0]} rows × \${analysis.shape[1]} columns\\n\`;
                         output += \`Columns: \${analysis.columns.join(', ')}\\n\`;
+                        if (analysis.numeric_columns) {
+                            output += \`Numeric columns: \${analysis.numeric_columns.length}\\n\`;
+                        }
                     }
                     
                     resultDiv.innerHTML = \`<div class="success">\${output}</div>\`;
@@ -494,6 +529,55 @@ df.describe().to_dict()
                 }
             } catch (error) {
                 resultDiv.innerHTML = \`<div class="error">Upload Error:\\n\${error.message}</div>\`;
+            }
+        }
+        
+        async function listFiles() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Listing files...</div>';
+            
+            try {
+                const [uploadedResponse, pyodideResponse] = await Promise.all([
+                    fetch('/api/uploaded-files'),
+                    fetch('/api/pyodide-files')
+                ]);
+                
+                const uploadedResult = await uploadedResponse.json();
+                const pyodideResult = await pyodideResponse.json();
+                
+                let output = 'FILE LISTING\\n===========\\n\\n';
+                
+                // Uploaded files
+                output += \`UPLOADED FILES (\${uploadedResult.count || 0}):\\n\`;
+                if (uploadedResult.success && uploadedResult.files.length > 0) {
+                    uploadedResult.files.forEach(file => {
+                        output += \`  📁 \${file.filename} (\${(file.size / 1024).toFixed(1)} KB)\\n\`;
+                    });
+                } else {
+                    output += '  (none)\\n';
+                }
+                
+                output += '\\n';
+                
+                // Pyodide files
+                if (pyodideResult.success && pyodideResult.result) {
+                    const pyodideFiles = pyodideResult.result.files || [];
+                    output += \`PYODIDE FILES (\${pyodideFiles.length}):\\n\`;
+                    if (pyodideFiles.length > 0) {
+                        pyodideFiles.forEach(file => {
+                            output += \`  🐍 \${file.name} (\${(file.size / 1024).toFixed(1)} KB)\\n\`;
+                        });
+                    } else {
+                        output += '  (none)\\n';
+                    }
+                } else {
+                    output += 'PYODIDE FILES: (error getting list)\\n';
+                }
+                
+                resultDiv.innerHTML = \`<div class="success">\${output}</div>\`;
+                
+            } catch (error) {
+                resultDiv.innerHTML = \`<div class="error">File Listing Error:\\n\${error.message}</div>\`;
             }
         }
         
@@ -633,6 +717,7 @@ async function startServer() {
       logger.info(`📚 API Documentation: http://localhost:${PORT}/docs`);
       logger.info(`🔧 API base URL: http://localhost:${PORT}/api`);
       logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+      logger.info(`📁 File management: http://localhost:${PORT}/api/uploaded-files`);
       
       if (logInfo.isFileLoggingEnabled) {
         logger.info(`📝 Logs writing to: ${logInfo.logFile}`);

@@ -652,4 +652,249 @@ router.get('/stats', (req, res) => {
   }
 });
 
+
+/**
+ * @swagger
+ * /api/uploaded-files:
+ *   get:
+ *     summary: List uploaded files
+ *     description: Get a list of all files currently in the upload directory
+ *     tags: [File Operations]
+ *     responses:
+ *       200:
+ *         description: File list retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 files:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       filename:
+ *                         type: string
+ *                         example: "csvFile-1691234567890-123456789.csv"
+ *                       size:
+ *                         type: number
+ *                         example: 3820915
+ *                       uploaded:
+ *                         type: string
+ *                         format: date-time
+ *                       modified:
+ *                         type: string
+ *                         format: date-time
+ *                 count:
+ *                   type: number
+ *                   example: 3
+ *                 uploadDir:
+ *                   type: string
+ *                   example: "uploads"
+ *             examples:
+ *               with_files:
+ *                 summary: Files found
+ *                 value:
+ *                   success: true
+ *                   files: [
+ *                     {
+ *                       filename: "data.csv",
+ *                       size: 3820915,
+ *                       uploaded: "2024-01-15T10:30:00.000Z",
+ *                       modified: "2024-01-15T10:30:00.000Z"
+ *                     }
+ *                   ]
+ *                   count: 1
+ *                   uploadDir: "uploads"
+ *               no_files:
+ *                 summary: No files found
+ *                 value:
+ *                   success: true
+ *                   files: []
+ *                   count: 0
+ *                   uploadDir: "uploads"
+ */
+
+/**
+ * @swagger
+ * /api/uploaded-files/{filename}:
+ *   delete:
+ *     summary: Delete uploaded file
+ *     description: Delete a specific file from the upload directory
+ *     tags: [File Operations]
+ *     parameters:
+ *       - in: path
+ *         name: filename
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the file to delete
+ *         example: "data.csv"
+ *     responses:
+ *       200:
+ *         description: File deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "File data.csv deleted successfully"
+ *       404:
+ *         description: File not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       400:
+ *         description: Invalid file path
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+
+/**
+ * @swagger
+ * /api/pyodide-files:
+ *   get:
+ *     summary: List files in Pyodide virtual filesystem
+ *     description: Get a list of all files currently loaded in Pyodide's virtual filesystem
+ *     tags: [File Operations]
+ *     responses:
+ *       200:
+ *         description: Pyodide file list retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ExecuteResponse'
+ *                 - type: object
+ *                   properties:
+ *                     result:
+ *                       type: object
+ *                       properties:
+ *                         success:
+ *                           type: boolean
+ *                         files:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               name:
+ *                                 type: string
+ *                               size:
+ *                                 type: number
+ *                               modified:
+ *                                 type: number
+ *                         count:
+ *                           type: number
+ *             examples:
+ *               success:
+ *                 summary: Files in Pyodide filesystem
+ *                 value:
+ *                   success: true
+ *                   result:
+ *                     success: true
+ *                     files: [
+ *                       {
+ *                         name: "data.csv",
+ *                         size: 1024,
+ *                         modified: 1691234567
+ *                       }
+ *                     ]
+ *                     count: 1
+ *       503:
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+
+
+
+/**
+ * List files in Pyodide virtual filesystem endpoint
+ * GET /api/pyodide-files
+ */
+router.get('/pyodide-files', async (req, res) => {
+  try {
+    const result = await pyodideService.listPyodideFiles();
+    res.json(result);
+  } catch (error) {
+    logger.error('Pyodide file list endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+
+/**
+ * @swagger
+ * /api/pyodide-files/{filename}:
+ *   delete:
+ *     summary: Delete file from Pyodide filesystem
+ *     description: Delete a specific file from Pyodide's virtual filesystem
+ *     tags: [File Operations]
+ *     parameters:
+ *       - in: path
+ *         name: filename
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the file to delete from Pyodide
+ *         example: "data.csv"
+ *     responses:
+ *       200:
+ *         description: File deletion attempted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ExecuteResponse'
+ *             examples:
+ *               success:
+ *                 summary: File deleted successfully
+ *                 value:
+ *                   success: true
+ *                   result: "File data.csv deleted successfully"
+ *                   stdout: ""
+ *                   stderr: ""
+ *                   timestamp: "2024-01-15T10:30:00.000Z"
+ *               not_found:
+ *                 summary: File not found
+ *                 value:
+ *                   success: true
+ *                   result: "File data.csv not found"
+ *                   stdout: ""
+ *                   stderr: ""
+ *                   timestamp: "2024-01-15T10:30:00.000Z"
+ *       503:
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+
+/**
+ * Delete file from Pyodide virtual filesystem endpoint
+ * DELETE /api/pyodide-files/:filename
+ */
+router.delete('/pyodide-files/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const result = await pyodideService.deletePyodideFile(filename);
+    res.json(result);
+  } catch (error) {
+    logger.error('Pyodide file deletion endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = router;

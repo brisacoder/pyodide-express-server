@@ -227,9 +227,26 @@ df.corr().to_dict()`
           file: {
             type: 'object',
             properties: {
-              originalName: { type: 'string' },
-              size: { type: 'number' },
-              pyodideFilename: { type: 'string' }
+              originalName: { 
+                type: 'string',
+                example: 'data.csv'
+              },
+              size: { 
+                type: 'number',
+                example: 3820915
+              },
+              pyodideFilename: { 
+                type: 'string',
+                example: 'data.csv'
+              },
+              tempPath: {
+                type: 'string',
+                example: 'uploads/csvFile-1691234567890-123456789.csv'
+              },
+              keepFile: {
+                type: 'boolean',
+                example: true
+              }
             }
           },
           analysis: {
@@ -247,15 +264,116 @@ df.corr().to_dict()`
                 items: { type: 'string' },
                 example: ['name', 'age', 'city', 'salary', 'department']
               },
-              sample: {
+              dtypes: {
+                type: 'object',
+                additionalProperties: { type: 'string' },
+                example: {
+                  'name': 'object',
+                  'age': 'int64',
+                  'salary': 'float64'
+                }
+              },
+              memory_usage: {
+                type: 'number',
+                example: 2048
+              },
+              null_counts: {
+                type: 'object',
+                additionalProperties: { type: 'number' },
+                example: {
+                  'name': 0,
+                  'age': 2,
+                  'salary': 1
+                }
+              },
+              sample_data: {
                 type: 'array',
-                items: { type: 'object' }
+                items: { type: 'object' },
+                example: [
+                  { 'name': 'Alice', 'age': 25, 'salary': 50000 },
+                  { 'name': 'Bob', 'age': 30, 'salary': 60000 }
+                ]
+              },
+              numeric_columns: {
+                type: 'array',
+                items: { type: 'string' },
+                example: ['age', 'salary']
+              },
+              statistics: {
+                type: 'object',
+                description: 'Statistical summary for numeric columns',
+                additionalProperties: {
+                  type: 'object',
+                  properties: {
+                    count: { type: 'number' },
+                    mean: { type: 'number' },
+                    std: { type: 'number' },
+                    min: { type: 'number' },
+                    '25%': { type: 'number' },
+                    '50%': { type: 'number' },
+                    '75%': { type: 'number' },
+                    max: { type: 'number' }
+                  }
+                }
               }
             }
           },
           timestamp: {
             type: 'string',
             format: 'date-time'
+          }
+        }
+      },
+      FileListResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean'
+          },
+          files: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                filename: {
+                  type: 'string',
+                  example: 'data.csv'
+                },
+                size: {
+                  type: 'number',
+                  example: 3820915
+                },
+                uploaded: {
+                  type: 'string',
+                  format: 'date-time'
+                },
+                modified: {
+                  type: 'string',
+                  format: 'date-time'
+                }
+              }
+            }
+          },
+          count: {
+            type: 'number',
+            example: 3
+          },
+          uploadDir: {
+            type: 'string',
+            example: 'uploads'
+          }
+        }
+      },
+      FileDeleteResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean',
+            example: true
+          },
+          message: {
+            type: 'string',
+            example: 'File data.csv deleted successfully'
           }
         }
       },
@@ -316,7 +434,8 @@ df.corr().to_dict()`
 const swaggerOptions = {
   definition: swaggerDefinition,
   apis: [
-    './src/routes/*.js',
+    './src/routes/execute.js',
+    './src/routes/files.js',    // ← NEW: Include file routes
     './src/server.js'
   ]
 };
