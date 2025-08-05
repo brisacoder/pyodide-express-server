@@ -63,6 +63,7 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
  */
 router.get('/uploaded-files', (req, res) => {
   try {
+    // If the upload directory hasn't been created yet, return an empty list.
     if (!fs.existsSync(UPLOAD_DIR)) {
       return res.json({
         success: true,
@@ -73,6 +74,7 @@ router.get('/uploaded-files', (req, res) => {
       });
     }
 
+    // Gather metadata for each file stored on disk.
     const files = fs.readdirSync(UPLOAD_DIR)
       .filter(file => !file.startsWith('.'))  // Exclude hidden files
       .map(filename => {
@@ -169,10 +171,12 @@ router.delete('/uploaded-files/:filename', (req, res) => {
     const filename = req.params.filename;
     const filePath = path.join(UPLOAD_DIR, filename);
 
+    // Resolve paths to guard against directory traversal attacks and
+    // ensure we operate only within the configured upload directory.
     // Security check - ensure file is in upload directory
     const resolvedUploadDir = path.resolve(UPLOAD_DIR);
     const resolvedFilePath = path.resolve(filePath);
-    
+
     if (!resolvedFilePath.startsWith(resolvedUploadDir)) {
       logger.warn(`Attempted to delete file outside upload directory: ${filename}`);
       return res.status(400).json({
@@ -469,7 +473,7 @@ router.get('/file-info/:filename', async (req, res) => {
       pyodideFile: { exists: false }
     };
 
-    // Check uploaded file
+    // Check uploaded file on the Node.js filesystem
     const uploadPath = path.join(UPLOAD_DIR, filename);
     if (fs.existsSync(uploadPath)) {
       const stats = fs.statSync(uploadPath);
@@ -482,7 +486,7 @@ router.get('/file-info/:filename', async (req, res) => {
       };
     }
 
-    // Check Pyodide file
+    // Check whether the file also exists inside Pyodide's in-memory FS
     try {
       const pyodideResult = await pyodideService.executeCode(`
 import os

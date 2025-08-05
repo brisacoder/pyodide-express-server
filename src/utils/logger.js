@@ -1,8 +1,9 @@
 /**
  * Logger utility for the Pyodide Express Server
- * 
+ *
  * Provides consistent logging across the application with different log levels
- * and optional file output for production environments.
+ * and optional file output for production environments. Detailed logs help
+ * diagnose issues when executing Python code through Pyodide.
  */
 
 const fs = require('fs');

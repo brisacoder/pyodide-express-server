@@ -105,14 +105,16 @@ const router = express.Router();
 router.post('/execute', validateCode, async (req, res) => {
   try {
     const { code, context, timeout } = req.body;
-    
-    logger.info('Executing Python code:', { 
+
+    logger.info('Executing Python code:', {
       codeLength: code.length,
       hasContext: !!context,
       timeout: timeout || 'default',
       ip: req.ip
     });
 
+    // Forward the snippet to the Pyodide service which manages the
+    // WebAssembly-based Python interpreter.
     const result = await pyodideService.executeCode(code, context, timeout);
     
     if (result.success) {
@@ -189,9 +191,10 @@ router.post('/execute', validateCode, async (req, res) => {
 router.post('/install-package', validatePackage, async (req, res) => {
   try {
     const { package: packageName } = req.body;
-    
+
     logger.info('Installing package:', packageName);
-    
+    // Installation is performed via ``micropip`` inside the Pyodide runtime.
+    // Only packages built for WebAssembly can be fetched successfully.
     const result = await pyodideService.installPackage(packageName);
     
     if (result.success) {
@@ -262,6 +265,7 @@ router.post('/install-package', validatePackage, async (req, res) => {
  */
 router.get('/packages', async (req, res) => {
   try {
+    // Query the Pyodide runtime for modules that are already loaded.
     const result = await pyodideService.getInstalledPackages();
     res.json(result);
   } catch (error) {
@@ -312,6 +316,7 @@ router.get('/packages', async (req, res) => {
  */
 router.post('/reset', async (req, res) => {
   try {
+    // Reset interpreter state to a clean slate.
     await pyodideService.reset();
     
     logger.info('Pyodide environment reset successfully');
@@ -368,6 +373,7 @@ router.post('/reset', async (req, res) => {
  */
 router.get('/status', (req, res) => {
   try {
+    // Query the in-memory service for its readiness and version information.
     const status = pyodideService.getStatus();
     res.json(status);
   } catch (error) {
@@ -447,6 +453,7 @@ router.get('/status', (req, res) => {
  */
 router.get('/health', async (req, res) => {
   try {
+    // Start by checking whether the interpreter has completed initialization.
     const status = pyodideService.getStatus();
     
     if (!status.isReady) {
@@ -458,7 +465,7 @@ router.get('/health', async (req, res) => {
       });
     }
     
-    // Test basic Python execution
+    // Test basic Python execution to verify the runtime actually works.
     const testResult = await pyodideService.executeCode('2 + 2');
     
     if (testResult.success && testResult.result === 4) {
@@ -538,8 +545,10 @@ router.post('/execute-stream', validateCode, async (req, res) => {
     
     // Send initial status
     res.write(`data: ${JSON.stringify({ type: 'status', message: 'Starting execution...' })}\n\n`);
-    
+
     try {
+      // Execute code and stream the resulting output chunks back to the client
+      // using Server-Sent Events.
       const result = await pyodideService.executeCode(code, context, timeout);
       
       // Send output if available
@@ -638,10 +647,11 @@ router.get('/stats', (req, res) => {
     const stats = {
       uptime: process.uptime(),
       memory: process.memoryUsage(),
+      // Include the Pyodide interpreter status for observability.
       pyodide: pyodideService.getStatus(),
       timestamp: new Date().toISOString()
     };
-    
+
     res.json(stats);
   } catch (error) {
     logger.error('Stats endpoint error:', error);
@@ -822,6 +832,7 @@ router.get('/stats', (req, res) => {
  */
 router.get('/pyodide-files', async (req, res) => {
   try {
+    // Retrieve list of files currently stored in Pyodide's MEMFS.
     const result = await pyodideService.listPyodideFiles();
     res.json(result);
   } catch (error) {
@@ -885,6 +896,7 @@ router.get('/pyodide-files', async (req, res) => {
 router.delete('/pyodide-files/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
+    // Remove the file from Pyodide's in-memory filesystem.
     const result = await pyodideService.deletePyodideFile(filename);
     res.json(result);
   } catch (error) {

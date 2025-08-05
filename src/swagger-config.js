@@ -1,8 +1,10 @@
 /**
  * Swagger/OpenAPI Configuration for Pyodide Express Server
- * 
+ *
  * This file configures the API documentation using OpenAPI 3.0 specification
  * and provides interactive testing interface similar to FastAPI's docs.
+ * The documented endpoints target Pyodide 0.28.0 (Python 3.13) running inside
+ * a Node.js environment.
  */
 
 const swaggerJsdoc = require('swagger-jsdoc');
