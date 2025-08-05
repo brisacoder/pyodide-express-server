@@ -12,6 +12,9 @@ const logger = require('../utils/logger');
  */
 function validateCode(req, res, next) {
   const { code, context, timeout } = req.body;
+
+  // User input is executed inside the Pyodide runtime; validating it here
+  // guards the interpreter from malformed requests.
   
   // Check if code is provided
   if (!code) {
@@ -121,6 +124,10 @@ function validateCode(req, res, next) {
  */
 function validatePackage(req, res, next) {
   const { package: packageName } = req.body;
+
+  // Packages are installed via Pyodide's ``micropip`` module, so only names of
+  // packages available on PyPI and compatible with WebAssembly should be
+  // accepted here.
   
   // Check if package name is provided
   if (!packageName) {

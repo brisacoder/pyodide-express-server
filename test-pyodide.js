@@ -1,7 +1,8 @@
 /**
  * Simple Pyodide Test
- * 
- * This script tests just the Pyodide loading to isolate the issue
+ *
+ * This script tests just the Pyodide loading to isolate the issue. It targets
+ * Pyodide 0.28.0 which bundles Python 3.13 compiled to WebAssembly.
  * Run with: node test-pyodide-simple.js
  */
 

@@ -1,8 +1,13 @@
 /**
  * Main Express server for Pyodide Python execution
- * 
+ *
  * This server provides REST API endpoints for executing Python code,
  * uploading files, and managing Python packages using Pyodide.
+ *
+ * Pyodide 0.28.0 embeds a full CPython 3.13 interpreter compiled to
+ * WebAssembly. By loading that runtime inside Node.js we can execute Python
+ * code directly from JavaScript without launching a separate Python process.
+ * The Express routes below expose this capability as a REST API.
  */
 
 const express = require('express');
@@ -11,8 +16,12 @@ const path = require('path');
 const fs = require('fs');
 
 // Import services and utilities
+// pyodideService handles initialization of the WebAssembly runtime and
+// exposes helper methods for executing code inside that runtime.
 const pyodideService = require('./services/pyodide-service');
 const logger = require('./utils/logger');
+// Route modules containing all API endpoints for Python execution and file
+// management within Pyodide's virtual filesystem.
 const executeRoutes = require('./routes/execute');
 const fileRoutes = require('./routes/files');  // ← NEW IMPORT
 

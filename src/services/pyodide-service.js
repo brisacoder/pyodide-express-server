@@ -1,26 +1,44 @@
 /**
  * Pyodide Service - Complete Implementation
- * 
+ *
  * This service handles all Pyodide-related operations including:
  * - Python code execution
  * - Package management
  * - File operations
  * - Environment management
+ *
+ * Pyodide bundles the CPython interpreter compiled to WebAssembly.  The
+ * service below loads the runtime once and reuses it for all requests,
+ * exposing helper methods to execute Python code, inspect the virtual
+ * filesystem, and manage packages via ``micropip``.  The currently bundled
+ * Pyodide version is 0.28.0 which corresponds to Python 3.13.
  */
 
 const logger = require('../utils/logger');
 
 class PyodideService {
   constructor() {
+    // Will hold the Pyodide instance once ``loadPyodide`` resolves. Until
+    // then it remains ``null``.
     this.pyodide = null;
+    // Flag indicating that the runtime finished bootstrapping and packages
+    // were loaded. Routes should check this before executing code.
     this.isReady = false;
+    // Promise used to avoid multiple concurrent initializations when several
+    // requests hit the server at start-up.
     this.initializationPromise = null;
+    // Default timeout in milliseconds for executing user supplied Python
+    // snippets.  Individual requests may override it.
     this.executionTimeout = 30000; // 30 seconds default timeout
   }
 
   /**
    * Initialize Pyodide with common packages
    * @returns {Promise<boolean>} True if initialization successful
+   *
+   * The first call kicks off the asynchronous bootstrapping sequence. Any
+   * later calls simply await the existing promise so that only one instance of
+   * Pyodide is ever created.
    */
   async initialize() {
     if (this.initializationPromise) {
@@ -34,6 +52,10 @@ class PyodideService {
   /**
    * Internal initialization method - Simple version that works
    * @private
+   *
+   * Loads the Pyodide runtime and eagerly fetches a set of scientific
+   * packages.  Installing packages up front reduces latency for the first
+   * request and mirrors the behaviour of a traditional Python environment.
    */
   async _performInitialization() {
     try {
@@ -239,6 +261,13 @@ print("🎉 Pyodide environment ready!")
    * @param {Object} context - Variables to make available in Python
    * @param {number} timeout - Execution timeout in milliseconds
    * @returns {Promise<Object>} Execution result
+   *
+   * The snippet runs inside the already-initialized interpreter.  ``runPython``
+   * is used for synchronous code, while ``runPythonAsync`` enables "top level
+   * await" and is required when ``micropip`` performs network requests.
+   * Output is captured via a small Python helper class created during
+   * initialization so both ``stdout`` and ``stderr`` can be returned to the
+   * client.
    */
   async executeCode(code, context = {}, timeout = this.executionTimeout) {
     if (!this.isReady) {
@@ -262,7 +291,10 @@ print("🎉 Pyodide environment ready!")
       let executionError = null;
 
       try {
-        // Execute the code
+        // Execute the user snippet. ``runPythonAsync`` understands top-level
+        // ``await`` and is also necessary for package installation which
+        // performs network I/O.  Plain synchronous code can use the slightly
+        // faster ``runPython`` API.
         if (code.includes('await ') || code.includes('micropip.install')) {
           result = await this.pyodide.runPythonAsync(code);
         } else {
@@ -322,6 +354,11 @@ print("🎉 Pyodide environment ready!")
    * Install a Python package using micropip
    * @param {string} packageName - Name of the package to install
    * @returns {Promise<Object>} Installation result
+   *
+   * ``micropip`` downloads wheels from PyPI that have been built for
+   * WebAssembly (``wasm32``) and adds them to Pyodide's package index.  Only
+   * pure Python packages or those explicitly compiled for Pyodide can be
+   * installed this way.
    */
   async installPackage(packageName) {
     if (!this.isReady) {
@@ -357,6 +394,10 @@ except Exception as e:
   /**
    * Get list of installed packages
    * @returns {Promise<Object>} List of packages
+   *
+   * Pyodide keeps a Python ``sys.modules`` registry similar to CPython.  This
+   * helper exposes that information so clients can discover which packages are
+   * currently loaded in the WebAssembly environment.
    */
   async getInstalledPackages() {
     if (!this.isReady) {
@@ -387,6 +428,10 @@ except Exception as e:
    * @param {string} filename - Name for the file in Pyodide
    * @param {string} csvContent - CSV file content
    * @returns {Promise<Object>} File load result
+   *
+   * ``pyodide.FS`` exposes the Emscripten MEMFS filesystem.  Writing to it
+   * stores data in memory and the file instantly becomes available to Python
+   * code within the WebAssembly sandbox.
    */
   async loadCSVFile(filename, csvContent) {
     if (!this.isReady) {
@@ -488,6 +533,10 @@ except Exception as e:
   /**
    * List files in Pyodide's virtual filesystem
    * @returns {Promise<Object>} List of files
+   *
+   * The virtual filesystem lives entirely in memory and is reset whenever the
+   * service restarts.  This helper mirrors ``os.listdir`` to expose its
+   * contents to the JavaScript side.
    */
   async listPyodideFiles() {
     if (!this.isReady) {
@@ -531,6 +580,10 @@ except Exception as e:
    * Delete a file from Pyodide's virtual filesystem
    * @param {string} filename - Name of file to delete
    * @returns {Promise<Object>} Deletion result
+   *
+   * Actual deletion happens inside the Python environment via ``os.remove``.
+   * The operation only affects the in-memory filesystem and cannot touch the
+   * host's disk.
    */
   async deletePyodideFile(filename) {
     if (!this.isReady) {
@@ -559,6 +612,9 @@ except Exception as e:
   /**
    * Get current status of the Pyodide service
    * @returns {Object} Service status
+   *
+   * Useful for health endpoints.  Exposes whether the runtime has finished
+   * loading and reports the Pyodide version bundled with the application.
    */
   getStatus() {
     return {
@@ -573,6 +629,10 @@ except Exception as e:
   /**
    * Reset the Pyodide environment
    * @returns {Promise<void>}
+   *
+   * Clears user-created globals while keeping core modules loaded.  This is
+   * similar to restarting a Python REPL but much faster because the
+   * WebAssembly runtime remains in memory.
    */
   async reset() {
     if (!this.isReady) {
@@ -612,6 +672,9 @@ print("Environment reset completed")
    * Check if a file exists in Pyodide's virtual filesystem
    * @param {string} filename - Name of file to check
    * @returns {Promise<Object>} File existence result
+   *
+    * Useful when the JavaScript side needs to know whether a prior upload
+    * has been persisted inside the WebAssembly sandbox.
    */
   async fileExists(filename) {
     if (!this.isReady) {
@@ -654,6 +717,10 @@ except Exception as e:
   /**
    * Get detailed information about Pyodide environment
    * @returns {Promise<Object>} Environment information
+   *
+   * Collects metadata from within the WebAssembly sandbox such as the Python
+   * version, available modules and a sample of environment variables.  This is
+   * primarily used for diagnostics.
    */
   async getEnvironmentInfo() {
     if (!this.isReady) {
