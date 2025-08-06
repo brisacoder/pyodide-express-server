@@ -31,3 +31,4 @@ coverage/
 # Build
 dist/
 build/
+uploads/
