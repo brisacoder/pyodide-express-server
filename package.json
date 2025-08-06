@@ -121,6 +121,7 @@
     "test-client.js",
     "README.md",
     "LICENSE",
+    "CONTRIBUTING.md",
     "CHANGELOG.md"
   ],
   "directories": {
