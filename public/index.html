@@ -188,20 +188,28 @@ result
         }
         
         // UPDATED: Use raw endpoint to handle complex Python syntax
-        async function executeCode() {
+         async function executeCode() {
             const code = document.getElementById('code').value;
             const resultDiv = document.getElementById('result');
             const runBtn = document.getElementById('runBtn');
-            
+
+            const setMessage = (text, type) => {
+                resultDiv.innerHTML = '';
+                const msg = document.createElement('div');
+                if (type) msg.className = type;
+                msg.textContent = text;
+                resultDiv.appendChild(msg);
+            };
+
             if (!code.trim()) {
-                resultDiv.innerHTML = '<div class="error">Please enter some Python code</div>';
+                setMessage('Please enter some Python code', 'error');
                 return;
             }
-            
+
             runBtn.disabled = true;
             runBtn.textContent = 'Running...';
-            resultDiv.innerHTML = '<div>Executing Python code...</div>';
-            
+            setMessage('Executing Python code...');
+
             try {
                 // Use raw endpoint - handles f-strings, docstrings, any Python syntax!
                 const response = await fetch('/api/execute-raw', {
@@ -209,9 +217,9 @@ result
                     headers: { 'Content-Type': 'text/plain' },
                     body: code  // Send as plain text, not JSON
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     let output = '';
                     if (result.stdout) {
@@ -220,12 +228,12 @@ result
                     if (result.result !== undefined && result.result !== null) {
                         output += `\nReturn Value:\n${JSON.stringify(result.result, null, 2)}`;
                     }
-                    resultDiv.innerHTML = `<div class="success">${output || 'Code executed successfully (no output)'}</div>`;
+                    setMessage(output || 'Code executed successfully (no output)', 'success');
                 } else {
-                    resultDiv.innerHTML = `<div class="error">Error:\n${result.error}</div>`;
+                    setMessage(`Error:\n${result.error || 'Unknown error'}`, 'error');
                 }
             } catch (error) {
-                resultDiv.innerHTML = `<div class="error">Request Error:\n${error.message}</div>`;
+                setMessage(`Request Error:\n${error.message}`, 'error');
             } finally {
                 runBtn.disabled = false;
                 runBtn.textContent = 'Run Python Code';
