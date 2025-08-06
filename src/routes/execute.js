@@ -8,6 +8,7 @@ const express = require('express');
 const pyodideService = require('../services/pyodide-service');
 const { validateCode, validatePackage } = require('../middleware/validation');
 const logger = require('../utils/logger');
+const { executeCode, listPyodideFiles, deletePyodideFile } = require('../controllers/executeController');
 
 const router = express.Router();
 
@@ -102,38 +103,8 @@ const router = express.Router();
  *       503:
  *         $ref: '#/components/responses/ServiceUnavailable'
  */
-router.post('/execute', validateCode, async (req, res) => {
-  try {
-    const { code, context, timeout } = req.body;
+router.post('/execute', validateCode, executeCode);
 
-    logger.info('Executing Python code:', {
-      codeLength: code.length,
-      hasContext: !!context,
-      timeout: timeout || 'default',
-      ip: req.ip
-    });
-
-    // Forward the snippet to the Pyodide service which manages the
-    // WebAssembly-based Python interpreter.
-    const result = await pyodideService.executeCode(code, context, timeout);
-    
-    if (result.success) {
-      logger.info('Code execution successful');
-    } else {
-      logger.warn('Code execution failed:', result.error);
-    }
-    
-    res.json(result);
-    
-  } catch (error) {
-    logger.error('Execution endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
 
 /**
  * @swagger
@@ -830,18 +801,7 @@ router.get('/stats', (req, res) => {
  * List files in Pyodide virtual filesystem endpoint
  * GET /api/pyodide-files
  */
-router.get('/pyodide-files', async (req, res) => {
-  try {
-    // Retrieve list of files currently stored in Pyodide's MEMFS.
-    const result = await pyodideService.listPyodideFiles();
-    res.json(result);
-  } catch (error) {
-    logger.error('Pyodide file list endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
+router.get('/pyodide-files', listPyodideFiles);
   }
 });
 
@@ -893,19 +853,7 @@ router.get('/pyodide-files', async (req, res) => {
  * Delete file from Pyodide virtual filesystem endpoint
  * DELETE /api/pyodide-files/:filename
  */
-router.delete('/pyodide-files/:filename', async (req, res) => {
-  try {
-    const filename = req.params.filename;
-    // Remove the file from Pyodide's in-memory filesystem.
-    const result = await pyodideService.deletePyodideFile(filename);
-    res.json(result);
-  } catch (error) {
-    logger.error('Pyodide file deletion endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
+router.delete('/pyodide-files/:filename', deletePyodideFile);
   }
 });
 

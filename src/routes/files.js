@@ -9,11 +9,12 @@ const fs = require('fs');
 const path = require('path');
 const pyodideService = require('../services/pyodide-service');
 const logger = require('../utils/logger');
+const config = require('../config');
 
 const router = express.Router();
 
 // Get upload directory from environment or default
-const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
+const UPLOAD_DIR = config.uploadDir;
 
 /**
  * @swagger
