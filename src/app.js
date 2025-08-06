@@ -4,6 +4,8 @@ const multer = require('multer');
 const logger = require('./utils/logger');
 const config = require('./config');
 const { swaggerSpec, swaggerUi, swaggerUiOptions } = require('./swagger-config');
+const { requestContextMiddleware } = require('./utils/requestContext');
+const { metricsMiddleware, metricsEndpoint } = require('./utils/metrics');
 
 const executeRoutes = require('./routes/execute');
 const fileRoutes = require('./routes/files');
@@ -13,6 +15,8 @@ const uploadRoutes = require('./routes/upload');
 
 const app = express();
 
+app.use(requestContextMiddleware);
+app.use(metricsMiddleware);
 app.use(express.json({ limit: '30mb' }));
 app.use(express.urlencoded({ extended: true, limit: '30mb' }));
 
@@ -29,7 +33,11 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path} - ${req.ip}`);
+  logger.info('Incoming request', {
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+  });
   next();
 });
 
@@ -47,6 +55,7 @@ app.use('/api', fileRoutes);
 app.use('/api', executeRawRoutes);
 app.use('/api', uploadRoutes);
 app.use('/', healthRoutes);
+app.get('/metrics', metricsEndpoint);
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
