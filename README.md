@@ -49,8 +49,17 @@ See [docs/architecture.md](docs/architecture.md) and [`pyodide_arch.md`](pyodide
 
 ## Tests
 Some tests expect the server to be running locally on port 3000.
+
 ```bash
 npm test
+```
+
+A Python test suite using the `requests` library also exercises the API. Install
+the dependency and run it with `unittest`:
+
+```bash
+pip install requests
+python -m unittest tests.test_api
 ```
 
 ## Contributing
