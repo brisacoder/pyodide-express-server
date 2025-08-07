@@ -30,17 +30,24 @@ class APITestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # Start the server in a subprocess
-        cls.server = subprocess.Popen(["node", "src/server.js"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        wait_for_server(f"{BASE_URL}/health")
+        # Use existing server - just wait for it to be ready
+        try:
+            wait_for_server(f"{BASE_URL}/health")
+            cls.server = None  # No server to manage
+        except RuntimeError:
+            # If no server is running, start one
+            cls.server = subprocess.Popen(["node", "src/server.js"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            wait_for_server(f"{BASE_URL}/health")
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.terminate()
-        try:
-            cls.server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            cls.server.kill()
+        # Only terminate if we started the server
+        if cls.server is not None:
+            cls.server.terminate()
+            try:
+                cls.server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                cls.server.kill()
 
     def test_01_health(self):
         r = requests.get(f"{BASE_URL}/health")
