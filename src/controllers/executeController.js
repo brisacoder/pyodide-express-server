@@ -84,7 +84,15 @@ async function deletePyodideFile(req, res) {
   try {
     const filename = req.params.filename;
     const result = await pyodideService.deletePyodideFile(filename);
-    res.json(result);
+    
+    // Check if file was not found and return 404
+    if (!result.success && result.error && result.error.includes('not found')) {
+      return res.status(404).json(result);
+    }
+    
+    // Return appropriate status based on success
+    const statusCode = result.success ? 200 : 500;
+    res.status(statusCode).json(result);
   } catch (error) {
     logger.error('Pyodide file deletion endpoint error:', error);
     res.status(500).json({

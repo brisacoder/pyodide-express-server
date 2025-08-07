@@ -17,7 +17,21 @@ const app = express();
 
 app.use(requestContextMiddleware);
 app.use(metricsMiddleware);
-app.use(express.json({ limit: '30mb' }));
+
+// JSON parsing with error handling
+app.use((req, res, next) => {
+  express.json({ limit: '30mb' })(req, res, (err) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid JSON format',
+        timestamp: new Date().toISOString()
+      });
+    }
+    next(err);
+  });
+});
+
 app.use(express.urlencoded({ extended: true, limit: '30mb' }));
 
 app.use((req, res, next) => {
@@ -36,8 +50,37 @@ app.use((req, res, next) => {
   logger.info('Incoming request', {
     method: req.method,
     path: req.path,
+    originalUrl: req.originalUrl,
     ip: req.ip,
   });
+  
+  // Check for path traversal attempts in the URL
+  if (req.originalUrl.includes('../') || req.originalUrl.includes('..\\')) {
+    logger.warn('Path traversal attempt detected', {
+      originalUrl: req.originalUrl,
+      ip: req.ip
+    });
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid filename',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // Check for access to sensitive system paths (likely from path traversal)
+  const sensitivePaths = ['/etc/', '/bin/', '/usr/', '/sys/', '/proc/', '/var/', '/tmp/', '/root/', 'C:\\', 'D:\\'];
+  if (sensitivePaths.some(p => req.path.startsWith(p) || req.path.includes(p))) {
+    logger.warn('Attempt to access sensitive path', {
+      path: req.path,
+      ip: req.ip
+    });
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid filename',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
   next();
 });
 
@@ -71,6 +114,14 @@ app.use((err, req, res, next) => {
         error: `File size too large. Maximum size: ${config.maxFileSize / 1024 / 1024}MB`,
       });
     }
+  }
+
+  // Handle file type validation errors
+  if (err.code === 'INVALID_FILE_TYPE') {
+    return res.status(400).json({
+      success: false,
+      error: err.message,
+    });
   }
 
   res.status(500).json({

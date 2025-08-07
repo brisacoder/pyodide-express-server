@@ -17,7 +17,7 @@ function validateCode(req, res, next) {
   // guards the interpreter from malformed requests.
   
   // Check if code is provided
-  if (!code) {
+  if (code === undefined || code === null) {
     return res.status(400).json({
       success: false,
       error: 'No code provided. Please include "code" in the request body.'
@@ -45,7 +45,16 @@ function validateCode(req, res, next) {
   if (code.trim().length === 0) {
     return res.status(400).json({
       success: false,
-      error: 'Code cannot be empty.'
+      error: 'Code cannot be empty'
+    });
+  }
+  
+  // Check if code contains only whitespace escape sequences
+  const whitespaceOnlyPattern = /^[\s\\nrtbfv]*$/;
+  if (whitespaceOnlyPattern.test(code.trim())) {
+    return res.status(400).json({
+      success: false,
+      error: 'Code cannot contain only whitespace'
     });
   }
   

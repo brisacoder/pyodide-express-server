@@ -182,7 +182,7 @@ router.delete('/uploaded-files/:filename', (req, res) => {
       logger.warn(`Attempted to delete file outside upload directory: ${filename}`);
       return res.status(400).json({
         success: false,
-        error: 'Invalid file path',
+        error: 'Invalid filename',
         timestamp: new Date().toISOString()
       });
     }
@@ -396,6 +396,16 @@ router.delete('/pyodide-files/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
     
+    // Security check - prevent path traversal
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      logger.warn(`Attempted path traversal in pyodide file deletion: ${filename}`);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid filename',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     logger.info(`Attempting to delete Pyodide file: ${filename}`);
     
     const result = await pyodideService.deletePyodideFile(filename);
@@ -405,6 +415,10 @@ router.delete('/pyodide-files/:filename', async (req, res) => {
       success: result.success,
       result: result.result
     });
+    
+    if (!result.success && result.error && result.error.includes('not found')) {
+      return res.status(404).json(result);
+    }
     
     res.json(result);
   } catch (error) {
@@ -551,15 +565,6 @@ result
       }
     } catch (pyodideError) {
       logger.warn(`Could not check Pyodide file ${filename}:`, pyodideError.message);
-    }
-
-    // Return 404 if file doesn't exist anywhere
-    if (!result.uploadedFile.exists && !result.pyodideFile.exists) {
-      return res.status(404).json({
-        success: false,
-        error: `File ${filename} not found in uploaded files or Pyodide filesystem`,
-        timestamp: new Date().toISOString()
-      });
     }
 
     res.json(result);

@@ -28,7 +28,9 @@ const upload = multer({
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error(`File type ${ext} not allowed. Allowed types: ${allowedTypes.join(', ')}`));
+      const error = new Error(`File type ${ext} not allowed. Allowed types: ${allowedTypes.join(', ')}`);
+      error.code = 'INVALID_FILE_TYPE';
+      cb(error);
     }
   },
 });

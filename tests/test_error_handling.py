@@ -194,8 +194,8 @@ class ErrorHandlingTestCase(unittest.TestCase):
 
     def test_upload_oversized_file(self):
         """Test upload with file exceeding size limit"""
-        # Create a large file (assuming 50MB limit)
-        large_content = "x,y\n" + "1,2\n" * 1000000  # Should be large enough
+        # Create a large file exceeding 10MB limit (current limit is 10MB)
+        large_content = "x,y\n" + "1,2\n" * 3000000  # ~12MB, exceeds 10MB limit
         with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
             tmp.write(large_content)
             tmp_path = tmp.name

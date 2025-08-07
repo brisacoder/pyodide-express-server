@@ -144,7 +144,7 @@ plt.title('Sample Plot')
 plt.show()
 
 # Make HTTP request
-response = requests.get('https://httpbin.org/json')
+response = requests.get('https://httpbin.org/json', timeout=10)
 print(response.json())
 \`);
 

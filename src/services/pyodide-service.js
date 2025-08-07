@@ -319,11 +319,34 @@ print("🎉 Pyodide environment ready!")
       await this.pyodide.runPythonAsync('output_capture.reset()');
 
       if (executionError) {
+        const stderr = output.get('stderr') || '';
+        const stdout = output.get('stdout') || '';
+        
+        // Extract error message from stderr if error field is empty
+        let errorMessage = executionError.message;
+        if (!errorMessage && stderr) {
+          // Try to extract the actual error from stderr
+          const lines = stderr.split('\n');
+          const errorLine = lines.find(line => 
+            line.includes('Error:') || 
+            line.includes('Exception:') ||
+            line.includes('SyntaxError:') ||
+            line.includes('TypeError:') ||
+            line.includes('ValueError:') ||
+            line.includes('ZeroDivisionError:')
+          );
+          if (errorLine) {
+            errorMessage = errorLine.trim();
+          } else {
+            errorMessage = stderr.trim();
+          }
+        }
+        
         return {
           success: false,
-          error: executionError.message,
-          stdout: output.get('stdout') || '',
-          stderr: output.get('stderr') || '',
+          error: errorMessage,
+          stdout: stdout,
+          stderr: stderr,
           timestamp: new Date().toISOString()
         };
       }
@@ -385,18 +408,45 @@ print("🎉 Pyodide environment ready!")
       logger.info(`Installing package: ${packageName}`);
       
       const result = await this.executeCode(`
-# Check if micropip is available
+import micropip
+import json
+
 try:
-    import micropip
     await micropip.install("${packageName}")
-    f"Successfully installed ${packageName}"
-except ImportError:
-    "Micropip not available - cannot install packages"
+    # Try to import the package to verify it was installed
+    try:
+        __import__("${packageName}")
+        json.dumps({"success": True, "message": "Package installed successfully"})
+    except ImportError:
+        # Package might have been installed but with a different import name
+        json.dumps({"success": True, "message": "Package installed (import name may differ)"})
 except Exception as e:
-    f"Installation failed: {str(e)}"
+    json.dumps({"success": False, "error": str(e)})
       `);
 
-      return result;
+      if (result.success && result.result) {
+        try {
+          const installResult = JSON.parse(result.result);
+          return {
+            success: installResult.success,
+            message: installResult.message,
+            error: installResult.error,
+            timestamp: new Date().toISOString()
+          };
+        } catch (parseError) {
+          return {
+            success: false,
+            error: 'Failed to parse installation result',
+            timestamp: new Date().toISOString()
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: 'Package installation failed',
+        timestamp: new Date().toISOString()
+      };
 
     } catch (error) {
       throw new Error(`Failed to install package ${packageName}: ${error.message}`);
@@ -647,17 +697,47 @@ result
     try {
       const result = await this.executeCode(`
 import os
-try:
-    if os.path.exists('${filename}'):
-        os.remove('${filename}')
-        f"File ${filename} deleted successfully"
-    else:
-        f"File ${filename} not found"
-except Exception as e:
-    f"Error deleting ${filename}: {str(e)}"
+import json
+
+if os.path.exists('${filename}'):
+    os.remove('${filename}')
+    result = {"success": True, "message": f"File ${filename} deleted successfully"}
+else:
+    result = {"success": False, "error": f"File ${filename} not found"}
+
+json.dumps(result)
       `);
 
-      return result;
+      if (result.success && result.result) {
+        let deleteResult;
+        try {
+          if (typeof result.result === 'string') {
+            deleteResult = JSON.parse(result.result);
+          } else {
+            deleteResult = result.result;
+          }
+          
+          // Return the parsed result with proper structure
+          return {
+            success: deleteResult.success,
+            message: deleteResult.message,
+            error: deleteResult.error,
+            timestamp: new Date().toISOString()
+          };
+        } catch (parseError) {
+          return {
+            success: false,
+            error: 'Failed to parse deletion result',
+            timestamp: new Date().toISOString()
+          };
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Failed to execute deletion command',
+        timestamp: new Date().toISOString()
+      };
     } catch (error) {
       throw new Error(`Failed to delete Pyodide file: ${error.message}`);
     }
