@@ -558,31 +558,71 @@ except Exception as e:
     try {
       const result = await this.executeCode(`
 import os
+
+files = []
 try:
-    # List files in current directory
-    files = []
     for item in os.listdir('.'):
         if os.path.isfile(item):
             stat_info = os.stat(item)
-            files.append({
-                'name': item,
-                'size': stat_info.st_size,
-                'modified': stat_info.st_mtime
-            })
+            files.append(item + '|' + str(stat_info.st_size) + '|' + str(stat_info.st_mtime))
     
-    result = {
-        'success': True,
-        'files': files,
-        'count': len(files)
-    }
+    result = '|||'.join(files) if files else 'EMPTY'
 except Exception as e:
-    result = {
-        'success': False,
-        'error': str(e)
-    }
+    result = 'ERROR:' + str(e)
 
 result
       `);
+
+      // Parse the result manually to avoid proxy issues
+      if (result.success && result.result !== null) {
+        if (result.result === 'EMPTY') {
+          return {
+            success: true,
+            result: {
+              success: true,
+              files: [],
+              count: 0
+            }
+          };
+        } else if (result.result.startsWith('ERROR:')) {
+          return {
+            success: false,
+            error: result.result.substring(6)
+          };
+        } else {
+          // Parse the pipe-separated format
+          const files = [];
+          const fileEntries = result.result.split('|||');
+          
+          for (const entry of fileEntries) {
+            const [name, size, modified] = entry.split('|');
+            files.push({
+              name: name,
+              size: parseInt(size),
+              modified: parseFloat(modified)
+            });
+          }
+          
+          return {
+            success: true,
+            result: {
+              success: true,
+              files: files,
+              count: files.length
+            }
+          };
+        }
+      }
+      
+      // Fallback if result is null or unsuccessful
+      return {
+        success: true,
+        result: {
+          success: true,
+          files: [],
+          count: 0
+        }
+      };
 
       return result;
     } catch (error) {

@@ -36,24 +36,32 @@ class DetailedTestResult(unittest.TextTestResult):
         
     def stopTest(self, test):
         super().stopTest(test)
-        test_time = time.time() - self.test_start_time
-        self.test_times[str(test)] = test_time
+        if hasattr(self, 'test_start_time'):
+            test_time = time.time() - self.test_start_time
+            self.test_times[str(test)] = test_time
+        else:
+            # Fallback if startTest wasn't called properly
+            self.test_times[str(test)] = 0.0
         
     def addSuccess(self, test):
         super().addSuccess(test)
-        self.test_details[str(test)] = {'status': 'PASS', 'time': self.test_times[str(test)]}
+        test_time = self.test_times.get(str(test), 0.0)
+        self.test_details[str(test)] = {'status': 'PASS', 'time': test_time}
         
     def addError(self, test, err):
         super().addError(test, err)
-        self.test_details[str(test)] = {'status': 'ERROR', 'time': self.test_times[str(test)], 'error': str(err[1])}
+        test_time = self.test_times.get(str(test), 0.0)
+        self.test_details[str(test)] = {'status': 'ERROR', 'time': test_time, 'error': str(err[1])}
         
     def addFailure(self, test, err):
         super().addFailure(test, err)
-        self.test_details[str(test)] = {'status': 'FAIL', 'time': self.test_times[str(test)], 'error': str(err[1])}
+        test_time = self.test_times.get(str(test), 0.0)
+        self.test_details[str(test)] = {'status': 'FAIL', 'time': test_time, 'error': str(err[1])}
         
     def addSkip(self, test, reason):
         super().addSkip(test, reason)
         self.test_details[str(test)] = {'status': 'SKIP', 'time': 0, 'reason': reason}
+
 
 class ComprehensiveTestRunner:
     """Main test runner for all test categories."""
@@ -137,7 +145,7 @@ class ComprehensiveTestRunner:
         # Show slowest tests
         if hasattr(result, 'test_details'):
             slow_tests = sorted(
-                [(test, details['time']) for test, details in result.test_details.items() 
+                [(test, details['time']) for test, details in result.test_details.items()
                  if details['status'] == 'PASS'],
                 key=lambda x: x[1], reverse=True
             )[:3]

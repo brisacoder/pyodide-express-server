@@ -300,22 +300,27 @@ router.get('/pyodide-files', async (req, res) => {
   try {
     const result = await pyodideService.listPyodideFiles();
     
-    // Parse the Python result if it's a string
+    // Parse the Python result if it's a string, otherwise use as-is
     let parsedResult = result;
-    if (result.success && result.result && typeof result.result === 'string') {
-      try {
-        // Convert Python dictionary string to JSON
-        let jsonString = result.result
-          .replace(/'/g, '"')  // Single quotes to double quotes
-          .replace(/True/g, 'true')  // Python True to JSON true
-          .replace(/False/g, 'false');  // Python False to JSON false
-        
-        parsedResult = { 
-          ...result, 
-          result: JSON.parse(jsonString) 
-        };
-      } catch (parseError) {
-        logger.warn(`Could not parse Pyodide files result:`, parseError.message);
+    if (result.success && result.result) {
+      if (typeof result.result === 'string') {
+        try {
+          // Convert Python dictionary string to JSON
+          let jsonString = result.result
+            .replace(/'/g, '"')  // Single quotes to double quotes
+            .replace(/True/g, 'true')  // Python True to JSON true
+            .replace(/False/g, 'false');  // Python False to JSON false
+          
+          parsedResult = { 
+            ...result, 
+            result: JSON.parse(jsonString) 
+          };
+        } catch (parseError) {
+          logger.warn(`Could not parse Pyodide files result:`, parseError.message);
+        }
+      } else {
+        // Result is already a JavaScript object
+        parsedResult = result;
       }
     }
     
@@ -526,14 +531,19 @@ result
 
       if (pyodideResult.success && pyodideResult.result) {
         try {
-          // Convert Python dictionary string to JSON
-          let jsonString = pyodideResult.result
-            .replace(/'/g, '"')  // Single quotes to double quotes
-            .replace(/True/g, 'true')  // Python True to JSON true
-            .replace(/False/g, 'false');  // Python False to JSON false
-          
-          const pyodideFileInfo = JSON.parse(jsonString);
-          result.pyodideFile = pyodideFileInfo;
+          // The result is already a JavaScript object from the execute endpoint
+          if (typeof pyodideResult.result === 'object') {
+            result.pyodideFile = pyodideResult.result;
+          } else {
+            // Fallback: if it's a string, try to parse it
+            let jsonString = pyodideResult.result.toString()
+              .replace(/'/g, '"')  // Single quotes to double quotes
+              .replace(/True/g, 'true')  // Python True to JSON true
+              .replace(/False/g, 'false');  // Python False to JSON false
+            
+            const pyodideFileInfo = JSON.parse(jsonString);
+            result.pyodideFile = pyodideFileInfo;
+          }
         } catch (parseError) {
           logger.warn(`Could not parse Pyodide file result for ${filename}:`, parseError.message);
           result.pyodideFile = { exists: false };
