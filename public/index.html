@@ -187,7 +187,6 @@ result
             }
         }
         
-        // UPDATED: Use raw endpoint to handle complex Python syntax
         async function executeCode() {
             const code = document.getElementById('code').value;
             const resultDiv = document.getElementById('result');
@@ -203,11 +202,10 @@ result
             resultDiv.innerHTML = '<div>Executing Python code...</div>';
             
             try {
-                // Use raw endpoint - handles f-strings, docstrings, any Python syntax!
                 const response = await fetch('/api/execute-raw', {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: code  // Send as plain text, not JSON
+                    body: code
                 });
                 
                 const result = await response.json();
@@ -222,7 +220,23 @@ result
                     }
                     resultDiv.innerHTML = `<div class="success">${output || 'Code executed successfully (no output)'}</div>`;
                 } else {
-                    resultDiv.innerHTML = `<div class="error">Error:\n${result.error}</div>`;
+                    // FIXED: Better error handling - show actual error messages
+                    let errorMessage = 'Error:\n';
+                    
+                    if (result.error) {
+                        errorMessage += result.error;
+                    } else if (result.stderr) {
+                        errorMessage += result.stderr;
+                    } else {
+                        errorMessage += 'Unknown error occurred';
+                    }
+                    
+                    // Include stdout if there was output before the error
+                    if (result.stdout) {
+                        errorMessage = `Output:\n${result.stdout}\n\n${errorMessage}`;
+                    }
+                    
+                    resultDiv.innerHTML = `<div class="error">${errorMessage}</div>`;
                 }
             } catch (error) {
                 resultDiv.innerHTML = `<div class="error">Request Error:\n${error.message}</div>`;
@@ -257,35 +271,58 @@ result
                 
                 if (result.success) {
                     const analysis = result.analysis;
-                    var output = "File uploaded successfully!\n\n";
+                    let output = "File uploaded successfully!\n\n";
                     output += "Original name: " + result.file.originalName + "\n";
                     output += "Size: " + (result.file.size / 1024).toFixed(1) + " KB\n";
                     output += "Available as: " + result.file.pyodideFilename + "\n";
                     output += "Temp path: " + result.file.tempPath + "\n\n";
                     
-                    if (analysis) {
+                    // FIXED: Better handling of null/undefined analysis
+                    if (analysis === null || analysis === undefined) {
+                        output += "⚠️  Analysis failed - file uploaded but not analyzed\n";
+                        output += "You can still use the file in Python code as '" + result.file.pyodideFilename + "'\n\n";
+                        output += "To debug, run this Python code:\n";
+                        output += "import pandas as pd\n";
+                        output += "df = pd.read_csv('" + result.file.pyodideFilename + "')\n";
+                        output += "print(f'Shape: {df.shape}')\n";
+                        output += "print(f'Columns: {list(df.columns)}')\n";
+                    } else if (analysis.success === false) {
+                        output += "❌ Analysis failed: " + (analysis.error || 'Unknown error') + "\n";
+                        if (analysis.python_error) {
+                            output += "Python error: " + analysis.python_error + "\n";
+                        }
+                    } else {
+                        // Analysis succeeded
                         if (analysis.shape && analysis.shape.length === 2) {
                             output += "Shape: " + analysis.shape[0] + " rows × " + analysis.shape[1] + " columns\n";
                         }
                         if (analysis.columns && analysis.columns.length > 0) {
-                            output += "Columns: " + analysis.columns.join(', ') + "\n";
+                            output += "Columns: " + analysis.columns.slice(0, 10).join(', ');
+                            if (analysis.columns.length > 10) {
+                                output += " (+" + (analysis.columns.length - 10) + " more)";
+                            }
+                            output += "\n";
                         }
                         if (analysis.memory_usage) {
                             output += "Memory usage: " + (analysis.memory_usage / 1024).toFixed(1) + " KB\n";
                         }
-                        if (analysis.message) {
-                            output += "\n" + analysis.message + "\n";
+                        if (analysis.has_data !== undefined) {
+                            output += "Has data: " + (analysis.has_data ? "Yes" : "No") + "\n";
                         }
                     }
                     
-                    // Add debug info if available
-                    if (result.debug && result.debug.note) {
-                        output += "\nNote: " + result.debug.note + "\n";
+                    // Show debug info if available
+                    if (result.debug) {
+                        output += "\nDebug info:\n";
+                        Object.keys(result.debug).forEach(key => {
+                            output += "- " + key + ": " + result.debug[key] + "\n";
+                        });
                     }
                     
                     resultDiv.innerHTML = '<div class="success">' + output + '</div>';
                 } else {
-                    resultDiv.innerHTML = '<div class="error">Upload Error:\n' + result.error + '</div>';
+                    resultDiv.innerHTML = '<div class="error">Upload Error:\n' + result.error + 
+                                        (result.details ? '\nDetails: ' + result.details : '') + '</div>';
                 }
             } catch (error) {
                 resultDiv.innerHTML = '<div class="error">Upload Error:\n' + error.message + '</div>';
