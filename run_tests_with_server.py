@@ -71,10 +71,10 @@ def main():
         ("test_api", "Basic API Tests"),
         ("test_basic_errors", "Basic Error Handling Tests"),
         # We can enable these once we fix the timeout issues
-        # ("test_error_handling", "Advanced Error Handling Tests"),
-        # ("test_integration", "Integration Tests"),
-        # ("test_security", "Security Tests"),
-        # ("test_performance", "Performance Tests"),
+        ("test_error_handling", "Advanced Error Handling Tests"),
+        ("test_integration", "Integration Tests"),
+        ("test_security", "Security Tests"),
+        ("test_performance", "Performance Tests"),
     ]
 
     total_tests = len(test_categories)

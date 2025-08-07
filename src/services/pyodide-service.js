@@ -224,10 +224,18 @@ output_capture = OutputCapture()
 
 # Helper function for JSON serialization
 def make_json_safe(obj):
+    import numpy as np
+    
     if obj is None:
         return None
     elif isinstance(obj, (bool, int, float, str)):
         return obj
+    elif isinstance(obj, np.integer):  # numpy integer types
+        return int(obj)
+    elif isinstance(obj, np.floating):  # numpy float types
+        return float(obj)
+    elif isinstance(obj, np.bool_):  # numpy boolean type
+        return bool(obj)
     elif isinstance(obj, (list, tuple)):
         return [make_json_safe(item) for item in obj]
     elif isinstance(obj, dict):
@@ -324,7 +332,11 @@ print("🎉 Pyodide environment ready!")
       let jsonSafeResult = null;
       if (result !== undefined && result !== null) {
         try {
-          jsonSafeResult = await this.pyodide.runPythonAsync(`make_json_safe(${JSON.stringify(result)})`);
+          // Store the result in a global variable and then call make_json_safe on it
+          this.pyodide.globals.set('_temp_result', result);
+          jsonSafeResult = await this.pyodide.runPythonAsync('make_json_safe(_temp_result)');
+          // Clean up the temporary variable
+          await this.pyodide.runPythonAsync('del _temp_result');
         } catch (conversionError) {
           jsonSafeResult = String(result);
         }

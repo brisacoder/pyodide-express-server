@@ -11,7 +11,7 @@ class BasicErrorHandlingTestCase(unittest.TestCase):
 
     def test_execute_empty_code(self):
         """Test execution with empty code"""
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": ""}, timeout=10, timeout=10)
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": ""}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))

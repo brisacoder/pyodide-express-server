@@ -20,7 +20,7 @@ class IntegrationTestCase(unittest.TestCase):
         start = time.time()
         while time.time() - start < 120:
             try:
-                r = requests.get(f"{BASE_URL}/health", timeout=5, timeout=10)
+                r = requests.get(f"{BASE_URL}/health", timeout=10)
                 if r.status_code == 200:
                     break
             except Exception:

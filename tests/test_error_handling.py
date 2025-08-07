@@ -12,7 +12,7 @@ def wait_for_server(url: str, timeout: int = 120):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            r = requests.get(url, timeout=5, timeout=10)
+            r = requests.get(url, timeout=10)
             if r.status_code == 200:
                 return
         except Exception:
