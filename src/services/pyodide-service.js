@@ -558,16 +558,18 @@ try:
                 'modified': stat_info.st_mtime
             })
     
-    {
+    result = {
         'success': True,
         'files': files,
         'count': len(files)
     }
 except Exception as e:
-    {
+    result = {
         'success': False,
         'error': str(e)
     }
+
+result
       `);
 
       return result;

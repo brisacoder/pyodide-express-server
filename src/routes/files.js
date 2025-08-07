@@ -300,12 +300,31 @@ router.get('/pyodide-files', async (req, res) => {
   try {
     const result = await pyodideService.listPyodideFiles();
     
+    // Parse the Python result if it's a string
+    let parsedResult = result;
+    if (result.success && result.result && typeof result.result === 'string') {
+      try {
+        // Convert Python dictionary string to JSON
+        let jsonString = result.result
+          .replace(/'/g, '"')  // Single quotes to double quotes
+          .replace(/True/g, 'true')  // Python True to JSON true
+          .replace(/False/g, 'false');  // Python False to JSON false
+        
+        parsedResult = { 
+          ...result, 
+          result: JSON.parse(jsonString) 
+        };
+      } catch (parseError) {
+        logger.warn(`Could not parse Pyodide files result:`, parseError.message);
+      }
+    }
+    
     logger.info('Listed Pyodide files:', {
-      success: result.success,
-      fileCount: result.result?.count || 0
+      success: parsedResult.success,
+      fileCount: parsedResult.result?.count || 0
     });
     
-    res.json(result);
+    res.json(parsedResult);
   } catch (error) {
     logger.error('Pyodide file list endpoint error:', error);
     res.status(500).json({
@@ -491,19 +510,34 @@ router.get('/file-info/:filename', async (req, res) => {
     try {
       const pyodideResult = await pyodideService.executeCode(`
 import os
-if os.path.exists('${filename}'):
-    stat_info = os.stat('${filename}')
-    {
+filename = '${filename}'
+if os.path.exists(filename):
+    stat_info = os.stat(filename)
+    result = {
         'exists': True,
         'size': stat_info.st_size,
         'modified': stat_info.st_mtime
     }
 else:
-    {'exists': False}
+    result = {'exists': False}
+
+result
       `);
 
       if (pyodideResult.success && pyodideResult.result) {
-        result.pyodideFile = pyodideResult.result;
+        try {
+          // Convert Python dictionary string to JSON
+          let jsonString = pyodideResult.result
+            .replace(/'/g, '"')  // Single quotes to double quotes
+            .replace(/True/g, 'true')  // Python True to JSON true
+            .replace(/False/g, 'false');  // Python False to JSON false
+          
+          const pyodideFileInfo = JSON.parse(jsonString);
+          result.pyodideFile = pyodideFileInfo;
+        } catch (parseError) {
+          logger.warn(`Could not parse Pyodide file result for ${filename}:`, parseError.message);
+          result.pyodideFile = { exists: false };
+        }
       }
     } catch (pyodideError) {
       logger.warn(`Could not check Pyodide file ${filename}:`, pyodideError.message);

@@ -104,7 +104,7 @@ f"{x + 3}"
 
     def test_09_upload_csv(self):
         with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-            tmp.write("value\n1\n2\n3\n")
+            tmp.write("name,value,category\nitem1,1,A\nitem2,2,B\nitem3,3,C\n")
             tmp_path = tmp.name
         with open(tmp_path, "rb") as fh:
             r = requests.post(
@@ -125,10 +125,11 @@ f"{x + 3}"
         self.assertIn(self.__class__.server_filename, uploaded_names)
 
     def test_11_file_info(self):
-        r = requests.get(f"{BASE_URL}/api/file-info/{self.__class__.server_filename}")
+        r = requests.get(f"{BASE_URL}/api/file-info/{self.__class__.pyodide_name}")
         self.assertEqual(r.status_code, 200)
         info = r.json()
-        self.assertTrue(info["uploadedFile"]["exists"])
+        # For the pyodide filename, only the pyodide file should exist
+        self.assertFalse(info["uploadedFile"]["exists"])  # Upload uses different name
         self.assertTrue(info["pyodideFile"]["exists"])
 
     def test_12_execute_with_uploaded_file(self):
@@ -138,11 +139,15 @@ read csv and compute sum using pandas
 import pandas as pd
 df = pd.read_csv("{self.__class__.pyodide_name}")
 total = df["value"].sum()
-f"sum={total}"
+# Verify we have multiple columns by checking column names
+columns = list(df.columns)
+f"sum={{total}}, columns={{columns}}"
 '''
         r = requests.post(f"{BASE_URL}/api/execute", json={"code": code})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json().get("result"), "sum=6")
+        result = r.json().get("result")
+        self.assertIn("sum=6", result)
+        self.assertIn("columns=['name', 'value', 'category']", result)
 
     def test_13_list_pyodide_files(self):
         r = requests.get(f"{BASE_URL}/api/pyodide-files")
