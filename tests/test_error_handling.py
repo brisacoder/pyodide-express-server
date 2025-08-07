@@ -12,7 +12,7 @@ def wait_for_server(url: str, timeout: int = 120):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            r = requests.get(url, timeout=5)
+            r = requests.get(url, timeout=5, timeout=10)
             if r.status_code == 200:
                 return
         except Exception:
@@ -49,7 +49,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
     
     def test_execute_empty_code(self):
         """Test execution with empty code"""
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": ""})
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": ""}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
@@ -57,14 +57,14 @@ class ErrorHandlingTestCase(unittest.TestCase):
 
     def test_execute_whitespace_only_code(self):
         """Test execution with only whitespace"""
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "   \n\t  \n  "})
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "   \\n\\t  \\n  "}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_execute_no_code_field(self):
         """Test execution without code field"""
-        r = requests.post(f"{BASE_URL}/api/execute", json={})
+        r = requests.post(f"{BASE_URL}/api/execute", json={}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
@@ -72,7 +72,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
 
     def test_execute_invalid_code_type(self):
         """Test execution with non-string code"""
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": 123})
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": 123}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
@@ -88,7 +88,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
 
     def test_execute_runtime_error(self):
         """Test execution with runtime error"""
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "x = 1 / 0"})
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "x = 1 / 0"}, timeout=10)
         self.assertEqual(r.status_code, 200)
         response = r.json()
         self.assertFalse(response.get("success"))
@@ -97,7 +97,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
     def test_execute_very_long_code(self):
         """Test execution with code exceeding length limit"""
         long_code = "x = 1\n" * 50000  # Should exceed 100KB limit
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": long_code})
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": long_code}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
@@ -129,42 +129,42 @@ class ErrorHandlingTestCase(unittest.TestCase):
     
     def test_install_empty_package(self):
         """Test installing package with empty name"""
-        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": ""})
+        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": ""}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_install_no_package_field(self):
         """Test installing without package field"""
-        r = requests.post(f"{BASE_URL}/api/install-package", json={})
+        r = requests.post(f"{BASE_URL}/api/install-package", json={}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_install_invalid_package_type(self):
         """Test installing with non-string package name"""
-        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": 123})
+        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": 123}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_install_invalid_package_name(self):
         """Test installing package with invalid characters"""
-        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "invalid@package!"})
+        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "invalid@package!"}, timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_install_blocked_package(self):
         """Test installing blocked package"""
-        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "os"})
+        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "os"}, timeout=10)
         self.assertEqual(r.status_code, 403)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_install_nonexistent_package(self):
         """Test installing package that doesn't exist"""
-        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "nonexistent-package-xyz123"})
+        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "nonexistent-package-xyz123"}, timeout=10)
         self.assertEqual(r.status_code, 200)  # Should return 200 but with error in result
         response = r.json()
         self.assertFalse(response.get("success"))
@@ -173,7 +173,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
     
     def test_upload_no_file(self):
         """Test upload without file"""
-        r = requests.post(f"{BASE_URL}/api/upload-csv")
+        r = requests.post(f"{BASE_URL}/api/upload-csv", timeout=10)
         self.assertEqual(r.status_code, 400)
 
     def test_upload_invalid_file_type(self):
@@ -213,21 +213,21 @@ class ErrorHandlingTestCase(unittest.TestCase):
 
     def test_delete_nonexistent_uploaded_file(self):
         """Test deleting uploaded file that doesn't exist"""
-        r = requests.delete(f"{BASE_URL}/api/uploaded-files/nonexistent.csv")
+        r = requests.delete(f"{BASE_URL}/api/uploaded-files/nonexistent.csv", timeout=10)
         self.assertEqual(r.status_code, 404)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_delete_nonexistent_pyodide_file(self):
         """Test deleting pyodide file that doesn't exist"""
-        r = requests.delete(f"{BASE_URL}/api/pyodide-files/nonexistent.csv")
+        r = requests.delete(f"{BASE_URL}/api/pyodide-files/nonexistent.csv", timeout=10)
         self.assertEqual(r.status_code, 404)
         response = r.json()
         self.assertFalse(response.get("success"))
 
     def test_file_info_nonexistent_file(self):
         """Test getting info for nonexistent file"""
-        r = requests.get(f"{BASE_URL}/api/file-info/nonexistent.csv")
+        r = requests.get(f"{BASE_URL}/api/file-info/nonexistent.csv", timeout=10)
         self.assertEqual(r.status_code, 200)  # Should return info showing file doesn't exist
         response = r.json()
         self.assertFalse(response["uploadedFile"]["exists"])
@@ -235,7 +235,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
 
     def test_delete_file_with_path_traversal(self):
         """Test deleting file with path traversal attempt"""
-        r = requests.delete(f"{BASE_URL}/api/uploaded-files/../../../etc/passwd")
+        r = requests.delete(f"{BASE_URL}/api/uploaded-files/../../../etc/passwd", timeout=10)
         self.assertEqual(r.status_code, 400)
         response = r.json()
         self.assertFalse(response.get("success"))
@@ -245,7 +245,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
     
     def test_invalid_endpoint(self):
         """Test requesting non-existent endpoint"""
-        r = requests.get(f"{BASE_URL}/api/nonexistent")
+        r = requests.get(f"{BASE_URL}/api/nonexistent", timeout=10)
         self.assertEqual(r.status_code, 404)
 
     def test_invalid_method(self):

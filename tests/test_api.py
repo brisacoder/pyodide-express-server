@@ -1,9 +1,10 @@
 import os
+import subprocess
 import tempfile
 import time
-import subprocess
-import requests
 import unittest
+
+import requests
 
 BASE_URL = "http://localhost:3000"
 
@@ -50,22 +51,22 @@ class APITestCase(unittest.TestCase):
                 cls.server.kill()
 
     def test_01_health(self):
-        r = requests.get(f"{BASE_URL}/health")
+        r = requests.get(f"{BASE_URL}/health", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json().get("status"), "ok")
 
     def test_02_status(self):
-        r = requests.get(f"{BASE_URL}/api/status")
+        r = requests.get(f"{BASE_URL}/api/status", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertIn("isReady", r.json())
 
     def test_03_pyodide_health(self):
-        r = requests.get(f"{BASE_URL}/api/health")
+        r = requests.get(f"{BASE_URL}/api/health", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json().get("success"))
 
     def test_04_stats(self):
-        r = requests.get(f"{BASE_URL}/api/stats")
+        r = requests.get(f"{BASE_URL}/api/stats", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertIn("uptime", r.json())
 
@@ -79,7 +80,7 @@ class APITestCase(unittest.TestCase):
         self.assertIn("success", r.json())
 
     def test_06_list_packages(self):
-        r = requests.get(f"{BASE_URL}/api/packages")
+        r = requests.get(f"{BASE_URL}/api/packages", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertIn("result", r.json())
 
@@ -90,7 +91,7 @@ basic demonstration
 name = "World"
 f"Hello {name}"
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": exec_code})
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": exec_code}, timeout=30)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json().get("result"), "Hello World")
 
@@ -105,6 +106,7 @@ f"{x + 3}"
             f"{BASE_URL}/api/execute-raw",
             data=raw_code,
             headers={"Content-Type": "text/plain"},
+            timeout=30,
         )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json().get("result"), "6")
@@ -117,6 +119,7 @@ f"{x + 3}"
             r = requests.post(
                 f"{BASE_URL}/api/upload-csv",
                 files={"csvFile": ("data.csv", fh, "text/csv")},
+                timeout=30,
             )
         os.unlink(tmp_path)
         self.assertEqual(r.status_code, 200)
@@ -126,13 +129,13 @@ f"{x + 3}"
         self.__class__.server_filename = os.path.basename(upload_data["file"]["tempPath"])
 
     def test_10_list_uploaded_files(self):
-        r = requests.get(f"{BASE_URL}/api/uploaded-files")
+        r = requests.get(f"{BASE_URL}/api/uploaded-files", timeout=10)
         self.assertEqual(r.status_code, 200)
         uploaded_names = [f["filename"] for f in r.json().get("files", [])]
         self.assertIn(self.__class__.server_filename, uploaded_names)
 
     def test_11_file_info(self):
-        r = requests.get(f"{BASE_URL}/api/file-info/{self.__class__.pyodide_name}")
+        r = requests.get(f"{BASE_URL}/api/file-info/{self.__class__.pyodide_name}", timeout=10)
         self.assertEqual(r.status_code, 200)
         info = r.json()
         # For the pyodide filename, only the pyodide file should exist
@@ -150,30 +153,30 @@ total = df["value"].sum()
 columns = list(df.columns)
 f"sum={{total}}, columns={{columns}}"
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code})
+        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
         self.assertEqual(r.status_code, 200)
         result = r.json().get("result")
         self.assertIn("sum=6", result)
         self.assertIn("columns=['name', 'value', 'category']", result)
 
     def test_13_list_pyodide_files(self):
-        r = requests.get(f"{BASE_URL}/api/pyodide-files")
+        r = requests.get(f"{BASE_URL}/api/pyodide-files", timeout=10)
         self.assertEqual(r.status_code, 200)
         py_files = [f["name"] for f in r.json().get("result", {}).get("files", [])]
         self.assertIn(self.__class__.pyodide_name, py_files)
 
     def test_14_delete_pyodide_file(self):
-        r = requests.delete(f"{BASE_URL}/api/pyodide-files/{self.__class__.pyodide_name}")
+        r = requests.delete(f"{BASE_URL}/api/pyodide-files/{self.__class__.pyodide_name}", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json().get("success"))
 
     def test_15_delete_uploaded_file(self):
-        r = requests.delete(f"{BASE_URL}/api/uploaded-files/{self.__class__.server_filename}")
+        r = requests.delete(f"{BASE_URL}/api/uploaded-files/{self.__class__.server_filename}", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json().get("success"))
 
     def test_16_reset(self):
-        r = requests.post(f"{BASE_URL}/api/reset")
+        r = requests.post(f"{BASE_URL}/api/reset", timeout=10)
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json().get("success"))
 
