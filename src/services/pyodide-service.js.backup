@@ -292,11 +292,15 @@ print("🎉 Pyodide environment ready!")
         this.pyodide.globals.set(key, value);
       }
 
-      // Execute everything in Python and return JSON to completely avoid proxy issues
-      const wrappedCode = `
-import json
-import traceback
+      // Start output capture
+      await this.pyodide.runPythonAsync('output_capture.start_capture()');
 
+      let result;
+      let executionError = null;
+
+      // Execute the code and handle all conversions in Python to avoid proxy issues
+      try {
+        const wrappedCode = `
 # Start output capture
 output_capture.start_capture()
 _exec_success = True
@@ -304,42 +308,28 @@ _exec_error = None
 _exec_result = None
 
 try:
-    # Execute user code in a clean namespace
-    _exec_globals = globals().copy()
-    _exec_locals = {}
-    
-    # Execute the user code
-    exec('''${code.replace(/'/g, "\\'")}''', _exec_globals, _exec_locals)
-    
-    # Get the result - try to eval the last line as an expression first
-    _code_lines = '''${code.replace(/'/g, "\\'")}'''.strip().split('\\n')
-    if _code_lines:
-        _last_line = _code_lines[-1].strip()
-        if _last_line and not _last_line.startswith(('#', 'import ', 'from ', 'def ', 'class ', 'if ', 'for ', 'while ', 'with ', 'try:', 'except:', 'finally:', 'else:')):
-            try:
-                _exec_result = eval(_last_line, _exec_globals, _exec_locals)
-            except:
-                # If eval fails, check if the last line is a variable name that exists
-                if _last_line in _exec_locals:
-                    _exec_result = _exec_locals[_last_line]
-                elif _last_line in _exec_globals:
-                    _exec_result = _exec_globals[_last_line]
-                    
+    # Execute user code
+    ${code}
+    # Get the last expression result if available
+    if '_' in locals():
+        _exec_result = _
+    elif '_' in globals():
+        _exec_result = globals()['_']
 except Exception as e:
     _exec_success = False
     _exec_error = str(e)
+    import traceback
     traceback.print_exc()
 
 # Stop capture and get output
 _output = output_capture.stop_capture()
 output_capture.reset()
 
-# Create result dictionary and convert everything to JSON-safe format
+# Create result dictionary
 _final_result = {
     'success': _exec_success,
     'stdout': _output['stdout'],
-    'stderr': _output['stderr'],
-    'timestamp': '${new Date().toISOString()}'
+    'stderr': _output['stderr']
 }
 
 if _exec_success:
@@ -352,24 +342,126 @@ else:
     _final_result['result'] = None
     _final_result['error'] = _exec_error
 
-# Return as JSON string to completely avoid any proxy issues
+# Return as JSON string to avoid proxy issues
+import json
 json.dumps(_final_result)
 `;
 
-      // Execute the wrapped code and get JSON result
-      const jsonResult = await this.pyodide.runPythonAsync(wrappedCode);
-      
-      // Parse the JSON result
-      const result = JSON.parse(jsonResult);
-      
-      return {
-        success: result.success,
-        result: result.result,
-        error: result.error,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        timestamp: result.timestamp
-      };
+        const jsonResult = await this.pyodide.runPythonAsync(wrappedCode);
+        
+        // Parse the JSON string result
+        const finalResult = JSON.parse(jsonResult);
+        
+        return {
+          success: finalResult.success,
+          result: finalResult.result,
+          error: finalResult.error,
+          stdout: finalResult.stdout,
+          stderr: finalResult.stderr,
+          timestamp: new Date().toISOString()
+        };
+        
+      } catch (wrapperError) {
+        // Fallback to original method if the wrapped approach fails
+        logger.warn('Wrapped execution failed, falling back to original method:', wrapperError.message);
+        
+        await this.pyodide.runPythonAsync('output_capture.start_capture()');
+        
+        let result;
+        let executionError = null;
+        
+        try {
+          if (code.includes('await ') || code.includes('micropip.install')) {
+            result = await this.pyodide.runPythonAsync(code);
+          } else {
+            result = this.pyodide.runPython(code);
+          }
+        } catch (execError) {
+          executionError = execError;
+        }
+        
+        const output = await this.pyodide.runPythonAsync('output_capture.stop_capture()');
+        const stdout = output.get('stdout')?.toString() || '';
+        const stderr = output.get('stderr')?.toString() || '';
+        await this.pyodide.runPythonAsync('output_capture.reset()');
+        
+        if (executionError) {
+          return {
+            success: false,
+            error: executionError.message,
+            stdout: stdout,
+            stderr: stderr,
+            timestamp: new Date().toISOString()
+          };
+        }
+        
+        // Convert result safely
+        let jsonSafeResult = null;
+        if (result !== undefined && result !== null) {
+          try {
+            this.pyodide.globals.set('_temp_result', result);
+            jsonSafeResult = await this.pyodide.runPythonAsync('make_json_safe(_temp_result)');
+            await this.pyodide.runPythonAsync('del _temp_result');
+          } catch (conversionError) {
+            jsonSafeResult = String(result);
+          }
+        }
+        
+        return {
+          success: true,
+          result: jsonSafeResult,
+          stdout: stdout,
+          stderr: stderr,
+          timestamp: new Date().toISOString()
+        };
+      }
+        await this.pyodide.runPythonAsync('output_capture.start_capture()');
+        
+        try {
+          if (code.includes('await ') || code.includes('micropip.install')) {
+            result = await this.pyodide.runPythonAsync(code);
+          } else {
+            result = this.pyodide.runPython(code);
+          }
+        } catch (execError) {
+          executionError = execError;
+        }
+        
+        const output = await this.pyodide.runPythonAsync('output_capture.stop_capture()');
+        const stdout = output.get('stdout')?.toString() || '';
+        const stderr = output.get('stderr')?.toString() || '';
+        await this.pyodide.runPythonAsync('output_capture.reset()');
+        
+        if (executionError) {
+          return {
+            success: false,
+            error: executionError.message,
+            stdout: stdout,
+            stderr: stderr,
+            timestamp: new Date().toISOString()
+          };
+        }
+        
+        // Convert result safely
+        let jsonSafeResult = null;
+        if (result !== undefined && result !== null) {
+          try {
+            this.pyodide.globals.set('_temp_result', result);
+            jsonSafeResult = await this.pyodide.runPythonAsync('make_json_safe(_temp_result)');
+            await this.pyodide.runPythonAsync('del _temp_result');
+          } catch (conversionError) {
+            jsonSafeResult = String(result);
+          }
+        }
+        
+        return {
+          success: true,
+          result: jsonSafeResult,
+          stdout: stdout,
+          stderr: stderr,
+          timestamp: new Date().toISOString()
+        };
+      }
 
     } catch (error) {
       // Ensure cleanup

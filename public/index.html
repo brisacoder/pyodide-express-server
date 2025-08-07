@@ -444,7 +444,25 @@ result
                         output += `Output:\n${result.stdout}\n`;
                     }
                     if (result.result !== undefined && result.result !== null) {
-                        output += `\nReturn Value:\n${JSON.stringify(result.result, null, 2)}`;
+                        try {
+                            console.log('Trying to stringify result:', result.result);
+                            console.log('Result type:', typeof result.result);
+                            console.log('Result constructor:', result.result.constructor.name);
+                            
+                            // Add debug info to the UI output
+                            output += `\nDEBUG INFO:\n`;
+                            output += `- Result type: ${typeof result.result}\n`;
+                            output += `- Result constructor: ${result.result.constructor.name}\n`;
+                            output += `- Raw result toString: ${result.result.toString()}\n`;
+                            
+                            const stringified = JSON.stringify(result.result, null, 2);
+                            output += `\nReturn Value:\n${stringified}`;
+                        } catch (stringifyError) {
+                            console.error('JSON.stringify error:', stringifyError);
+                            output += `\nReturn Value: [Error serializing result: ${stringifyError.message}]`;
+                            output += `\nRaw result: ${result.result}`;
+                            output += `\nError details: ${stringifyError.toString()}`;
+                        }
                     }
                     resultDiv.innerHTML = `<div class="success">${output || 'Code executed successfully (no output)'}</div>`;
                 } else {
