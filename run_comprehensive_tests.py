@@ -330,7 +330,9 @@ class ComprehensiveTestRunner:
             ('tests.test_performance', 'Performance'),
             ('tests.test_reset', 'Reset'),
             ('tests.test_non_happy_paths', 'Extra Non-Happy Paths'),
-            ('tests.test_sklearn', 'Scikit-Learn')
+            ('tests.test_sklearn', 'Scikit-Learn'),
+            ('tests.test_matplotlib', 'Matplotlib Plotting'),
+            ('tests.test_seaborn', 'Seaborn Plotting')
         ]
         
         if selected_categories:
@@ -366,9 +368,10 @@ class ComprehensiveTestRunner:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description='Run comprehensive tests for Pyodide Express Server')
-    parser.add_argument('--categories', nargs='*', 
-                       choices=['basic', 'error', 'integration', 'security', 'performance', 'reset', 'extra', 'sklearn'],
-                       help='Specific test categories to run (default: all)')
+    parser.add_argument('--categories', nargs='*',
+                        choices=['basic', 'error', 'integration', 'security', 'performance', 
+                                'reset', 'extra', 'sklearn', 'matplotlib', 'seaborn'],
+                        help='Specific test categories to run (default: all)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Verbose output')
     parser.add_argument('--quiet', '-q', action='store_true', 
@@ -386,13 +389,15 @@ def main():
     # Map category names
     category_map = {
         'basic': 'Basic API',
-        'error': 'Error Handling', 
+        'error': 'Error Handling',
         'integration': 'Integration',
         'security': 'Security',
         'performance': 'Performance',
-    'reset': 'Reset',
-    'extra': 'Extra Non-Happy Paths',
-    'sklearn': 'Scikit-Learn'
+        'reset': 'Reset',
+        'extra': 'Extra Non-Happy Paths',
+        'sklearn': 'Scikit-Learn',
+        'matplotlib': 'Matplotlib Plotting',
+        'seaborn': 'Seaborn Plotting'
     }
     
     selected_categories = None
@@ -405,6 +410,7 @@ def main():
     
     # Exit with appropriate code
     sys.exit(0 if success else 1)
+
 
 if __name__ == '__main__':
     main()
