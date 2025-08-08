@@ -11,16 +11,102 @@ import sys
 import unittest
 import argparse
 import time
+import subprocess
+import requests
 from io import StringIO
 
 # Test modules to import
 test_modules = [
     'tests.test_api',
-    'tests.test_error_handling', 
+    'tests.test_error_handling',
     'tests.test_integration',
     'tests.test_security',
-    'tests.test_performance'
+    'tests.test_performance',
+    'tests.test_reset'
 ]
+
+
+class ServerManager:
+    """Manages the test server lifecycle with crash recovery."""
+    
+    def __init__(self, base_url="http://localhost:3000", timeout=60):
+        self.base_url = base_url
+        self.timeout = timeout
+        self.server_process = None
+        
+    def start_server(self):
+        """Start the server and wait for it to be ready."""
+        if self.server_process:
+            self.stop_server()
+            
+        print("Starting server...")
+        try:
+            # Start server in subprocess with no pipes to avoid hanging
+            self.server_process = subprocess.Popen(
+                ["node", "src/server.js"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=os.getcwd()
+            )
+            
+            print("Server process started, waiting for it to be ready...")
+            
+            # Wait for server to be ready
+            start_time = time.time()
+            dots = 0
+            while time.time() - start_time < self.timeout:
+                try:
+                    response = requests.get(f"{self.base_url}/health", timeout=5)
+                    if response.status_code == 200:
+                        print("\n✅ Server is ready")
+                        return True
+                except Exception:
+                    pass
+                
+                # Show progress dots
+                if dots % 5 == 0:
+                    print(".", end="", flush=True)
+                dots += 1
+                time.sleep(1)
+                
+            print(f"\n❌ Server failed to start within {self.timeout} seconds")
+            self.stop_server()
+            return False
+            
+        except Exception as e:
+            print(f"❌ Failed to start server: {e}")
+            return False
+    
+    def stop_server(self):
+        """Stop the server process."""
+        if self.server_process:
+            try:
+                self.server_process.terminate()
+                try:
+                    self.server_process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self.server_process.kill()
+                    self.server_process.wait()
+            except Exception as e:
+                print(f"Warning: Error stopping server: {e}")
+            finally:
+                self.server_process = None
+    
+    def is_server_running(self):
+        """Check if server is running and responsive."""
+        try:
+            response = requests.get(f"{self.base_url}/health", timeout=5)
+            return response.status_code == 200
+        except Exception:
+            return False
+    
+    def restart_server_if_needed(self):
+        """Restart server if it's not running."""
+        if not self.is_server_running():
+            print("🔄 Server appears to be down, restarting...")
+            return self.start_server()
+        return True
+
 
 class DetailedTestResult(unittest.TextTestResult):
     """Enhanced test result with timing and detailed reporting."""
@@ -69,12 +155,27 @@ class ComprehensiveTestRunner:
     def __init__(self, verbosity=2):
         self.verbosity = verbosity
         self.results = {}
+        self.server_manager = ServerManager()
         
     def run_test_category(self, module_name, category_name):
         """Run tests for a specific category."""
         print(f"\n{'='*60}")
         print(f"Running {category_name} Tests")
         print(f"{'='*60}")
+        
+        # Security tests can crash the server, so ensure it's running before each category
+        if category_name == 'Security':
+            print("⚠️  Security tests may cause server instability - ensuring server is ready...")
+            if not self.server_manager.restart_server_if_needed():
+                print("❌ Could not start server for security tests")
+                self.results[category_name] = {
+                    'error': 'Server startup failed',
+                    'tests_run': 0,
+                    'failures': 0,
+                    'errors': 1,
+                    'skipped': 0
+                }
+                return False
         
         try:
             # Import the test module
@@ -110,6 +211,10 @@ class ComprehensiveTestRunner:
             # Print summary for this category
             self.print_category_summary(category_name)
             
+            # Check if server is still running after security tests
+            if category_name == 'Security' and not self.server_manager.is_server_running():
+                print("⚠️  Server crashed during security tests (this may be expected behavior)")
+            
             return result.wasSuccessful()
             
         except ImportError as e:
@@ -122,7 +227,8 @@ class ComprehensiveTestRunner:
                 'skipped': 0
             }
             return False
-            
+
+
     def print_category_summary(self, category_name):
         """Print summary for a test category."""
         result_data = self.results[category_name]
@@ -217,7 +323,8 @@ class ComprehensiveTestRunner:
             ('tests.test_error_handling', 'Error Handling'),
             ('tests.test_integration', 'Integration'),
             ('tests.test_security', 'Security'),
-            ('tests.test_performance', 'Performance')
+            ('tests.test_performance', 'Performance'),
+            ('tests.test_reset', 'Reset')
         ]
         
         if selected_categories:
@@ -227,18 +334,34 @@ class ComprehensiveTestRunner:
         print("Starting Comprehensive Test Suite")
         print(f"Running {len(categories)} test categories...")
         
-        all_successful = True
-        for module_name, category_name in categories:
-            success = self.run_test_category(module_name, category_name)
-            all_successful = all_successful and success
+        # Start server for testing
+        if not self.server_manager.start_server():
+            print("❌ Failed to start server. Cannot run tests.")
+            return False
+        
+        try:
+            all_successful = True
+            for module_name, category_name in categories:
+                success = self.run_test_category(module_name, category_name)
+                all_successful = all_successful and success
+                
+                # Restart server after security tests if it crashed
+                if category_name == 'Security' and not self.server_manager.is_server_running():
+                    print("🔄 Restarting server after security tests...")
+                    self.server_manager.start_server()
             
-        return self.print_overall_summary()
+            return self.print_overall_summary()
+            
+        finally:
+            # Always stop the server when done
+            print("\n🛑 Stopping test server...")
+            self.server_manager.stop_server()
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description='Run comprehensive tests for Pyodide Express Server')
     parser.add_argument('--categories', nargs='*', 
-                       choices=['basic', 'error', 'integration', 'security', 'performance'],
+                       choices=['basic', 'error', 'integration', 'security', 'performance', 'reset'],
                        help='Specific test categories to run (default: all)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Verbose output')
@@ -260,7 +383,8 @@ def main():
         'error': 'Error Handling', 
         'integration': 'Integration',
         'security': 'Security',
-        'performance': 'Performance'
+        'performance': 'Performance',
+        'reset': 'Reset'
     }
     
     selected_categories = None

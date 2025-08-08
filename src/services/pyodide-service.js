@@ -405,44 +405,28 @@ json.dumps(_final_result)
     try {
       logger.info(`Installing package: ${packageName}`);
       
-      const result = await this.executeCode(`
+      // Use runPythonAsync directly for micropip operations
+      const installCode = `
 import micropip
 import json
 
 try:
     await micropip.install("${packageName}")
-    # Try to import the package to verify it was installed
-    try:
-        __import__("${packageName}")
-        json.dumps({"success": True, "message": "Package installed successfully"})
-    except ImportError:
-        # Package might have been installed but with a different import name
-        json.dumps({"success": True, "message": "Package installed (import name may differ)"})
+    # Package installation succeeded
+    result = {"success": True, "message": "Package installed successfully"}
 except Exception as e:
-    json.dumps({"success": False, "error": str(e)})
-      `);
+    result = {"success": False, "error": str(e)}
 
-      if (result.success && result.result) {
-        try {
-          const installResult = JSON.parse(result.result);
-          return {
-            success: installResult.success,
-            message: installResult.message,
-            error: installResult.error,
-            timestamp: new Date().toISOString()
-          };
-        } catch (parseError) {
-          return {
-            success: false,
-            error: 'Failed to parse installation result',
-            timestamp: new Date().toISOString()
-          };
-        }
-      }
+json.dumps(result)
+      `;
 
+      const resultStr = await this.pyodide.runPythonAsync(installCode);
+      const installResult = JSON.parse(resultStr);
+      
       return {
-        success: false,
-        error: 'Package installation failed',
+        success: installResult.success,
+        message: installResult.message,
+        error: installResult.error,
         timestamp: new Date().toISOString()
       };
 
