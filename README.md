@@ -13,6 +13,22 @@ A Node.js Express service that exposes a REST API for executing Python code via 
 - **Environment Management** - Reset Python environment, manage package state
 - **Robust Testing** - Extensive test suite covering API, security, performance, and data science
 - **Modular Architecture** - Clean, extensible design for adding new routes and features
+- **Direct Filesystem Mounting** - Files created in Python appear directly in local filesystem (no API calls needed!)
+
+## 📁 Direct Filesystem Access
+
+**NEW!** The server implements true filesystem mounting per [Pyodide documentation](https://pyodide.org/en/stable/usage/accessing-files.html). When Python code creates files in mounted directories, they appear **directly** in your local filesystem automatically!
+
+```python
+# This Python code creates files directly on your local machine:
+import matplotlib.pyplot as plt
+
+plt.plot([1, 2, 3], [1, 4, 2])
+plt.savefig('/plots/matplotlib/my_chart.png')  # Appears instantly in local plots/ folder!
+```
+
+**📖 Complete Guide:** See [`docs/FILESYSTEM_MOUNTING_GUIDE.md`](docs/FILESYSTEM_MOUNTING_GUIDE.md) for comprehensive documentation  
+**🚀 Quick Reference:** See [`docs/QUICK_REFERENCE_FILESYSTEM.md`](docs/QUICK_REFERENCE_FILESYSTEM.md) for examples
 
 ## Quick Start
 
