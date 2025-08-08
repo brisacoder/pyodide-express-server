@@ -250,6 +250,45 @@ def make_json_safe(obj):
 print("🎉 Pyodide environment ready!")
       `);
 
+      // Setup virtual filesystem for plot saving
+      logger.info('Setting up virtual filesystem for plots...');
+      try {
+        const path = require('path');
+        const plotsDir = path.resolve(__dirname, '../../plots');
+        
+        // Ensure the real plots directory exists
+        const fs = require('fs');
+        if (!fs.existsSync(plotsDir)) {
+          fs.mkdirSync(plotsDir, { recursive: true });
+          logger.info(`Created plots directory: ${plotsDir}`);
+        }
+        
+        // Create subdirectories for different plot types
+        const plotSubdirs = ['matplotlib', 'seaborn'];
+        for (const subdir of plotSubdirs) {
+          const subdirPath = path.join(plotsDir, subdir);
+          if (!fs.existsSync(subdirPath)) {
+            fs.mkdirSync(subdirPath, { recursive: true });
+          }
+        }
+        
+        // Create virtual directories in Pyodide filesystem for plot saving
+        await this.pyodide.runPythonAsync(`
+import os
+# Create plot directories in virtual filesystem
+plot_dirs = ['/plots', '/plots/matplotlib', '/plots/seaborn']
+for plot_dir in plot_dirs:
+    os.makedirs(plot_dir, exist_ok=True)
+    print(f"Created virtual directory: {plot_dir}")
+`);
+        
+        logger.info('✅ Virtual plot directories created successfully');
+        
+      } catch (setupError) {
+        logger.warn('⚠️  Failed to setup plot directories:', setupError.message);
+        // Continue initialization even if setup fails
+      }
+
       this.isReady = true;
       logger.info('🎉 Pyodide initialization completed successfully!');
       
@@ -895,6 +934,127 @@ except Exception as e:
       return result;
     } catch (error) {
       throw new Error(`Failed to get environment info: ${error.message}`);
+    }
+  }
+  /**
+   * Extract a file from Pyodide's virtual filesystem and save it to the real filesystem
+   * @param {string} virtualPath - Path in Pyodide's virtual filesystem (e.g., '/plots/matplotlib/plot.png')
+   * @param {string} realPath - Path in the real filesystem where to save the file
+   * @returns {Promise<boolean>} - True if file was successfully extracted
+   */
+  async extractVirtualFile(virtualPath, realPath) {
+    if (!this.isReady) {
+      throw new Error('Pyodide is not ready');
+    }
+
+    try {
+      const result = await this.pyodide.runPythonAsync(`
+import os
+import shutil
+
+virtual_path = '${virtualPath}'
+try:
+    # Check if file exists in virtual filesystem
+    if os.path.exists(virtual_path):
+        # Read the file content from virtual filesystem
+        with open(virtual_path, 'rb') as f:
+            file_content = f.read()
+        
+        # Return file content as base64 for transfer
+        import base64
+        {
+            'success': True,
+            'file_exists': True,
+            'content_b64': base64.b64encode(file_content).decode('utf-8'),
+            'file_size': len(file_content)
+        }
+    else:
+        {
+            'success': False,
+            'file_exists': False,
+            'error': f'File {virtual_path} does not exist in virtual filesystem'
+        }
+except Exception as e:
+    {
+        'success': False,
+        'file_exists': False,
+        'error': str(e)
+    }
+      `);
+
+      if (!result.success) {
+        logger.warn(`Failed to extract virtual file ${virtualPath}:`, result.error);
+        return false;
+      }
+
+      // Decode base64 content and write to real filesystem
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Ensure directory exists
+      const dir = path.dirname(realPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      // Write file content
+      const buffer = Buffer.from(result.content_b64, 'base64');
+      fs.writeFileSync(realPath, buffer);
+      
+      logger.info(`✅ Extracted virtual file ${virtualPath} to ${realPath} (${result.file_size} bytes)`);
+      return true;
+
+    } catch (error) {
+      logger.error(`Failed to extract virtual file ${virtualPath}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Extract all plot files from virtual filesystem to real filesystem
+   * @returns {Promise<Array>} - Array of extracted file paths
+   */
+  async extractAllPlotFiles() {
+    if (!this.isReady) {
+      throw new Error('Pyodide is not ready');
+    }
+
+    try {
+      // Get list of all files in virtual plot directories
+      const result = await this.pyodide.runPythonAsync(`
+import os
+
+plot_files = []
+plot_dirs = ['/plots/matplotlib', '/plots/seaborn']
+
+for plot_dir in plot_dirs:
+    if os.path.exists(plot_dir):
+        for filename in os.listdir(plot_dir):
+            file_path = os.path.join(plot_dir, filename)
+            if os.path.isfile(file_path):
+                plot_files.append(file_path)
+
+plot_files
+      `);
+
+      const extractedFiles = [];
+      const path = require('path');
+
+      for (const virtualPath of result) {
+        // Convert virtual path to real path
+        const relativePath = virtualPath.replace('/plots/', '');
+        const realPath = path.join(__dirname, '../../plots', relativePath);
+        
+        const success = await this.extractVirtualFile(virtualPath, realPath);
+        if (success) {
+          extractedFiles.push(realPath);
+        }
+      }
+
+      return extractedFiles;
+    } catch (error) {
+      logger.error('Failed to extract plot files:', error.message);
+      return [];
     }
   }
 }

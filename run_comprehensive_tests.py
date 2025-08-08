@@ -25,8 +25,13 @@ test_modules = [
     'tests.test_reset',
     'tests.test_non_happy_paths',
     'tests.test_sklearn',
-    'tests.test_matplotlib',
-    'tests.test_seaborn'
+    'tests.test_matplotlib_base64',
+    'tests.test_matplotlib_filesystem',
+    'tests.test_seaborn_base64',
+    'tests.test_seaborn_filesystem',
+    'tests.test_javascript_module',
+    'tests.test_filesystem_mount',
+    'tests.test_virtual_filesystem'
 ]
 
 
@@ -331,8 +336,13 @@ class ComprehensiveTestRunner:
             ('tests.test_reset', 'Reset'),
             ('tests.test_non_happy_paths', 'Extra Non-Happy Paths'),
             ('tests.test_sklearn', 'Scikit-Learn'),
-            ('tests.test_matplotlib', 'Matplotlib Plotting'),
-            ('tests.test_seaborn', 'Seaborn Plotting')
+            ('tests.test_matplotlib_base64', 'Matplotlib Base64 Plots'),
+            ('tests.test_matplotlib_filesystem', 'Matplotlib VFS Plots'),
+            ('tests.test_seaborn_base64', 'Seaborn Base64 Plots'),
+            ('tests.test_seaborn_filesystem', 'Seaborn VFS Plots'),
+            ('tests.test_javascript_module', 'JavaScript Module'),
+            ('tests.test_filesystem_mount', 'Filesystem Mount'),
+            ('tests.test_virtual_filesystem', 'Virtual Filesystem')
         ]
         
         if selected_categories:
@@ -370,7 +380,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run comprehensive tests for Pyodide Express Server')
     parser.add_argument('--categories', nargs='*',
                         choices=['basic', 'error', 'integration', 'security', 'performance', 
-                                'reset', 'extra', 'sklearn', 'matplotlib', 'seaborn'],
+                                'reset', 'extra', 'sklearn', 'matplotlib_base64', 'matplotlib_vfs', 
+                                'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs'],
                         help='Specific test categories to run (default: all)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Verbose output')
@@ -396,8 +407,13 @@ def main():
         'reset': 'Reset',
         'extra': 'Extra Non-Happy Paths',
         'sklearn': 'Scikit-Learn',
-        'matplotlib': 'Matplotlib Plotting',
-        'seaborn': 'Seaborn Plotting'
+        'matplotlib_base64': 'Matplotlib Base64 Plots',
+        'matplotlib_vfs': 'Matplotlib VFS Plots',
+        'seaborn_base64': 'Seaborn Base64 Plots',
+        'seaborn_vfs': 'Seaborn VFS Plots',
+        'javascript': 'JavaScript Module',
+        'mount': 'Filesystem Mount',
+        'vfs': 'Virtual Filesystem'
     }
     
     selected_categories = None

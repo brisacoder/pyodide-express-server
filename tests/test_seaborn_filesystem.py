@@ -2,7 +2,6 @@ import time
 import unittest
 import requests
 import os
-import base64
 
 BASE_URL = "http://localhost:3000"
 
@@ -20,8 +19,15 @@ def wait_for_server(url: str, timeout: int = 180):
     raise RuntimeError(f"Server at {url} did not start in time")
 
 
-class SeabornTestCase(unittest.TestCase):
-    """Run seaborn plotting workloads inside Pyodide and save plots to local filesystem."""
+class SeabornFilesystemTestCase(unittest.TestCase):
+    """Run seaborn plotting workloads inside Pyodide and save plots directly to virtual filesystem.
+    
+    These tests use the direct file save approach where plots are saved to the virtual filesystem
+    within Pyodide and then extracted using the extract-plots API. This tests the full
+    virtual filesystem integration.
+    
+    For tests that return plots as base64 data, see test_seaborn_base64.py
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -54,8 +60,8 @@ class SeabornTestCase(unittest.TestCase):
             payload = check.json()
             cls.has_seaborn = bool(payload.get("success"))
 
-        # Create plots directory if it doesn't exist
-        cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "seaborn")
+        # Create direct filesystem plots directory (separate from base64 tests)
+        cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "vfs", "seaborn")
         os.makedirs(cls.plots_dir, exist_ok=True)
         
         # Clean up any existing plots before running tests
@@ -78,314 +84,6 @@ class SeabornTestCase(unittest.TestCase):
                         print(f"Removed existing plot: {filename}")
                     except OSError as e:
                         print(f"Warning: Could not remove {filename}: {e}")
-
-    def _save_plot_from_base64(self, base64_data, filename):
-        """Save a base64 encoded plot to the local filesystem."""
-        try:
-            # Decode base64 data
-            image_data = base64.b64decode(base64_data)
-            filepath = os.path.join(self.plots_dir, filename)
-            
-            with open(filepath, 'wb') as f:
-                f.write(image_data)
-            
-            print(f"Plot saved to: {filepath}")
-            return filepath
-        except (ValueError, OSError, IOError) as e:
-            self.fail(f"Failed to save plot: {e}")
-
-    def test_regression_plot(self):
-        """Create a regression plot using seaborn and save to filesystem."""
-        if not getattr(self.__class__, "has_seaborn", False):
-            self.skipTest("seaborn not available in this Pyodide environment")
-        
-        code = r'''
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import io
-import base64
-
-# Set seaborn style
-sns.set_style("whitegrid")
-
-# Create sample data
-np.random.seed(42)
-n = 100
-x = np.random.randn(n)
-y = 2 * x + 1 + 0.5 * np.random.randn(n)
-df = pd.DataFrame({'x': x, 'y': y})
-
-# Create the plot
-plt.figure(figsize=(10, 6))
-sns.regplot(data=df, x='x', y='y', scatter_kws={'alpha':0.6})
-plt.title('Seaborn Regression Plot')
-plt.xlabel('X values')
-plt.ylabel('Y values')
-
-# Save to bytes buffer
-buffer = io.BytesIO()
-plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
-buffer.seek(0)
-
-# Convert to base64 for transmission
-plot_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-plt.close()
-
-{"plot_base64": plot_b64, "plot_type": "regression", "n_points": n, "correlation": float(df.corr().iloc[0,1])}
-'''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
-        self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertTrue(data.get("success"), msg=str(data))
-        
-        result = data.get("result")
-        self.assertIn("plot_base64", result)
-        self.assertEqual(result.get("plot_type"), "regression")
-        self.assertEqual(result.get("n_points"), 100)
-        self.assertGreater(result.get("correlation"), 0.8)  # Should have strong positive correlation
-        
-        # Save the plot to local filesystem
-        filepath = self._save_plot_from_base64(result["plot_base64"], "regression_plot.png")
-        self.assertTrue(os.path.exists(filepath))
-
-    def test_distribution_plot(self):
-        """Create distribution plots using seaborn and save to filesystem."""
-        if not getattr(self.__class__, "has_seaborn", False):
-            self.skipTest("seaborn not available in this Pyodide environment")
-        
-        code = r'''
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import io
-import base64
-
-# Set seaborn style
-sns.set_style("whitegrid")
-
-# Create sample data
-np.random.seed(123)
-data1 = np.random.normal(0, 1, 1000)
-data2 = np.random.gamma(2, 2, 1000)
-data3 = np.random.exponential(1.5, 1000)
-
-df = pd.DataFrame({
-    'Normal': data1,
-    'Gamma': data2,
-    'Exponential': data3
-})
-
-# Create the plot
-fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-
-# Histogram plot
-sns.histplot(data=df, x='Normal', kde=True, ax=axes[0,0])
-axes[0,0].set_title('Normal Distribution')
-
-# Box plot
-sns.boxplot(data=df, ax=axes[0,1])
-axes[0,1].set_title('Box Plot Comparison')
-
-# Violin plot
-sns.violinplot(data=df, ax=axes[1,0])
-axes[1,0].set_title('Violin Plot Comparison')
-
-# Density plot
-for col in df.columns:
-    sns.kdeplot(data=df, x=col, ax=axes[1,1], label=col)
-axes[1,1].set_title('Density Plot Comparison')
-axes[1,1].legend()
-
-plt.tight_layout()
-
-# Save to bytes buffer
-buffer = io.BytesIO()
-plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
-buffer.seek(0)
-
-# Convert to base64 for transmission
-plot_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-plt.close()
-
-{"plot_base64": plot_b64, "plot_type": "distribution", "data_means": {col: float(df[col].mean()) for col in df.columns}}
-'''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
-        self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertTrue(data.get("success"), msg=str(data))
-        
-        result = data.get("result")
-        self.assertIn("plot_base64", result)
-        self.assertEqual(result.get("plot_type"), "distribution")
-        data_means = result.get("data_means", {})
-        self.assertAlmostEqual(data_means.get("Normal", 0), 0.0, delta=0.2)
-        
-        # Save the plot to local filesystem
-        filepath = self._save_plot_from_base64(result["plot_base64"], "distribution_plots.png")
-        self.assertTrue(os.path.exists(filepath))
-
-    def test_correlation_heatmap(self):
-        """Create a correlation heatmap using seaborn and save to filesystem."""
-        if not getattr(self.__class__, "has_seaborn", False):
-            self.skipTest("seaborn not available in this Pyodide environment")
-        
-        code = r'''
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import io
-import base64
-
-# Set seaborn style
-sns.set_style("white")
-
-# Create sample data with correlations
-np.random.seed(42)
-n = 200
-data = {
-    'var1': np.random.randn(n),
-    'var2': np.random.randn(n),
-    'var3': np.random.randn(n),
-    'var4': np.random.randn(n)
-}
-
-# Add some correlations
-data['var2'] = 0.7 * data['var1'] + 0.3 * data['var2']
-data['var3'] = -0.5 * data['var1'] + 0.5 * data['var3']
-data['var4'] = 0.3 * data['var2'] + 0.7 * data['var4']
-
-df = pd.DataFrame(data)
-
-# Calculate correlation matrix
-corr_matrix = df.corr()
-
-# Create the plot
-plt.figure(figsize=(10, 8))
-mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-sns.heatmap(corr_matrix, mask=mask, annot=True, cmap='coolwarm', center=0,
-            square=True, linewidths=0.5, cbar_kws={"shrink": 0.8})
-plt.title('Correlation Heatmap')
-plt.tight_layout()
-
-# Save to bytes buffer
-buffer = io.BytesIO()
-plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
-buffer.seek(0)
-
-# Convert to base64 for transmission
-plot_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-plt.close()
-
-# Return the result dictionary
-result = {
-    "plot_base64": plot_b64,
-    "plot_type": "heatmap",
-    "correlation_var1_var2": float(corr_matrix.loc['var1', 'var2']),
-    "correlation_var1_var3": float(corr_matrix.loc['var1', 'var3'])
-}
-result
-'''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
-        self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertTrue(data.get("success"), msg=str(data))
-        
-        result = data.get("result")
-        self.assertIn("plot_base64", result)
-        self.assertEqual(result.get("plot_type"), "heatmap")
-        self.assertGreater(result.get("correlation_var1_var2"), 0.5)  # Should be positive correlation
-        self.assertLess(result.get("correlation_var1_var3"), 0)  # Should be negative correlation
-        
-        # Save the plot to local filesystem
-        filepath = self._save_plot_from_base64(result["plot_base64"], "correlation_heatmap.png")
-        self.assertTrue(os.path.exists(filepath))
-
-    def test_pair_plot(self):
-        """Create a pair plot using seaborn and save to filesystem."""
-        if not getattr(self.__class__, "has_seaborn", False):
-            self.skipTest("seaborn not available in this Pyodide environment")
-        
-        code = r'''
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import io
-import base64
-
-# Set seaborn style
-sns.set_style("ticks")
-
-# Create sample data (similar to iris dataset structure)
-np.random.seed(42)
-n_per_group = 50
-
-# Group 1
-group1 = pd.DataFrame({
-    'feature1': np.random.normal(5.0, 0.5, n_per_group),
-    'feature2': np.random.normal(3.5, 0.3, n_per_group),
-    'feature3': np.random.normal(4.0, 0.4, n_per_group),
-    'group': 'A'
-})
-
-# Group 2
-group2 = pd.DataFrame({
-    'feature1': np.random.normal(6.5, 0.7, n_per_group),
-    'feature2': np.random.normal(3.0, 0.4, n_per_group),
-    'feature3': np.random.normal(5.5, 0.5, n_per_group),
-    'group': 'B'
-})
-
-# Group 3
-group3 = pd.DataFrame({
-    'feature1': np.random.normal(4.5, 0.6, n_per_group),
-    'feature2': np.random.normal(4.0, 0.3, n_per_group),
-    'feature3': np.random.normal(3.5, 0.4, n_per_group),
-    'group': 'C'
-})
-
-df = pd.concat([group1, group2, group3], ignore_index=True)
-
-# Create the pair plot
-g = sns.pairplot(df, hue='group', diag_kind='hist', plot_kws={'alpha': 0.6})
-g.fig.suptitle('Pair Plot with Groups', y=1.02)
-
-# Save to bytes buffer
-buffer = io.BytesIO()
-plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
-buffer.seek(0)
-
-# Convert to base64 for transmission
-plot_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-plt.close()
-
-# Return the result dictionary
-result = {
-    "plot_base64": plot_b64,
-    "plot_type": "pairplot",
-    "n_groups": len(df['group'].unique()),
-    "total_points": len(df)
-}
-result
-'''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
-        self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertTrue(data.get("success"), msg=str(data))
-        
-        result = data.get("result")
-        self.assertIn("plot_base64", result)
-        self.assertEqual(result.get("plot_type"), "pairplot")
-        self.assertEqual(result.get("n_groups"), 3)
-        self.assertEqual(result.get("total_points"), 150)
-        
-        # Save the plot to local filesystem
-        filepath = self._save_plot_from_base64(result["plot_base64"], "pair_plot.png")
-        self.assertTrue(os.path.exists(filepath))
 
     def test_direct_file_save_regression_plot(self):
         """Create and save a seaborn regression plot directly to filesystem from within Pyodide."""
@@ -429,8 +127,8 @@ plt.text(0.05, 0.95, f'Correlation: {correlation:.3f}',
          transform=plt.gca().transAxes,
          bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-# Save directly to the virtual filesystem
-output_path = '/plots/seaborn/direct_save_regression.png'
+# Save directly to the virtual filesystem using /vfs/ path
+output_path = '/vfs/seaborn/direct_save_regression.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -553,8 +251,8 @@ plt.title('Sample Counts by Group and Category')
 
 plt.tight_layout()
 
-# Save directly to the virtual filesystem
-output_path = '/plots/seaborn/direct_save_dashboard.png'
+# Save directly to the virtual filesystem using /vfs/ path
+output_path = '/vfs/seaborn/direct_save_dashboard.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 

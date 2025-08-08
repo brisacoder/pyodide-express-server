@@ -579,4 +579,57 @@ result
   }
 });
 
+/**
+ * @swagger
+ * /api/extract-plots:
+ *   post:
+ *     summary: Extract virtual plot files to real filesystem
+ *     description: Extract plot files from Pyodide's virtual filesystem to the real plots directory
+ *     tags: [File Operations]
+ *     responses:
+ *       200:
+ *         description: Plot files extracted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   description: Whether the extraction was successful
+ *                 extracted_files:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   description: List of file paths that were extracted
+ *                 count:
+ *                   type: integer
+ *                   description: Number of files extracted
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       500:
+ *         description: Server error during extraction
+ */
+router.post('/extract-plots', async (req, res) => {
+  try {
+    const extractedFiles = await pyodideService.extractAllPlotFiles();
+    
+    res.json({
+      success: true,
+      extracted_files: extractedFiles,
+      count: extractedFiles.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error extracting plot files:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = router;
