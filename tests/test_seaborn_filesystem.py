@@ -61,7 +61,7 @@ class SeabornFilesystemTestCase(unittest.TestCase):
             cls.has_seaborn = bool(payload.get("success"))
 
         # Create direct filesystem plots directory (separate from base64 tests)
-        cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "vfs", "seaborn")
+        cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "seaborn")
         os.makedirs(cls.plots_dir, exist_ok=True)
         
         # Clean up any existing plots before running tests
@@ -127,8 +127,10 @@ plt.text(0.05, 0.95, f'Correlation: {correlation:.3f}',
          transform=plt.gca().transAxes,
          bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
-# Save directly to the virtual filesystem using /vfs/ path
-output_path = '/vfs/seaborn/direct_save_regression.png'
+# Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
+# First create the directory structure
+os.makedirs('/plots/seaborn', exist_ok=True)
+output_path = '/plots/seaborn/direct_save_regression.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -251,8 +253,10 @@ plt.title('Sample Counts by Group and Category')
 
 plt.tight_layout()
 
-# Save directly to the virtual filesystem using /vfs/ path
-output_path = '/vfs/seaborn/direct_save_dashboard.png'
+# Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
+# First create the directory structure
+os.makedirs('/plots/seaborn', exist_ok=True)
+output_path = '/plots/seaborn/direct_save_dashboard.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 

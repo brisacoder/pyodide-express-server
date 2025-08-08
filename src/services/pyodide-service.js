@@ -250,8 +250,8 @@ def make_json_safe(obj):
 print("🎉 Pyodide environment ready!")
       `);
 
-      // Setup virtual filesystem for plot saving
-      logger.info('Setting up virtual filesystem for plots...');
+      // Setup filesystem mounting for plot saving
+      logger.info('Setting up filesystem mounting for plots...');
       try {
         const path = require('path');
         const plotsDir = path.resolve(__dirname, '../../plots');
@@ -272,17 +272,46 @@ print("🎉 Pyodide environment ready!")
           }
         }
         
-        // Create virtual directories in Pyodide filesystem for plot saving
-        await this.pyodide.runPythonAsync(`
+        // Mount the real plots directory to /plots in Pyodide filesystem
+        logger.info(`Attempting to mount ${plotsDir} to /plots in Pyodide...`);
+        logger.info(`Host path exists: ${fs.existsSync(plotsDir)}`);
+        logger.info(`Host path absolute: ${path.isAbsolute(plotsDir)}`);
+        
+        try {
+          // mountNodeFS(emscriptenPath, hostPath) 
+          // emscriptenPath: The absolute path in Emscripten FS to mount to
+          // hostPath: The host path to mount (must exist)
+          this.pyodide.mountNodeFS("/plots", plotsDir);
+          logger.info('✅ Mount successful');
+        } catch (mountError) {
+          logger.error('❌ Mount failed:', mountError.message);
+          logger.info('Falling back to virtual filesystem approach');
+          
+          // Fallback: Create virtual directories in Pyodide filesystem for plot saving
+          await this.pyodide.runPythonAsync(`
 import os
-# Create plot directories in virtual filesystem
+# Create plot directories in virtual filesystem as fallback
 plot_dirs = ['/plots', '/plots/matplotlib', '/plots/seaborn']
 for plot_dir in plot_dirs:
     os.makedirs(plot_dir, exist_ok=True)
     print(f"Created virtual directory: {plot_dir}")
 `);
+        }
         
-        logger.info('✅ Virtual plot directories created successfully');
+        // Verify the mount worked
+        await this.pyodide.runPythonAsync(`
+import os
+# Check if mounted directories are accessible
+mount_test_result = {
+    "plots_exists": os.path.exists("/plots"),
+    "matplotlib_exists": os.path.exists("/plots/matplotlib"),
+    "seaborn_exists": os.path.exists("/plots/seaborn"),
+    "plots_contents": os.listdir("/plots") if os.path.exists("/plots") else [],
+}
+print(f"Mount verification: {mount_test_result}")
+`);
+        
+        logger.info('✅ Filesystem mounting setup successfully');
         
       } catch (setupError) {
         logger.warn('⚠️  Failed to setup plot directories:', setupError.message);
@@ -951,6 +980,7 @@ except Exception as e:
       const result = await this.pyodide.runPythonAsync(`
 import os
 import shutil
+import json
 
 virtual_path = '${virtualPath}'
 try:
@@ -962,28 +992,32 @@ try:
         
         # Return file content as base64 for transfer
         import base64
-        {
+        result = {
             'success': True,
             'file_exists': True,
             'content_b64': base64.b64encode(file_content).decode('utf-8'),
             'file_size': len(file_content)
         }
     else:
-        {
+        result = {
             'success': False,
             'file_exists': False,
             'error': f'File {virtual_path} does not exist in virtual filesystem'
         }
 except Exception as e:
-    {
+    result = {
         'success': False,
         'file_exists': False,
         'error': str(e)
     }
+
+json.dumps(result)
       `);
 
-      if (!result.success) {
-        logger.warn(`Failed to extract virtual file ${virtualPath}:`, result.error);
+      const parsedResult = JSON.parse(result);
+
+      if (!parsedResult.success) {
+        logger.warn(`Failed to extract virtual file ${virtualPath}:`, parsedResult.error);
         return false;
       }
 
@@ -998,10 +1032,10 @@ except Exception as e:
       }
 
       // Write file content
-      const buffer = Buffer.from(result.content_b64, 'base64');
+      const buffer = Buffer.from(parsedResult.content_b64, 'base64');
       fs.writeFileSync(realPath, buffer);
       
-      logger.info(`✅ Extracted virtual file ${virtualPath} to ${realPath} (${result.file_size} bytes)`);
+      logger.info(`✅ Extracted virtual file ${virtualPath} to ${realPath} (${parsedResult.file_size} bytes)`);
       return true;
 
     } catch (error) {

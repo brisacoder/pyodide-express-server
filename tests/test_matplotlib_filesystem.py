@@ -60,7 +60,7 @@ class MatplotlibFilesystemTestCase(unittest.TestCase):
             cls.has_matplotlib = bool(payload.get("success"))
 
         # Create direct filesystem plots directory (separate from base64 tests)
-        cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "vfs", "matplotlib")
+        cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "matplotlib")
         os.makedirs(cls.plots_dir, exist_ok=True)
         
         # Clean up any existing plots before running tests
@@ -112,8 +112,10 @@ plt.title('Direct File Save - Trigonometric Functions')
 plt.legend()
 plt.grid(True, alpha=0.3)
 
-# Save directly to the virtual filesystem using /vfs/ path
-output_path = '/vfs/matplotlib/direct_save_basic.png'
+# Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
+# First create the directory structure
+os.makedirs('/plots/matplotlib', exist_ok=True)
+output_path = '/plots/matplotlib/direct_save_basic.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -204,8 +206,10 @@ ax4.set_ylabel('Values')
 
 plt.tight_layout()
 
-# Save directly to the virtual filesystem using /vfs/ path
-output_path = '/vfs/matplotlib/direct_save_complex.png'
+# Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
+# First create the directory structure
+os.makedirs('/plots/matplotlib', exist_ok=True)
+output_path = '/plots/matplotlib/direct_save_complex.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
