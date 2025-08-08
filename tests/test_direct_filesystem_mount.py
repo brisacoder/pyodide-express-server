@@ -54,7 +54,9 @@ class DirectFilesystemMountTestCase(unittest.TestCase):
     def test_python_creates_file_appears_locally_simple_txt(self):
         """Test: Python creates simple .txt file, should appear in local filesystem."""
         # Step 1: Python creates file in what should be a mounted directory
-        test_filename = "direct_mount_test.txt"
+        import time
+        timestamp = str(int(time.time() * 1000))  # millisecond timestamp
+        test_filename = f"test_{timestamp}.txt"
         expected_local_path = self.plots_dir / test_filename
         
         # Clean up any existing file first
@@ -64,14 +66,13 @@ class DirectFilesystemMountTestCase(unittest.TestCase):
         code = f'''
 import os
 
-# Create a simple text file in what should be mounted directory
-# According to Pyodide docs, this should appear directly in local filesystem
+# Create a simple text file in mounted directory
 filename = "/plots/matplotlib/{test_filename}"
 
 # Ensure directory exists
 os.makedirs("/plots/matplotlib", exist_ok=True)
 
-# Create the file
+# Create the file - this should appear directly in local filesystem per Pyodide docs
 with open(filename, "w") as f:
     f.write("Hello from mounted filesystem!")
 
@@ -93,6 +94,8 @@ result
         
         result = data.get("result")
         self.assertIsNotNone(result)
+        
+        # Verify Pyodide created the file
         self.assertTrue(result.get("pyodide_file_exists"), "File should exist in Pyodide's filesystem")
         self.assertGreater(result.get("pyodide_file_size", 0), 0, "File should have content")
         
@@ -111,12 +114,9 @@ result
     def test_python_creates_matplotlib_plot_appears_locally(self):
         """Test: Python creates matplotlib plot, should appear in local filesystem."""
         # Step 1: Python creates matplotlib plot file
-        test_filename = "direct_mount_plot.png"
+        timestamp = str(int(time.time() * 1000))  # millisecond timestamp
+        test_filename = f"plot_{timestamp}.png"
         expected_local_path = self.plots_dir / test_filename
-        
-        # Clean up any existing file first
-        if expected_local_path.exists():
-            expected_local_path.unlink()
         
         code = f'''
 import matplotlib
@@ -124,13 +124,6 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-
-# Debug: Check what's available
-debug_info = {{
-    "plots_exists": os.path.exists("/plots"),
-    "plots_contents": os.listdir("/plots") if os.path.exists("/plots") else [],
-    "matplotlib_dir_exists": os.path.exists("/plots/matplotlib"),
-}}
 
 # Create a simple plot
 x = np.linspace(0, 10, 100)
@@ -144,36 +137,20 @@ plt.title('Direct Mount Test Plot')
 plt.legend()
 plt.grid(True)
 
-# Save to what should be mounted directory
-# According to Pyodide docs, this should appear directly in local filesystem
-test_filename = "{test_filename}"
-plot_path = f"/plots/matplotlib/{{test_filename}}"
+# Save to mounted directory - should appear directly in local filesystem
+plot_path = "/plots/matplotlib/{test_filename}"
 
 # Ensure directory exists
 os.makedirs("/plots/matplotlib", exist_ok=True)
 
-# Debug: Check directory after creation
-debug_info["matplotlib_dir_exists_after_makedirs"] = os.path.exists("/plots/matplotlib")
-debug_info["plots_contents_after_makedirs"] = os.listdir("/plots") if os.path.exists("/plots") else []
-
-# Try to save the plot
-try:
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    save_success = True
-    save_error = None
-except Exception as e:
-    save_success = False
-    save_error = str(e)
-    plt.close()
+# Save the plot
+plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+plt.close()
 
 # Verify file exists in Pyodide's view
 result = {{
-    "debug_info": debug_info,
-    "save_success": save_success,
-    "save_error": save_error,
-    "pyodide_file_exists": os.path.exists(plot_path) if save_success else False,
-    "pyodide_file_size": os.path.getsize(plot_path) if save_success and os.path.exists(plot_path) else 0,
+    "pyodide_file_exists": os.path.exists(plot_path),
+    "pyodide_file_size": os.path.getsize(plot_path) if os.path.exists(plot_path) else 0,
     "plot_path": plot_path
 }}
 
@@ -189,16 +166,8 @@ result
         result = data.get("result")
         self.assertIsNotNone(result)
         
-        # Print debug information to understand what's happening
-        print(f"Debug info: {result.get('debug_info')}")
-        print(f"Save success: {result.get('save_success')}")
-        print(f"Save error: {result.get('save_error')}")
-        
-        # Check if save was successful in Pyodide first
-        if not result.get("save_success"):
-            self.fail(f"Failed to save plot in Pyodide: {result.get('save_error')}")
-        
-        self.assertTrue(result.get("pyodide_file_exists"), "Plot should exist in Pyodide's filesystem")
+        # Verify Pyodide created the plot file
+        self.assertTrue(result.get("pyodide_file_exists"), "Plot file should exist in Pyodide's filesystem")
         self.assertGreater(result.get("pyodide_file_size", 0), 0, "Plot file should have content")
         
         # Step 2: File should appear in local filesystem automatically (NO REST API CALLS)
@@ -218,14 +187,10 @@ result
 
     def test_multiple_files_appear_locally(self):
         """Test: Python creates multiple files, all should appear in local filesystem."""
-        # Step 1: Python creates multiple files
-        test_files = ["test1.txt", "test2.txt", "test3.txt"]
+        # Step 1: Python creates multiple files with unique names
+        timestamp = str(int(time.time() * 1000))  # millisecond timestamp
+        test_files = [f"multi_{timestamp}_{i}.txt" for i in range(1, 4)]
         expected_local_paths = [self.plots_dir / filename for filename in test_files]
-        
-        # Clean up any existing files first
-        for path in expected_local_paths:
-            if path.exists():
-                path.unlink()
         
         code = f'''
 import os

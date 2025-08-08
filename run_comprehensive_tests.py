@@ -31,7 +31,8 @@ test_modules = [
     'tests.test_seaborn_filesystem',
     'tests.test_javascript_module',
     'tests.test_filesystem_mount',
-    'tests.test_virtual_filesystem'
+    'tests.test_virtual_filesystem',
+    'tests.test_direct_filesystem_mount'
 ]
 
 
@@ -342,7 +343,8 @@ class ComprehensiveTestRunner:
             ('tests.test_seaborn_filesystem', 'Seaborn VFS Plots'),
             ('tests.test_javascript_module', 'JavaScript Module'),
             ('tests.test_filesystem_mount', 'Filesystem Mount'),
-            ('tests.test_virtual_filesystem', 'Virtual Filesystem')
+            ('tests.test_virtual_filesystem', 'Virtual Filesystem'),
+            ('tests.test_direct_filesystem_mount', 'Direct Filesystem Mount')
         ]
         
         if selected_categories:
@@ -381,7 +383,7 @@ def main():
     parser.add_argument('--categories', nargs='*',
                         choices=['basic', 'error', 'integration', 'security', 'performance', 
                                 'reset', 'extra', 'sklearn', 'matplotlib_base64', 'matplotlib_vfs', 
-                                'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs'],
+                                'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs', 'direct_mount'],
                         help='Specific test categories to run (default: all)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Verbose output')
@@ -413,7 +415,8 @@ def main():
         'seaborn_vfs': 'Seaborn VFS Plots',
         'javascript': 'JavaScript Module',
         'mount': 'Filesystem Mount',
-        'vfs': 'Virtual Filesystem'
+        'vfs': 'Virtual Filesystem',
+        'direct_mount': 'Direct Filesystem Mount'
     }
     
     selected_categories = None
