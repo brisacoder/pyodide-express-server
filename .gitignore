@@ -10,6 +10,12 @@ npm-debug.log*
 uploads/*
 !uploads/.gitkeep
 
+# Generated Plots
+plots/*
+!plots/README.md
+!plots/matplotlib/.gitkeep
+!plots/seaborn/.gitkeep
+
 # Logs
 logs/*
 !logs/.gitkeep

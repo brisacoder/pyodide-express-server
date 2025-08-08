@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-Comprehensive Test Runner for Pyodide Express Server with Existing Server
+Quick Test Runner for New Tests
 
-This script runs tests against an existing server instance.
-Uses the uv virtual environment and works with the server you already have running.
+This script runs the newly added test modules:
+- test_non_happy_paths
+- test_sklearn
+- test_matplotlib
+- test_seaborn
+
+These tests validate edge cases, scikit-learn functionality, and plotting capabilities.
 """
 
 import subprocess
 import sys
-import os
 import requests
 
 
@@ -32,8 +36,8 @@ def run_test_module(module_name, test_name):
             [sys.executable, "-m", "unittest", f"tests.{module_name}", "-v"],
             capture_output=False,
             check=False,
-            timeout=300,
-        )  # 5 minute timeout
+            timeout=300,  # 5 minute timeout
+        )
 
         success = result.returncode == 0
         if success:
@@ -53,8 +57,8 @@ def run_test_module(module_name, test_name):
 
 def main():
     """Main entry point."""
-    print("🚀 Comprehensive Test Runner for Pyodide Express Server")
-    print("=" * 70)
+    print("🚀 New Tests Runner for Pyodide Express Server")
+    print("=" * 60)
 
     # Check if server is running
     if not check_server_running():
@@ -65,20 +69,12 @@ def main():
     print("✅ Server is running on localhost:3000")
     print()
 
-    # Define test categories
+    # Define new test categories
     test_categories = [
-        ("test_api", "Basic API Tests"),
-        ("test_basic_errors", "Basic Error Handling Tests"),
-        ("test_error_handling", "Advanced Error Handling Tests"),
-        ("test_integration", "Integration Tests"),
-        ("test_security", "Security Tests"),
-        ("test_non_happy_paths", "Extra Non-Happy Paths"),
+        ("test_non_happy_paths", "Non-Happy Paths Tests"),
         ("test_sklearn", "Scikit-Learn Tests"),
         ("test_matplotlib", "Matplotlib Plotting Tests"),
         ("test_seaborn", "Seaborn Plotting Tests"),
-        # Performance tests are commented out to avoid hanging
-        # Uncomment the line below to include performance tests (may take a long time)
-        # ("test_performance", "Performance Tests"),
     ]
 
     total_tests = len(test_categories)
@@ -95,16 +91,16 @@ def main():
         print()  # Add spacing between test categories
 
     # Final summary
-    print("=" * 70)
+    print("=" * 60)
     print("📊 FINAL SUMMARY")
-    print("=" * 70)
+    print("=" * 60)
     print(f"Test Categories Run: {total_tests}")
     print(f"Passed: {passed_tests}")
     print(f"Failed: {total_tests - passed_tests}")
 
     if passed_tests == total_tests:
-        print("\n🎉 ALL TEST CATEGORIES PASSED!")
-        print("The system is working correctly.")
+        print("\n🎉 ALL NEW TESTS PASSED!")
+        print("The new test modules are working correctly.")
         return 0
     else:
         print(f"\n⚠️  {total_tests - passed_tests} test categories failed.")

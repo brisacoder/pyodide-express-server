@@ -22,7 +22,11 @@ test_modules = [
     'tests.test_integration',
     'tests.test_security',
     'tests.test_performance',
-    'tests.test_reset'
+    'tests.test_reset',
+    'tests.test_non_happy_paths',
+    'tests.test_sklearn',
+    'tests.test_matplotlib',
+    'tests.test_seaborn'
 ]
 
 
@@ -324,7 +328,9 @@ class ComprehensiveTestRunner:
             ('tests.test_integration', 'Integration'),
             ('tests.test_security', 'Security'),
             ('tests.test_performance', 'Performance'),
-            ('tests.test_reset', 'Reset')
+            ('tests.test_reset', 'Reset'),
+            ('tests.test_non_happy_paths', 'Extra Non-Happy Paths'),
+            ('tests.test_sklearn', 'Scikit-Learn')
         ]
         
         if selected_categories:
@@ -361,7 +367,7 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description='Run comprehensive tests for Pyodide Express Server')
     parser.add_argument('--categories', nargs='*', 
-                       choices=['basic', 'error', 'integration', 'security', 'performance', 'reset'],
+                       choices=['basic', 'error', 'integration', 'security', 'performance', 'reset', 'extra', 'sklearn'],
                        help='Specific test categories to run (default: all)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Verbose output')
@@ -384,7 +390,9 @@ def main():
         'integration': 'Integration',
         'security': 'Security',
         'performance': 'Performance',
-        'reset': 'Reset'
+    'reset': 'Reset',
+    'extra': 'Extra Non-Happy Paths',
+    'sklearn': 'Scikit-Learn'
     }
     
     selected_categories = None
