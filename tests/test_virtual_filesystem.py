@@ -46,30 +46,38 @@ class VirtualFilesystemTestCase(unittest.TestCase):
     def test_virtual_filesystem_structure(self):
         """Test the structure and accessibility of Pyodide's virtual filesystem."""
         code = '''
-import os
+from pathlib import Path
 
 result = {
-    "current_dir": os.getcwd(),
+    "current_dir": str(Path.cwd()),
     "filesystem_info": {}
 }
 
-# Test various directory paths
-test_paths = ["/", "/tmp", "/home", "/plots", "/plots/matplotlib", "/vfs", "/mnt"]
+# Test various directory paths using pathlib
+test_paths = [
+    Path("/"),
+    Path("/tmp"),
+    Path("/home"),
+    Path("/plots"),
+    Path("/plots/matplotlib"),
+    Path("/vfs"),
+    Path("/mnt")
+]
 
 for path in test_paths:
     try:
-        if os.path.exists(path):
-            contents = os.listdir(path)
-            result["filesystem_info"][path] = {
+        if path.exists():
+            contents = list(path.iterdir())
+            result["filesystem_info"][str(path)] = {
                 "exists": True,
-                "is_dir": os.path.isdir(path),
-                "contents": contents[:10],  # First 10 items
+                "is_dir": path.is_dir(),
+                "contents": [str(p.name) for p in contents[:10]],  # First 10 items
                 "item_count": len(contents)
             }
         else:
-            result["filesystem_info"][path] = {"exists": False}
+            result["filesystem_info"][str(path)] = {"exists": False}
     except Exception as e:
-        result["filesystem_info"][path] = {"error": str(e)}
+        result["filesystem_info"][str(path)] = {"error": str(e)}
 
 result
 '''
@@ -91,7 +99,7 @@ result
     def test_directory_creation_and_file_operations(self):
         """Test creating directories and files in the virtual filesystem."""
         code = '''
-import os
+from pathlib import Path
 
 result = {
     "operations": [],
@@ -99,40 +107,38 @@ result = {
 }
 
 # Test directory creation
-test_dir = "/test_vfs"
+test_dir = Path("/test_vfs")
 try:
-    os.makedirs(test_dir, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
     result["operations"].append({
         "operation": "mkdir",
-        "path": test_dir,
-        "success": os.path.exists(test_dir)
+        "path": str(test_dir),
+        "success": test_dir.exists()
     })
 except Exception as e:
     result["operations"].append({
         "operation": "mkdir",
-        "path": test_dir,
+        "path": str(test_dir),
         "error": str(e)
     })
 
 # Test file creation
-test_file = os.path.join(test_dir, "test.txt")
+test_file = test_dir / "test.txt"
 try:
-    with open(test_file, "w") as f:
-        f.write("Hello virtual filesystem")
+    test_file.write_text("Hello virtual filesystem")
     
     result["operations"].append({
         "operation": "write_file",
-        "path": test_file,
-        "success": os.path.exists(test_file)
+        "path": str(test_file),
+        "success": test_file.exists()
     })
     
     # Test file reading
-    with open(test_file, "r") as f:
-        content = f.read()
+    content = test_file.read_text()
     
     result["operations"].append({
         "operation": "read_file",
-        "path": test_file,
+        "path": str(test_file),
         "content": content,
         "success": content == "Hello virtual filesystem"
     })
@@ -146,9 +152,9 @@ except Exception as e:
 # Test final state
 try:
     result["final_state"] = {
-        "test_dir_exists": os.path.exists(test_dir),
-        "test_file_exists": os.path.exists(test_file),
-        "test_dir_contents": os.listdir(test_dir) if os.path.exists(test_dir) else []
+        "test_dir_exists": test_dir.exists(),
+        "test_file_exists": test_file.exists(),
+        "test_dir_contents": [p.name for p in test_dir.iterdir()] if test_dir.exists() else []
     }
 except Exception as e:
     result["final_state"] = {"error": str(e)}
@@ -179,7 +185,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import os
+from pathlib import Path
 
 result = {
     "plot_creation": False,
@@ -201,29 +207,27 @@ except Exception as e:
     result["plot_creation_error"] = str(e)
 
 if result["plot_creation"]:
-    # Test different save paths
+    # Test different save paths using pathlib
     test_paths = [
-        "/tmp/debug_test.png",
-        "/debug_test.png",
-        "/test_vfs/debug_test.png"
+        Path("/tmp/debug_test.png"),
+        Path("/debug_test.png"),
+        Path("/test_vfs/debug_test.png")
     ]
     
     for test_path in test_paths:
         try:
             # Create directory if needed
-            test_dir = os.path.dirname(test_path)
-            if test_dir and test_dir != "/":
-                os.makedirs(test_dir, exist_ok=True)
+            test_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Attempt to save
             plt.savefig(test_path, dpi=150, bbox_inches='tight')
             
             # Check if file was created
-            file_exists = os.path.exists(test_path)
-            file_size = os.path.getsize(test_path) if file_exists else 0
+            file_exists = test_path.exists()
+            file_size = test_path.stat().st_size if file_exists else 0
             
             result["file_operations"].append({
-                "path": test_path,
+                "path": str(test_path),
                 "save_successful": True,
                 "file_exists": file_exists,
                 "file_size": file_size
@@ -231,7 +235,7 @@ if result["plot_creation"]:
             
         except Exception as e:
             result["file_operations"].append({
-                "path": test_path,
+                "path": str(test_path),
                 "save_error": str(e)
             })
     
@@ -239,12 +243,16 @@ if result["plot_creation"]:
 
 # Check filesystem state
 try:
+    root_path = Path("/")
+    tmp_path = Path("/tmp")
+    test_vfs_path = Path("/test_vfs")
+    
     result["filesystem_state"] = {
-        "root_contents": os.listdir("/")[:10],
-        "tmp_exists": os.path.exists("/tmp"),
-        "tmp_contents": os.listdir("/tmp")[:10] if os.path.exists("/tmp") else [],
-        "test_vfs_exists": os.path.exists("/test_vfs"),
-        "test_vfs_contents": os.listdir("/test_vfs")[:10] if os.path.exists("/test_vfs") else []
+        "root_contents": [p.name for p in root_path.iterdir()][:10] if root_path.exists() else [],
+        "tmp_exists": tmp_path.exists(),
+        "tmp_contents": [p.name for p in tmp_path.iterdir()][:10] if tmp_path.exists() else [],
+        "test_vfs_exists": test_vfs_path.exists(),
+        "test_vfs_contents": [p.name for p in test_vfs_path.iterdir()][:10] if test_vfs_path.exists() else []
     }
 except Exception as e:
     result["filesystem_state"] = {"error": str(e)}
@@ -279,22 +287,24 @@ result
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import os
+from pathlib import Path
 
 # Create test directory
-os.makedirs("/tmp/test_plots", exist_ok=True)
+test_plots_dir = Path("/tmp/test_plots")
+test_plots_dir.mkdir(parents=True, exist_ok=True)
 
 # Create a simple plot
 plt.figure(figsize=(5, 3))
 plt.plot([1, 2, 3], [1, 4, 2])
 plt.title('Extract API Test')
-plt.savefig("/tmp/test_plots/extract_test.png", dpi=100)
+plot_file = test_plots_dir / "extract_test.png"
+plt.savefig(plot_file, dpi=100)
 plt.close()
 
 result = {
     "setup_complete": True,
-    "file_exists": os.path.exists("/tmp/test_plots/extract_test.png"),
-    "file_size": os.path.getsize("/tmp/test_plots/extract_test.png") if os.path.exists("/tmp/test_plots/extract_test.png") else 0
+    "file_exists": plot_file.exists(),
+    "file_size": plot_file.stat().st_size if plot_file.exists() else 0
 }
 result
 '''

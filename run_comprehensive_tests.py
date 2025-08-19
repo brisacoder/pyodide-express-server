@@ -22,6 +22,7 @@ test_modules = [
     'tests.test_integration',
     'tests.test_security',
     'tests.test_performance',
+    'tests.test_user_isolation',
     'tests.test_reset',
     'tests.test_non_happy_paths',
     'tests.test_sklearn',
@@ -334,6 +335,7 @@ class ComprehensiveTestRunner:
             ('tests.test_integration', 'Integration'),
             ('tests.test_security', 'Security'),
             ('tests.test_performance', 'Performance'),
+            ('tests.test_user_isolation', 'User Isolation'),
             ('tests.test_reset', 'Reset'),
             ('tests.test_non_happy_paths', 'Extra Non-Happy Paths'),
             ('tests.test_sklearn', 'Scikit-Learn'),
@@ -382,7 +384,7 @@ def main():
     parser = argparse.ArgumentParser(description='Run comprehensive tests for Pyodide Express Server')
     parser.add_argument('--categories', nargs='*',
                         choices=['basic', 'error', 'integration', 'security', 'performance', 
-                                'reset', 'extra', 'sklearn', 'matplotlib_base64', 'matplotlib_vfs', 
+                                'isolation', 'reset', 'extra', 'sklearn', 'matplotlib_base64', 'matplotlib_vfs', 
                                 'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs', 'direct_mount'],
                         help='Specific test categories to run (default: all)')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -406,6 +408,7 @@ def main():
         'integration': 'Integration',
         'security': 'Security',
         'performance': 'Performance',
+        'isolation': 'User Isolation',
         'reset': 'Reset',
         'extra': 'Extra Non-Happy Paths',
         'sklearn': 'Scikit-Learn',

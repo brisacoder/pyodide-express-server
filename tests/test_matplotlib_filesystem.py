@@ -95,7 +95,7 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
-import os
+from pathlib import Path
 
 # Create sample data
 x = np.linspace(0, 2*np.pi, 100)
@@ -114,14 +114,15 @@ plt.grid(True, alpha=0.3)
 
 # Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
 # First create the directory structure
-os.makedirs('/plots/matplotlib', exist_ok=True)
-output_path = '/plots/matplotlib/direct_save_basic.png'
+plots_dir = Path('/plots/matplotlib')
+plots_dir.mkdir(parents=True, exist_ok=True)
+output_path = plots_dir / 'direct_save_basic.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
 # Verify the file was created
-file_exists = os.path.exists(output_path)
-file_size = os.path.getsize(output_path) if file_exists else 0
+file_exists = output_path.exists()
+file_size = output_path.stat().st_size if file_exists else 0
 
 result = {"file_saved": file_exists, "file_size": file_size, "plot_type": "direct_save_basic"}
 result

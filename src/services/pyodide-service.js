@@ -372,12 +372,12 @@ _exec_error = None
 _exec_result = None
 
 try:
-    # Execute user code in a clean namespace
-    _exec_globals = globals().copy()
-    _exec_locals = {}
+    # Execute user code - use the same namespace for globals and locals
+    # This ensures function definitions are available for recursive calls
+    _exec_namespace = globals().copy()
     
-    # Execute the user code
-    exec('''${code.replace(/'/g, "\\'")}''', _exec_globals, _exec_locals)
+    # Execute the user code with unified namespace
+    exec('''${code.replace(/'/g, "\\'")}''', _exec_namespace, _exec_namespace)
     
     # Get the result - try to eval the last line as an expression first
     _code_lines = '''${code.replace(/'/g, "\\'")}'''.strip().split('\\n')
@@ -385,13 +385,11 @@ try:
         _last_line = _code_lines[-1].strip()
         if _last_line and not _last_line.startswith(('#', 'import ', 'from ', 'def ', 'class ', 'if ', 'for ', 'while ', 'with ', 'try:', 'except:', 'finally:', 'else:')):
             try:
-                _exec_result = eval(_last_line, _exec_globals, _exec_locals)
+                _exec_result = eval(_last_line, _exec_namespace, _exec_namespace)
             except:
                 # If eval fails, check if the last line is a variable name that exists
-                if _last_line in _exec_locals:
-                    _exec_result = _exec_locals[_last_line]
-                elif _last_line in _exec_globals:
-                    _exec_result = _exec_globals[_last_line]
+                if _last_line in _exec_namespace:
+                    _exec_result = _exec_namespace[_last_line]
                     
 except Exception as e:
     _exec_success = False

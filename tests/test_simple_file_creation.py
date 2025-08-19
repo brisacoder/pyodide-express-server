@@ -38,7 +38,7 @@ class SimpleFileCreationTestCase(unittest.TestCase):
     def test_simple_txt_file_creation_root(self):
         """Test creating a simple .txt file in the root directory."""
         code = '''
-import os
+from pathlib import Path
 
 result = {
     "operation": "create_txt_in_root",
@@ -48,20 +48,18 @@ result = {
 
 try:
     # Try to create a simple text file in root
-    filename = "/test_simple.txt"
-    with open(filename, "w") as f:
-        f.write("Hello from Pyodide virtual filesystem!")
+    filename = Path("/test_simple.txt")
+    filename.write_text("Hello from Pyodide virtual filesystem!")
     
     # Check if file was created
-    result["file_exists"] = os.path.exists(filename)
+    result["file_exists"] = filename.exists()
     
     if result["file_exists"]:
         # Read back the content
-        with open(filename, "r") as f:
-            content = f.read()
+        content = filename.read_text()
         result["content"] = content
         result["content_matches"] = content == "Hello from Pyodide virtual filesystem!"
-        result["file_size"] = os.path.getsize(filename)
+        result["file_size"] = filename.stat().st_size
         result["success"] = True
     
 except Exception as e:
@@ -88,7 +86,7 @@ result
     def test_simple_txt_file_creation_tmp(self):
         """Test creating a simple .txt file in /tmp directory."""
         code = '''
-import os
+from pathlib import Path
 
 result = {
     "operation": "create_txt_in_tmp",
@@ -98,20 +96,18 @@ result = {
 
 try:
     # Try to create a simple text file in /tmp
-    filename = "/tmp/test_simple.txt"
-    with open(filename, "w") as f:
-        f.write("Hello from /tmp directory!")
+    filename = Path("/tmp/test_simple.txt")
+    filename.write_text("Hello from /tmp directory!")
     
     # Check if file was created
-    result["file_exists"] = os.path.exists(filename)
+    result["file_exists"] = filename.exists()
     
     if result["file_exists"]:
         # Read back the content
-        with open(filename, "r") as f:
-            content = f.read()
+        content = filename.read_text()
         result["content"] = content
         result["content_matches"] = content == "Hello from /tmp directory!"
-        result["file_size"] = os.path.getsize(filename)
+        result["file_size"] = filename.stat().st_size
         result["success"] = True
     
 except Exception as e:
