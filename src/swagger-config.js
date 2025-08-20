@@ -69,6 +69,10 @@ const swaggerDefinition = {
     {
       name: 'System',
       description: 'Health checks and system information'
+    },
+    {
+      name: 'Statistics Dashboard',
+      description: 'Security logging, execution statistics, and monitoring dashboard'
     }
   ],
   components: {
@@ -395,6 +399,178 @@ df.corr().to_dict()`
             format: 'date-time'
           }
         }
+      },
+      StatisticsOverview: {
+        type: 'object',
+        properties: {
+          totalExecutions: {
+            type: 'integer',
+            description: 'Total number of code executions',
+            example: 150
+          },
+          successRate: {
+            type: 'string',
+            description: 'Success rate as a percentage',
+            example: '94.7'
+          },
+          averageExecutionTime: {
+            type: 'integer',
+            description: 'Average execution time in milliseconds',
+            example: 1250
+          },
+          uptimeSeconds: {
+            type: 'integer',
+            description: 'Server uptime in seconds',
+            example: 3600
+          },
+          uptimeHuman: {
+            type: 'string',
+            description: 'Human-readable uptime',
+            example: '1h 0m 0s'
+          }
+        }
+      },
+      StatisticsRecent: {
+        type: 'object',
+        properties: {
+          lastHourExecutions: {
+            type: 'integer',
+            description: 'Number of executions in the last hour',
+            example: 25
+          },
+          recentSuccessRate: {
+            type: 'string',
+            description: 'Success rate for recent executions',
+            example: '96.0'
+          },
+          packagesInstalled: {
+            type: 'integer',
+            description: 'Total packages installed',
+            example: 8
+          },
+          filesUploaded: {
+            type: 'integer',
+            description: 'Total files uploaded',
+            example: 3
+          }
+        }
+      },
+      IPStatistic: {
+        type: 'object',
+        properties: {
+          ip: {
+            type: 'string',
+            description: 'IP address',
+            example: '127.0.0.1'
+          },
+          count: {
+            type: 'integer',
+            description: 'Number of requests from this IP',
+            example: 45
+          }
+        }
+      },
+      ErrorStatistic: {
+        type: 'object',
+        properties: {
+          error: {
+            type: 'string',
+            description: 'Error type',
+            example: 'SyntaxError'
+          },
+          count: {
+            type: 'integer',
+            description: 'Number of occurrences',
+            example: 5
+          }
+        }
+      },
+      UserAgentStatistic: {
+        type: 'object',
+        properties: {
+          agent: {
+            type: 'string',
+            description: 'User agent string',
+            example: 'Mozilla/5.0'
+          },
+          count: {
+            type: 'integer',
+            description: 'Number of requests from this agent',
+            example: 120
+          }
+        }
+      },
+      StatisticsResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean',
+            example: true
+          },
+          stats: {
+            type: 'object',
+            properties: {
+              overview: {
+                $ref: '#/components/schemas/StatisticsOverview'
+              },
+              recent: {
+                $ref: '#/components/schemas/StatisticsRecent'
+              },
+              topIPs: {
+                type: 'array',
+                items: {
+                  $ref: '#/components/schemas/IPStatistic'
+                },
+                description: 'Top IP addresses by request count'
+              },
+              topErrors: {
+                type: 'array',
+                items: {
+                  $ref: '#/components/schemas/ErrorStatistic'
+                },
+                description: 'Most common error types'
+              },
+              userAgents: {
+                type: 'array',
+                items: {
+                  $ref: '#/components/schemas/UserAgentStatistic'
+                },
+                description: 'User agents by request count'
+              },
+              hourlyTrend: {
+                type: 'array',
+                items: {
+                  type: 'integer'
+                },
+                description: 'Hourly execution counts for the last 24 hours',
+                example: [0, 0, 1, 3, 5, 8, 12, 15, 20, 25, 30, 28, 25, 22, 18, 15, 12, 8, 5, 3, 2, 1, 0, 0]
+              }
+            }
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-01-26T10:30:00.000Z'
+          }
+        }
+      },
+      StatsClearResponse: {
+        type: 'object',
+        properties: {
+          success: {
+            type: 'boolean',
+            example: true
+          },
+          message: {
+            type: 'string',
+            example: 'Statistics cleared successfully'
+          },
+          timestamp: {
+            type: 'string',
+            format: 'date-time',
+            example: '2025-01-26T10:30:00.000Z'
+          }
+        }
       }
     },
     responses: {
@@ -437,7 +613,8 @@ const swaggerOptions = {
   definition: swaggerDefinition,
   apis: [
     './src/routes/execute.js',
-    './src/routes/files.js',    // ← NEW: Include file routes
+    './src/routes/files.js',    // ← File upload/management routes
+    './src/routes/stats.js',    // ← NEW: Statistics dashboard routes
     './src/server.js'
   ]
 };

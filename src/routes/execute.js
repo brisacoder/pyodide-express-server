@@ -554,12 +554,19 @@ router.post('/execute-stream', validateCode, async (req, res) => {
  * @swagger
  * /api/stats:
  *   get:
- *     summary: Get execution statistics
- *     description: Retrieve server statistics including uptime, memory usage, and Pyodide status
+ *     summary: Get enhanced execution statistics (backward compatible)
+ *     description: |
+ *       Retrieve comprehensive server statistics including:
+ *       - Legacy system info (uptime, memory, Pyodide status) for backward compatibility
+ *       - Enhanced execution statistics (success rates, error tracking, IP monitoring)
+ *       - Security logging data and performance metrics
+ *       
+ *       **Note**: This endpoint maintains backward compatibility while providing enhanced features.
+ *       For dashboard-specific features, use `/api/dashboard/stats` instead.
  *     tags: [System]
  *     responses:
  *       200:
- *         description: Statistics retrieved successfully
+ *         description: Enhanced statistics retrieved successfully
  *         content:
  *           application/json:
  *             schema:
@@ -567,10 +574,11 @@ router.post('/execute-stream', validateCode, async (req, res) => {
  *               properties:
  *                 uptime:
  *                   type: number
- *                   description: Server uptime in seconds
+ *                   description: Server uptime in seconds (legacy compatibility)
  *                   example: 3600.25
  *                 memory:
  *                   type: object
+ *                   description: Memory usage statistics (legacy compatibility)
  *                   properties:
  *                     rss:
  *                       type: number
@@ -589,12 +597,39 @@ router.post('/execute-stream', validateCode, async (req, res) => {
  *                       description: ArrayBuffer memory usage in bytes
  *                 pyodide:
  *                   $ref: '#/components/schemas/StatusResponse'
+ *                   description: Pyodide interpreter status (legacy compatibility)
  *                 timestamp:
  *                   type: string
  *                   format: date-time
+ *                   description: Response timestamp (legacy compatibility)
+ *                 executionStats:
+ *                   type: object
+ *                   description: Enhanced execution statistics and security monitoring
+ *                   properties:
+ *                     overview:
+ *                       $ref: '#/components/schemas/StatisticsOverview'
+ *                     recent:
+ *                       $ref: '#/components/schemas/StatisticsRecent'
+ *                     topIPs:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/IPStatistic'
+ *                     topErrors:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/ErrorStatistic'
+ *                     userAgents:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/UserAgentStatistic'
+ *                     hourlyTrend:
+ *                       type: array
+ *                       items:
+ *                         type: integer
+ *                       description: Hourly execution counts for last 24 hours
  *             examples:
- *               stats:
- *                 summary: Server statistics
+ *               enhanced_stats:
+ *                 summary: Enhanced server statistics with security monitoring
  *                 value:
  *                   uptime: 3600.25
  *                   memory:
@@ -607,9 +642,31 @@ router.post('/execute-stream', validateCode, async (req, res) => {
  *                     isReady: true
  *                     initialized: true
  *                     executionTimeout: 30000
- *                     version: "0.28.0"
- *                     timestamp: "2024-01-15T10:30:00.000Z"
- *                   timestamp: "2024-01-15T10:30:00.000Z"
+ *                     version: "0.28.2"
+ *                     timestamp: "2025-01-26T10:30:00.000Z"
+ *                   timestamp: "2025-01-26T10:30:00.000Z"
+ *                   executionStats:
+ *                     overview:
+ *                       totalExecutions: 150
+ *                       successRate: "94.7"
+ *                       averageExecutionTime: 1250
+ *                       uptimeSeconds: 3600
+ *                       uptimeHuman: "1h 0m 0s"
+ *                     recent:
+ *                       lastHourExecutions: 25
+ *                       recentSuccessRate: "96.0"
+ *                       packagesInstalled: 8
+ *                       filesUploaded: 3
+ *                     topIPs:
+ *                       - ip: "127.0.0.1"
+ *                         count: 45
+ *                     topErrors:
+ *                       - error: "SyntaxError"
+ *                         count: 5
+ *                     userAgents:
+ *                       - agent: "Mozilla/5.0"
+ *                         count: 120
+ *                     hourlyTrend: [0, 0, 1, 3, 5, 8, 12, 15, 20, 25, 30, 28, 25, 22, 18, 15, 12, 8, 5, 3, 2, 1, 0, 0]
  *       500:
  *         $ref: '#/components/responses/InternalError'
  */
@@ -618,15 +675,22 @@ router.get('/stats', (req, res) => {
     // Get enhanced statistics from logger
     const enhancedStats = logger.getStats();
     
+    // Maintain backward compatibility with original format
     const stats = {
-      // Enhanced execution statistics
-      ...enhancedStats,
-      // Legacy system stats for compatibility
-      system: {
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        pyodide: pyodideService.getStatus(),
-        timestamp: new Date().toISOString()
+      // Legacy top-level fields for existing tests (MUST be at top level)
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      pyodide: pyodideService.getStatus(),
+      timestamp: new Date().toISOString(),
+      
+      // Enhanced statistics (new fields) - add without conflicting
+      executionStats: {
+        overview: enhancedStats.overview,
+        recent: enhancedStats.recent,
+        topIPs: enhancedStats.topIPs,
+        topErrors: enhancedStats.topErrors,
+        userAgents: enhancedStats.userAgents,
+        hourlyTrend: enhancedStats.hourlyTrend
       }
     };
 

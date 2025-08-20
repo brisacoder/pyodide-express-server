@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
  * /api/dashboard/stats:
  *   get:
  *     summary: Get detailed execution statistics and metrics
- *     description: Returns comprehensive statistics about code executions, security events, and system performance
+ *     description: Returns comprehensive statistics about code executions, security events, and system performance for the monitoring dashboard
  *     tags:
  *       - Statistics Dashboard
  *     responses:
@@ -16,102 +16,13 @@ const logger = require('../utils/logger');
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 stats:
- *                   type: object
- *                   properties:
- *                     overview:
- *                       type: object
- *                       properties:
- *                         totalExecutions:
- *                           type: integer
- *                           example: 150
- *                         successRate:
- *                           type: string
- *                           example: "94.7"
- *                         averageExecutionTime:
- *                           type: integer
- *                           example: 1250
- *                         uptimeSeconds:
- *                           type: integer
- *                           example: 3600
- *                         uptimeHuman:
- *                           type: string
- *                           example: "1h 0m 0s"
- *                     recent:
- *                       type: object
- *                       properties:
- *                         lastHourExecutions:
- *                           type: integer
- *                           example: 25
- *                         recentSuccessRate:
- *                           type: string
- *                           example: "96.0"
- *                         packagesInstalled:
- *                           type: integer
- *                           example: 8
- *                         filesUploaded:
- *                           type: integer
- *                           example: 3
- *                     topIPs:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           ip:
- *                             type: string
- *                             example: "127.0.0.1"
- *                           count:
- *                             type: integer
- *                             example: 45
- *                     topErrors:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           error:
- *                             type: string
- *                             example: "SyntaxError"
- *                           count:
- *                             type: integer
- *                             example: 5
- *                     userAgents:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           agent:
- *                             type: string
- *                             example: "Mozilla/5.0"
- *                           count:
- *                             type: integer
- *                             example: 120
- *                     hourlyTrend:
- *                       type: array
- *                       items:
- *                         type: integer
- *                       example: [0, 0, 1, 3, 5, 8, 12, 15, 20, 25, 30, 28, 25, 22, 18, 15, 12, 8, 5, 3, 2, 1, 0, 0]
- *                 timestamp:
- *                   type: string
- *                   format: date-time
- *                   example: "2025-01-26T10:30:00.000Z"
+ *               $ref: '#/components/schemas/StatisticsResponse'
  *       500:
  *         description: Error retrieving statistics
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 error:
- *                   type: string
- *                   example: "Failed to retrieve statistics"
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/stats', (req, res) => {
   try {
@@ -158,20 +69,13 @@ router.get('/stats', (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Statistics cleared successfully"
- *                 timestamp:
- *                   type: string
- *                   format: date-time
- *                   example: "2025-01-26T10:30:00.000Z"
+ *               $ref: '#/components/schemas/StatsClearResponse'
  *       500:
  *         description: Error clearing statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/stats/clear', (req, res) => {
   try {
@@ -210,16 +114,24 @@ router.post('/stats/clear', (req, res) => {
  * /api/dashboard/stats/dashboard:
  *   get:
  *     summary: Get statistics dashboard HTML page
- *     description: Returns a formatted HTML dashboard with charts and visualizations
+ *     description: Returns a formatted HTML dashboard with interactive charts and visualizations using Chart.js. Provides real-time statistics monitoring with professional UI design.
  *     tags:
  *       - Statistics Dashboard
  *     responses:
  *       200:
- *         description: Dashboard HTML page
+ *         description: Dashboard HTML page with interactive charts
  *         content:
  *           text/html:
  *             schema:
  *               type: string
+ *               description: Complete HTML page with embedded Chart.js visualizations
+ *               example: '<!DOCTYPE html><html>...'
+ *       500:
+ *         description: Error generating dashboard
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/stats/dashboard', (req, res) => {
   try {
