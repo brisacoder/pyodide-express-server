@@ -6,14 +6,38 @@
  */
 
 /**
+ * Express Request object with extended properties
+ * @typedef {Object} ExpressRequest
+ * @property {string} method - HTTP method
+ * @property {string} url - Request URL
+ */
+
+/**
+ * Express Response object with extended properties  
+ * @typedef {Object} ExpressResponse
+ * @property {number} statusCode - HTTP status code
+ * @property {Function} status - Set status code
+ */
+
+/**
+ * Express Next function
+ * @typedef {Function} ExpressNext
+ * @param {Error} [error] - Optional error to pass to error handler
+ */
+
+/**
  * In-memory metrics storage object.
  * Tracks counters and timing data for HTTP requests.
  * 
- * @type {Object}
+ * @typedef {Object} MetricsStorage
  * @property {number} requestsTotal - Total HTTP requests received
  * @property {number} requestErrorsTotal - Total 5xx error responses
- * @property {number} requestDurationSecondsSum - Sum of all request durations
+ * @property {number} requestDurationSecondsSum - Sum of all request durations in seconds
  * @property {number} requestDurationSecondsCount - Count of timed requests
+ */
+
+/**
+ * @type {MetricsStorage}
  */
 const metrics = {
   requestsTotal: 0,
@@ -26,9 +50,9 @@ const metrics = {
  * Express middleware that collects HTTP request metrics.
  * Measures request duration and counts total requests and errors.
  * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
+ * @param {ExpressRequest} req - Express request object with extended properties
+ * @param {ExpressResponse} res - Express response object with extended properties
+ * @param {ExpressNext} next - Express next middleware function
  * @returns {void} Calls next() after setting up metrics collection
  * 
  * @example
@@ -78,9 +102,9 @@ function metricsMiddleware(req, res, next) {
  * Express route handler that exposes metrics in Prometheus format.
  * Returns text/plain response with metric data for scraping.
  * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @returns {void} Sends metrics response in Prometheus format
+ * @param {ExpressRequest} req - Express request object
+ * @param {ExpressResponse} res - Express response object  
+ * @returns {void} Sends Prometheus metrics as plain text response
  * 
  * @example
  * // In routes setup

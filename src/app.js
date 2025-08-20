@@ -22,12 +22,12 @@ const app = express();
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Needed for Pyodide
-      workerSrc: ["'self'", "blob:"], // Needed for WebAssembly workers
-      childSrc: ["'self'", "blob:"], // Needed for WebAssembly
-      connectSrc: ["'self'", "https://cdn.jsdelivr.net"], // Pyodide CDN
-      styleSrc: ["'self'", "'unsafe-inline'"], // For Swagger UI
+      defaultSrc: ['\'self\''],
+      scriptSrc: ['\'self\'', '\'unsafe-inline\'', '\'unsafe-eval\''], // Needed for Pyodide
+      workerSrc: ['\'self\'', 'blob:'], // Needed for WebAssembly workers
+      childSrc: ['\'self\'', 'blob:'], // Needed for WebAssembly
+      connectSrc: ['\'self\'', 'https://cdn.jsdelivr.net'], // Pyodide CDN
+      styleSrc: ['\'self\'', '\'unsafe-inline\''], // For Swagger UI
     },
   },
   crossOriginEmbedderPolicy: false, // Disabled for WebAssembly compatibility
@@ -123,7 +123,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   logger.error('Unhandled error:', err);
 
   if (err instanceof multer.MulterError) {

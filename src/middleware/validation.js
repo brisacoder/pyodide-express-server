@@ -121,7 +121,7 @@ function validateCode(req, res, next) {
           error: `Context too large. Maximum size: ${MAX_CONTEXT_SIZE} characters.`
         });
       }
-    } catch (error) {
+    } catch {
       return res.status(400).json({
         success: false,
         error: 'Context contains non-serializable data.'
@@ -291,6 +291,9 @@ function validatePackage(req, res, next) {
 
 /**
  * Rate limiting middleware (simple in-memory implementation)
+ * @param {number} windowMs - Time window in milliseconds for rate limiting
+ * @param {number} maxRequests - Maximum number of requests allowed in the time window
+ * @returns {Function} Express middleware function for rate limiting
  */
 function createRateLimit(windowMs = 15 * 60 * 1000, maxRequests = 100) {
   const requests = new Map();
@@ -346,6 +349,10 @@ function createRateLimit(windowMs = 15 * 60 * 1000, maxRequests = 100) {
 
 /**
  * Validate file upload
+ * @param {Object} req - Express request object with uploaded file
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {void} Validates file type and calls next() or sends error response
  */
 function validateFileUpload(req, res, next) {
   // This runs after multer, so we can check the processed file
@@ -372,6 +379,8 @@ function validateFileUpload(req, res, next) {
 
 /**
  * General request body size validation
+ * @param {number} maxSize - Maximum allowed request size in bytes
+ * @returns {Function} Express middleware function for size validation
  */
 function validateRequestSize(maxSize = 10 * 1024 * 1024) { // 10MB default
   return (req, res, next) => {
@@ -390,12 +399,17 @@ function validateRequestSize(maxSize = 10 * 1024 * 1024) { // 10MB default
 
 /**
  * Sanitize input data to prevent injection attacks
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {void} Sanitizes request data and calls next()
  */
 function sanitizeInput(req, res, next) {
   // Helper function to recursively sanitize objects
   function sanitize(obj) {
     if (typeof obj === 'string') {
       // Remove null bytes and other control characters
+      // eslint-disable-next-line no-control-regex
       return obj.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
     } else if (Array.isArray(obj)) {
       return obj.map(sanitize);

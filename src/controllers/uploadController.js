@@ -192,7 +192,7 @@ json.dumps({'exists': exists, 'size': size})
       let fileInfo;
       try {
         fileInfo = JSON.parse(fileExistsTest.result);
-      } catch (parseError) {
+      } catch {
         throw new Error(`Failed to parse file check result: ${fileExistsTest.result}`);
       }
       if (!fileInfo.exists) {

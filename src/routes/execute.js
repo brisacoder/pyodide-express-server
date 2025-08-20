@@ -8,7 +8,7 @@ const express = require('express');
 const pyodideService = require('../services/pyodide-service');
 const { validateCode, validatePackage } = require('../middleware/validation');
 const logger = require('../utils/logger');
-const { executeCode, listPyodideFiles, deletePyodideFile } = require('../controllers/executeController');
+const { executeCode } = require('../controllers/executeController');
 
 const router = express.Router();
 

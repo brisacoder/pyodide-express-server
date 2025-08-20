@@ -1,9 +1,73 @@
 /**
  * Structured JSON logger with basic rotation, request ID support, and security logging.
  */
+
+/**
+ * Execution statistics data object
+ * @typedef {Object} ExecutionStatsData
+ * @property {string} [ip] - Client IP address
+ * @property {boolean} [success=false] - Whether execution was successful
+ * @property {number} [executionTime] - Execution time in milliseconds  
+ * @property {string} [error] - Error message if execution failed
+ * @property {string} [userAgent] - Client user agent string
+ * @property {string} [codeHash] - SHA-256 hash of executed code
+ */
+
+/**
+ * Security logging event data
+ * @typedef {Object} SecurityEventData
+ * @property {string} type - Type of security event
+ * @property {string} [ip] - Client IP address
+ * @property {string} [userAgent] - Client user agent string
+ * @property {string} [endpoint] - API endpoint involved
+ * @property {*} [details] - Additional event-specific details
+ */
+
+/**
+ * Statistics overview object
+ * @typedef {Object} StatsOverview
+ * @property {number} totalExecutions - Total number of code executions
+ * @property {number} successCount - Number of successful executions
+ * @property {number} errorCount - Number of failed executions
+ * @property {number} successRate - Success rate as percentage (0-100)
+ * @property {number} averageExecutionTime - Average execution time in ms
+ * @property {number} uniqueIPs - Number of unique IP addresses
+ * @property {string} uptime - Formatted server uptime string
+ */
+
+/**
+ * Complete statistics object returned by getStats()
+ * @typedef {Object} CompleteStats
+ * @property {StatsOverview} overview - High-level statistics summary
+ * @property {Object} recent - Recent activity metrics
+ * @property {Array<Object>} topIPs - Most active IP addresses
+ * @property {Array<Object>} topErrors - Most common error types
+ * @property {Array<Object>} userAgents - Most common user agents
+ */
+
+/**
+ * Logging configuration information
+ * @typedef {Object} LoggingConfig
+ * @property {string} level - Current log level
+ * @property {string} logFile - Path to main log file
+ * @property {string} securityLogFile - Path to security log file
+ * @property {boolean} isFileLoggingEnabled - Whether file logging is enabled
+ * @property {string} logDirectory - Directory containing log files
+ */
+
+/**
+ * Execution object with timestamp for trend analysis
+ * @typedef {Object} ExecutionRecord
+ * @property {number} timestamp - Execution timestamp in milliseconds
+ * @property {boolean} success - Whether execution was successful
+ * @property {number} [executionTime] - Execution time in milliseconds
+ * @property {string} [ip] - Client IP address
+ * @property {string} [error] - Error message if failed
+ */
+
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const constants = require('../config/constants');
 const { getRequestId } = require('./requestContext');
 
 const levels = { error: 0, warn: 1, info: 2, debug: 3 };
@@ -12,9 +76,28 @@ const currentLevel = levels[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? 
 const logDir = process.env.LOG_DIR || path.join(__dirname, '../../logs');
 const logFile = process.env.LOG_FILE || path.join(logDir, 'server.log');
 const securityLogFile = path.join(logDir, 'security.log');
-const maxSize = parseInt(process.env.LOG_MAX_SIZE || 5 * 1024 * 1024, 10); // 5MB default
+const maxSize = parseInt(process.env.LOG_MAX_SIZE || constants.LOGGING.MAX_LOG_SIZE, 10);
 
-// In-memory statistics storage (use Redis/DB for production)
+/**
+ * In-memory execution statistics storage
+ * @typedef {Object} ExecutionStatsStorage
+ * @property {number} totalExecutions - Total number of code executions
+ * @property {number} successCount - Count of successful executions
+ * @property {number} errorCount - Count of failed executions
+ * @property {number} totalExecutionTime - Sum of all execution times in ms
+ * @property {Map<string, number>} ipCounts - Map of IP addresses to request counts
+ * @property {Map<string, number>} codePatterns - Map of code hash patterns to counts
+ * @property {number} packageInstalls - Count of package installations
+ * @property {number} fileUploads - Count of file uploads
+ * @property {Array<ExecutionRecord>} lastHourExecutions - Recent execution records
+ * @property {Map<string, number>} topErrors - Map of error messages to counts
+ * @property {Map<string, number>} userAgents - Map of user agents to counts
+ * @property {number} startTime - Server start timestamp
+ */
+
+/**
+ * @type {ExecutionStatsStorage}
+ */
 const executionStats = {
   totalExecutions: 0,
   successCount: 0,
@@ -43,10 +126,6 @@ if (logFile) {
  * 
  * @param {string} [fileName=logFile] - Path to the log file to check for rotation
  * @returns {void}
- * 
- * @example
- * // Rotate default log file if needed
- * rotateIfNeeded();
  * 
  * // Rotate specific log file
  * rotateIfNeeded('/path/to/custom.log');
@@ -159,13 +238,7 @@ function write(level, levelNum, message, meta = {}) {
  * Updates execution statistics with data from code execution events.
  * Tracks performance metrics, error patterns, and usage analytics.
  * 
- * @param {Object} data - Execution data object
- * @param {string} [data.ip] - Client IP address
- * @param {boolean} data.success - Whether execution was successful
- * @param {number} [data.executionTime] - Execution time in milliseconds
- * @param {string} [data.error] - Error message if execution failed
- * @param {string} [data.userAgent] - Client user agent string
- * @param {string} [data.codeHash] - SHA-256 hash of executed code
+ * @param {ExecutionStatsData} data - Execution data object with performance metrics
  * @returns {void}
  * 
  * @example
@@ -246,7 +319,7 @@ function updateExecutionStats(data) {
   });
   
   // Clean old entries (keep only last hour)
-  const oneHourAgo = now - (60 * 60 * 1000);
+  const oneHourAgo = now - constants.TIME.HOUR;
   executionStats.lastHourExecutions = executionStats.lastHourExecutions.filter(
     exec => exec.timestamp > oneHourAgo
   );
@@ -277,13 +350,7 @@ const logger = {
    * Logs security-relevant events to both console and dedicated security log.
    * 
    * @param {string} eventType - Type of security event (code_execution, package_install, file_upload, etc.)
-   * @param {Object} data - Event-specific data object
-   * @param {string} [data.ip] - Client IP address
-   * @param {string} [data.userAgent] - Client user agent
-   * @param {boolean} [data.success] - Whether operation was successful
-   * @param {string} [data.error] - Error message if operation failed
-   * @param {number} [data.executionTime] - Time taken for operation
-   * @param {string} [data.codeHash] - SHA-256 hash of code for code_execution events
+   * @param {SecurityEventData} data - Event-specific data object with security context
    * @returns {void}
    * 
    * @example
@@ -344,22 +411,7 @@ const logger = {
    * Retrieves comprehensive execution statistics and analytics.
    * Provides real-time metrics for monitoring dashboard and system health.
    * 
-   * @returns {Object} Statistics object with multiple categories
-   * @returns {Object} returns.overview - High-level statistics
-   * @returns {number} returns.overview.totalExecutions - Total code executions since start
-   * @returns {string} returns.overview.successRate - Success rate as percentage string
-   * @returns {number} returns.overview.averageExecutionTime - Average execution time in ms
-   * @returns {number} returns.overview.uptimeSeconds - Server uptime in seconds
-   * @returns {string} returns.overview.uptimeHuman - Human-readable uptime
-   * @returns {Object} returns.recent - Recent activity metrics
-   * @returns {number} returns.recent.lastHourExecutions - Executions in last hour
-   * @returns {string} returns.recent.recentSuccessRate - Recent success rate percentage
-   * @returns {number} returns.recent.packagesInstalled - Total packages installed
-   * @returns {number} returns.recent.filesUploaded - Total files uploaded
-   * @returns {Array<Object>} returns.topIPs - Most active IP addresses
-   * @returns {Array<Object>} returns.topErrors - Most common error types
-   * @returns {Array<Object>} returns.userAgents - Most common user agents
-   * @returns {Array<number>} returns.hourlyTrend - 24-hour execution trend data
+   * @returns {CompleteStats} Statistics object with multiple categories including overview, recent metrics, top IPs, errors, and user agents
    * 
    * @example
    * const stats = logger.getStats();
@@ -462,12 +514,7 @@ const logger = {
    * Retrieves current logging configuration and file information.
    * Useful for debugging and system administration.
    * 
-   * @returns {Object} Logging configuration object
-   * @returns {string} returns.level - Current log level (error, warn, info, debug)
-   * @returns {string} returns.logFile - Path to main log file
-   * @returns {string} returns.securityLogFile - Path to security log file
-   * @returns {boolean} returns.isFileLoggingEnabled - Whether file logging is active
-   * @returns {string|null} returns.logDirectory - Directory containing log files
+   * @returns {LoggingConfig} Logging configuration object with level, file paths, and settings
    * 
    * @example
    * const logInfo = logger.getLogInfo();
@@ -522,10 +569,10 @@ const logger = {
  * - Returns consistent format for UI display
  */
 function formatUptime(seconds) {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
+  const days = Math.floor(seconds / constants.TIME.SECONDS_PER_DAY);
+  const hours = Math.floor((seconds % constants.TIME.SECONDS_PER_DAY) / constants.TIME.SECONDS_PER_HOUR);
+  const minutes = Math.floor((seconds % constants.TIME.SECONDS_PER_HOUR) / constants.TIME.SECONDS_PER_MINUTE);
+  const secs = seconds % constants.TIME.SECONDS_PER_MINUTE;
   
   if (days > 0) return `${days}d ${hours}h ${minutes}m`;
   if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
@@ -537,11 +584,7 @@ function formatUptime(seconds) {
  * Generates 24-hour execution trend data for dashboard charts.
  * Creates array of hourly execution counts from recent execution history.
  * 
- * @param {Array<Object>} executions - Array of execution objects with timestamps
- * @param {number} executions[].timestamp - Execution timestamp in milliseconds
- * @param {boolean} executions[].success - Whether execution was successful
- * @param {number} executions[].executionTime - Execution duration in ms
- * @param {string} executions[].ip - Client IP address
+ * @param {Array<ExecutionRecord>} executions - Array of execution objects with timestamps
  * @returns {Array<number>} Array of 24 numbers representing hourly execution counts
  * 
  * @example
@@ -575,9 +618,9 @@ function generateHourlyTrend(executions) {
   const hourlyBuckets = new Array(24).fill(0);
   
   executions.forEach(exec => {
-    const hoursAgo = Math.floor((now - exec.timestamp) / (60 * 60 * 1000));
-    if (hoursAgo < 24) {
-      hourlyBuckets[23 - hoursAgo]++;
+    const hoursAgo = Math.floor((now - exec.timestamp) / constants.TIME.HOUR);
+    if (hoursAgo < constants.TIME.HOURS_PER_DAY) {
+      hourlyBuckets[constants.TIME.HOURS_PER_DAY - 1 - hoursAgo]++;
     }
   });
   

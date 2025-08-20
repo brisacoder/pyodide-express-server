@@ -5,6 +5,31 @@
  * the request lifecycle for better logging and debugging capabilities.
  */
 
+/**
+ * Express Request object with extended properties
+ * @typedef {Object} ExpressRequest
+ * @property {string} method - HTTP method
+ * @property {string} url - Request URL
+ * @property {Object} headers - Request headers
+ * @property {string} ip - Client IP address
+ * @property {string} requestId - Unique request identifier
+ */
+
+/**
+ * Express Response object with extended properties  
+ * @typedef {Object} ExpressResponse
+ * @property {number} statusCode - HTTP status code
+ * @property {Function} status - Set status code
+ * @property {Function} json - Send JSON response
+ * @property {Function} set - Set response header
+ */
+
+/**
+ * Express Next function
+ * @typedef {Function} ExpressNext
+ * @param {Error} [error] - Optional error to pass to error handler
+ */
+
 const { AsyncLocalStorage } = require('async_hooks');
 const { randomUUID } = require('crypto');
 
@@ -14,9 +39,9 @@ const asyncLocalStorage = new AsyncLocalStorage();
  * Express middleware that generates and tracks unique request IDs.
  * Creates async context that persists throughout the entire request lifecycle.
  * 
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
+ * @param {ExpressRequest} req - Express request object with extended properties
+ * @param {ExpressResponse} res - Express response object with extended properties  
+ * @param {ExpressNext} next - Express next middleware function
  * @returns {void} Calls next() after setting up request context
  * 
  * @example

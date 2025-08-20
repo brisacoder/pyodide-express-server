@@ -102,8 +102,8 @@ df.corr().to_dict()`
             description: 'Variables to make available in Python execution context',
             additionalProperties: true,
             example: {
-              "user_name": "Alice",
-              "multiplier": 2
+              'user_name': 'Alice',
+              'multiplier': 2
             }
           },
           timeout: {
@@ -124,12 +124,12 @@ df.corr().to_dict()`
           },
           result: {
             description: 'The result of the Python expression (if any)',
-            example: {"x": {"0": 1.0, "1": 1.0}, "y": {"0": 1.0, "1": 1.0}}
+            example: {'x': {'0': 1.0, '1': 1.0}, 'y': {'0': 1.0, '1': 1.0}}
           },
           stdout: {
             type: 'string',
             description: 'Standard output from the Python code',
-            example: "DataFrame created:\n   x   y\n0  1   2\n1  2   4\n2  3   6\n3  4   8\n4  5  10"
+            example: 'DataFrame created:\n   x   y\n0  1   2\n1  2   4\n2  3   6\n3  4   8\n4  5  10'
           },
           stderr: {
             type: 'string',

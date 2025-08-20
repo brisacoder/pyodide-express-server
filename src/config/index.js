@@ -2,15 +2,17 @@ let dotenvLoaded = false;
 try {
   require('dotenv').config();
   dotenvLoaded = true;
-} catch (err) {
+} catch {
   // dotenv is optional; ignore if not installed
 }
 
+const constants = require('./constants');
+
 const config = {
-  port: process.env.PORT || 3000,
-  maxFileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || 10 * 1024 * 1024,
-  uploadDir: process.env.UPLOAD_DIR || 'uploads',
-  corsOrigin: process.env.CORS_ORIGIN || '*',
+  port: process.env.PORT || constants.SERVER.DEFAULT_PORT,
+  maxFileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || constants.NETWORK.MAX_UPLOAD_SIZE,
+  uploadDir: process.env.UPLOAD_DIR || constants.NETWORK.DEFAULT_UPLOAD_DIR,
+  corsOrigin: process.env.CORS_ORIGIN || constants.NETWORK.DEFAULT_CORS_ORIGIN,
   dotenvLoaded,
 };
 

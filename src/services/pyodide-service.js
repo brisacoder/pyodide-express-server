@@ -14,7 +14,45 @@
  * Pyodide version is 0.28.0 which corresponds to Python 3.13.
  */
 
+/**
+ * Python code execution context variables
+ * @typedef {Object} PythonContext
+ * @property {*} [key] - Any variables to make available in Python scope
+ */
+
+/**
+ * Python code execution result
+ * @typedef {Object} PythonExecutionResult
+ * @property {boolean} success - Whether execution completed successfully
+ * @property {*} [result] - Return value from Python code (if any)
+ * @property {string} [error] - Error message if execution failed
+ * @property {string} [stdout] - Standard output from Python execution
+ * @property {string} [stderr] - Standard error from Python execution
+ * @property {number} executionTime - Time taken to execute in milliseconds
+ * @property {Object} [metadata] - Additional execution metadata
+ */
+
+/**
+ * Package installation result
+ * @typedef {Object} PackageInstallResult
+ * @property {boolean} success - Whether installation was successful
+ * @property {string} package - Name of the package
+ * @property {string} [version] - Installed package version
+ * @property {string} [error] - Error message if installation failed
+ * @property {number} installTime - Time taken to install in milliseconds
+ */
+
+/**
+ * Available packages list
+ * @typedef {Object} AvailablePackages
+ * @property {boolean} success - Whether package list retrieval was successful
+ * @property {Array<string>} packages - List of available package names
+ * @property {number} count - Total number of available packages
+ * @property {string} [error] - Error message if retrieval failed
+ */
+
 const logger = require('../utils/logger');
+const constants = require('../config/constants');
 
 class PyodideService {
   constructor() {
@@ -29,7 +67,7 @@ class PyodideService {
     this.initializationPromise = null;
     // Default timeout in milliseconds for executing user supplied Python
     // snippets.  Individual requests may override it.
-    this.executionTimeout = 30000; // 30 seconds default timeout
+    this.executionTimeout = constants.EXECUTION.DEFAULT_TIMEOUT;
   }
 
   /**
@@ -52,6 +90,7 @@ class PyodideService {
   /**
    * Internal initialization method - Simple version that works
    * @private
+   * @returns {Promise<boolean>} True if initialization successful
    *
    * Loads the Pyodide runtime and eagerly fetches a set of scientific
    * packages.  Installing packages up front reduces latency for the first
@@ -281,7 +320,7 @@ print("🎉 Pyodide environment ready!")
           // mountNodeFS(emscriptenPath, hostPath) 
           // emscriptenPath: The absolute path in Emscripten FS to mount to
           // hostPath: The host path to mount (must exist)
-          this.pyodide.mountNodeFS("/plots", plotsDir);
+          this.pyodide.mountNodeFS('/plots', plotsDir);
           logger.info('✅ Mount successful');
         } catch (mountError) {
           logger.error('❌ Mount failed:', mountError.message);
@@ -334,9 +373,9 @@ print(f"Mount verification: {mount_test_result}")
   /**
    * Execute Python code with optional context variables
    * @param {string} code - Python code to execute
-   * @param {Object} context - Variables to make available in Python
+   * @param {PythonContext} context - Variables to make available in Python
    * @param {number} timeout - Execution timeout in milliseconds
-   * @returns {Promise<Object>} Execution result
+   * @returns {Promise<PythonExecutionResult>} Execution result with success status, output, and timing
    *
    * The snippet runs inside the already-initialized interpreter.  ``runPython``
    * is used for synchronous code, while ``runPythonAsync`` enables "top level
@@ -370,9 +409,9 @@ print(f"Mount verification: {mount_test_result}")
         return {
           success: false,
           result: null,
-          error: `Security violation: Dangerous operation detected`,
+          error: 'Security violation: Dangerous operation detected',
           stdout: '',
-          stderr: `SecurityError: Code contains potentially dangerous patterns`,
+          stderr: 'SecurityError: Code contains potentially dangerous patterns',
           timestamp: new Date().toISOString()
         };
       }
@@ -390,7 +429,7 @@ print(f"Mount verification: {mount_test_result}")
       `);
       
       // Ensure essential items are present
-      namespace.set("__builtins__", this.pyodide.globals.get("__builtins__"));
+      namespace.set('__builtins__', this.pyodide.globals.get('__builtins__'));
       
       // Set up context variables in the isolated namespace (not main globals)
       for (const [key, value] of Object.entries(context)) {
@@ -552,7 +591,7 @@ json.dumps(_final_result)
       // Ensure cleanup
       try {
         await this.pyodide.runPythonAsync('output_capture.reset()');
-      } catch (resetError) {
+      } catch {
         // Ignore cleanup errors
       }
 
@@ -570,7 +609,7 @@ json.dumps(_final_result)
   /**
    * Install a Python package using micropip
    * @param {string} packageName - Name of the package to install
-   * @returns {Promise<Object>} Installation result
+   * @returns {Promise<PackageInstallResult>} Installation result with success status, version, and timing
    *
    * ``micropip`` downloads wheels from PyPI that have been built for
    * WebAssembly (``wasm32``) and adds them to Pyodide's package index.  Only
@@ -621,7 +660,7 @@ json.dumps(result)
 
   /**
    * Get list of installed packages
-   * @returns {Promise<Object>} List of packages
+   * @returns {Promise<AvailablePackages>} List of packages with names, count, and success status
    *
    * Pyodide keeps a Python ``sys.modules`` registry similar to CPython.  This
    * helper exposes that information so clients can discover which packages are
@@ -852,8 +891,6 @@ result
           count: 0
         }
       };
-
-      return result;
     } catch (error) {
       throw new Error(`Failed to list Pyodide files: ${error.message}`);
     }
@@ -903,7 +940,7 @@ json.dumps(result)
             error: deleteResult.error,
             timestamp: new Date().toISOString()
           };
-        } catch (parseError) {
+        } catch {
           return {
             success: false,
             error: 'Failed to parse deletion result',
@@ -987,8 +1024,8 @@ print("Environment reset completed")
    * @param {string} filename - Name of file to check
    * @returns {Promise<Object>} File existence result
    *
-    * Useful when the JavaScript side needs to know whether a prior upload
-    * has been persisted inside the WebAssembly sandbox.
+   * Useful when the JavaScript side needs to know whether a prior upload
+   * has been persisted inside the WebAssembly sandbox.
    */
   async fileExists(filename) {
     if (!this.isReady) {

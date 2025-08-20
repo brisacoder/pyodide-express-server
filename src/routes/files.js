@@ -316,7 +316,7 @@ router.get('/pyodide-files', async (req, res) => {
             result: JSON.parse(jsonString) 
           };
         } catch (parseError) {
-          logger.warn(`Could not parse Pyodide files result:`, parseError.message);
+          logger.warn('Could not parse Pyodide files result:', parseError.message);
         }
       } else {
         // Result is already a JavaScript object
