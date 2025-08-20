@@ -66,12 +66,14 @@ With the server running, try the sample client:
 node examples/basic-client.js
 ```
 
-For testing and development, also set up the Python environment:
+For testing and development, also set up the Python environment using uv:
 ```bash
-# Create virtual environment and install test dependencies
-python -m venv .venv
-.venv\Scripts\activate  # Windows (use `source .venv/bin/activate` on macOS/Linux)
-pip install -r requirements.txt
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh  # macOS/Linux
+# or: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"  # Windows
+
+# Install Python dependencies using uv
+uv sync
 ```
 
 ## API Endpoints
@@ -80,6 +82,7 @@ pip install -r requirements.txt
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | POST | `/api/execute` | Execute Python code and return the output |
+| POST | `/api/execute-raw` | Execute Python code with raw text body (no JSON wrapping) |
 | POST | `/api/execute-stream` | Execute code and stream results |
 | POST | `/api/install-package` | Install a Python package via `micropip` |
 | GET  | `/api/packages` | List installed packages |
@@ -98,15 +101,18 @@ pip install -r requirements.txt
 | ------ | -------- | ----------- |
 | GET | `/api/dashboard/stats` | Real-time security statistics (JSON) |
 | GET | `/api/dashboard/stats/dashboard` | Interactive Chart.js dashboard (HTML) |
-| DELETE | `/api/dashboard/stats/clear` | Clear/reset security statistics |
+| POST | `/api/dashboard/stats/clear` | Clear/reset security statistics |
 
 ### File Management
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | POST | `/api/upload-csv` | Upload a data file |
 | GET | `/api/uploaded-files` | List uploaded files |
-| GET | `/api/uploaded-files/:filename` | Get file info |
+| GET | `/api/file-info/:filename` | Get file info for uploaded files |
 | DELETE | `/api/uploaded-files/:filename` | Delete uploaded file |
+| GET | `/api/pyodide-files` | List files in Pyodide virtual filesystem |
+| DELETE | `/api/pyodide-files/:filename` | Delete file from Pyodide filesystem |
+| POST | `/api/extract-plots` | Extract plots from Pyodide filesystem |
 
 ## Development Workflow
 

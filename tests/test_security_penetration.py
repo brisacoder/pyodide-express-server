@@ -9,12 +9,11 @@ vulnerabilities and document actual attack vectors.
 ⚠️ WARNING: FOR TESTING PURPOSES ONLY - RUN AGAINST YOUR OWN SERVER
 """
 
-import requests
-import json
-import time
 import threading
+import time
 from pathlib import Path
-import base64
+
+import requests
 
 BASE_URL = "http://localhost:3000"
 

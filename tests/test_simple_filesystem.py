@@ -5,10 +5,11 @@ Simple filesystem persistence test that works with a running server.
 This test assumes the server is already running and tests basic file operations.
 """
 
-import unittest
-import requests
 import time
+import unittest
 from pathlib import Path
+
+import requests
 
 
 BASE_URL = "http://localhost:3000"

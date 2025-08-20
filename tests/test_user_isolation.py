@@ -1,7 +1,7 @@
-import os
-import unittest
 import subprocess
 import time
+import unittest
+
 import requests
 
 BASE_URL = "http://localhost:3000"

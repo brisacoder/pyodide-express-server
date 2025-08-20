@@ -10,12 +10,11 @@ This test suite covers:
 5. Stress testing the JSON serialization approach
 """
 
-import unittest
-import requests
-import time
-import json
 import concurrent.futures
+import unittest
 from typing import Dict, Any
+
+import requests
 
 # Base URL for the API
 BASE_URL = "http://localhost:3000"

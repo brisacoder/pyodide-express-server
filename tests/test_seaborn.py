@@ -1,8 +1,9 @@
+import base64
+import os
 import time
 import unittest
+
 import requests
-import os
-import base64
 
 BASE_URL = "http://localhost:3000"
 

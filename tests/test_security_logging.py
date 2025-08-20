@@ -9,10 +9,7 @@ This module tests:
 5. Security log file generation
 """
 
-import json
-import os
 import tempfile
-import time
 import unittest
 from pathlib import Path
 

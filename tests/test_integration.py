@@ -1,10 +1,10 @@
 import os
+import subprocess
 import tempfile
 import time
-import subprocess
-import requests
 import unittest
-import json
+
+import requests
 
 BASE_URL = "http://localhost:3000"
 

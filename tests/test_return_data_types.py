@@ -6,12 +6,11 @@ from Pyodide code execution, including numpy arrays, pandas DataFrames,
 dictionaries, lists, and other complex data structures.
 """
 
-import unittest
-import requests
-import time
-import json
 import subprocess
-from pathlib import Path
+import time
+import unittest
+
+import requests
 
 
 # Configuration for tests
