@@ -207,7 +207,68 @@ curl -X DELETE "http://localhost:3000/api/uploaded-files/FILENAME"
 Invoke-RestMethod -Uri "http://localhost:3000/api/uploaded-files/FILENAME" -Method DELETE
 ```
 
-## 11. Install a Python package
+## 11. Server statistics (Legacy)
+
+**Unix/Linux/macOS**
+```bash
+curl http://localhost:3000/api/stats
+```
+
+**PowerShell**
+```powershell
+curl http://localhost:3000/api/stats
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/stats"
+```
+
+## 🔐 Security Dashboard Endpoints (NEW!)
+
+### 12. Get security statistics (Enhanced)
+
+**Unix/Linux/macOS**
+```bash
+curl http://localhost:3000/api/dashboard/stats
+```
+
+**PowerShell**
+```powershell
+curl http://localhost:3000/api/dashboard/stats
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/dashboard/stats"
+```
+
+### 13. View interactive dashboard (Web Interface)
+
+**Unix/Linux/macOS**
+```bash
+# Opens the dashboard in your default browser
+curl http://localhost:3000/api/dashboard/stats/dashboard
+```
+
+**PowerShell**
+```powershell
+# View dashboard HTML in browser
+Start-Process "http://localhost:3000/api/dashboard/stats/dashboard"
+
+# Or get the HTML content
+Invoke-RestMethod -Uri "http://localhost:3000/api/dashboard/stats/dashboard"
+```
+
+### 14. Clear/Reset security statistics
+
+**Unix/Linux/macOS**
+```bash
+curl -X DELETE http://localhost:3000/api/dashboard/stats/clear
+```
+
+**PowerShell**
+```powershell
+curl -X DELETE "http://localhost:3000/api/dashboard/stats/clear"
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/dashboard/stats/clear" -Method DELETE
+```
+
+## 15. Install a Python package
 
 **Unix/Linux/macOS**
 ```bash
@@ -232,7 +293,7 @@ Invoke-RestMethod -Uri "http://localhost:3000/api/install-package" `
   -Body ($body | ConvertTo-Json)
 ```
 
-## 12. List installed packages
+## 16. List installed packages
 
 **Unix/Linux/macOS**
 ```bash
@@ -246,7 +307,7 @@ curl http://localhost:3000/api/packages
 Invoke-RestMethod -Uri "http://localhost:3000/api/packages"
 ```
 
-## 13. Reset Pyodide environment
+## 17. Reset Pyodide environment
 
 **Unix/Linux/macOS**
 ```bash
@@ -260,23 +321,41 @@ curl -X POST "http://localhost:3000/api/reset"
 Invoke-RestMethod -Uri "http://localhost:3000/api/reset" -Method POST
 ```
 
-## 14. Server statistics
-
-**Unix/Linux/macOS**
-```bash
-curl http://localhost:3000/api/stats
-```
-
-**PowerShell**
-```powershell
-curl http://localhost:3000/api/stats
-# OR
-Invoke-RestMethod -Uri "http://localhost:3000/api/stats"
-```
-
 These commands provide a quick way to verify every API route.
 
 ## Practical PowerShell Examples 🚀
+
+### 🔐 Security Monitoring Workflow
+```powershell
+# 1. Execute some Python code to generate security events
+$pythonCode = @"
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Create sample data
+data = {'x': [1, 2, 3, 4], 'y': [2, 4, 6, 8]}
+df = pd.DataFrame(data)
+
+# Create plot
+plt.figure(figsize=(8, 6))
+plt.plot(df['x'], df['y'], 'bo-')
+plt.title('Security Test Plot')
+plt.savefig('/plots/matplotlib/security_test.png')
+print("Security logging test completed")
+"@
+
+$result = Invoke-RestMethod -Uri "http://localhost:3000/api/execute" `
+  -Method POST -ContentType "application/json" `
+  -Body (@{code = $pythonCode} | ConvertTo-Json)
+
+# 2. Check security statistics
+$stats = Invoke-RestMethod -Uri "http://localhost:3000/api/dashboard/stats"
+Write-Output "Current Security Stats:"
+Write-Output $stats
+
+# 3. Open the interactive dashboard
+Start-Process "http://localhost:3000/api/dashboard/stats/dashboard"
+```
 
 ### Data Science Workflow
 ```powershell

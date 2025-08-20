@@ -1,11 +1,29 @@
 # Pyodide Express Server
 
-A Node.js Express service that exposes a REST API for executing Python code via [Pyodide](https://pyodide.org/). Features comprehensive data science capabilities including matplotlib, seaborn, scikit-learn, and pandas with extensive testing coverage.
+A Node.js Express service that exposes a REST API for executing Python code via [Pyodide](https://pyodide.org/). Features comprehensive data science capabilities including matplotlib, seaborn, scikit-learn, and pandas with extensive testing coverage and **enhanced security logging**.
+
+## 🔥 Latest Features
+
+### 🔐 Enhanced Security Logging System
+- **SHA-256 code hashing** for security tracking and audit trails
+- **Real-time statistics dashboard** with Chart.js visualizations
+- **Dual logging** (server.log + security.log) for comprehensive monitoring
+- **IP tracking, User-Agent monitoring, error categorization**
+- **Interactive dashboard** at `/api/dashboard/stats/dashboard`
+- **Backward-compatible APIs** maintaining existing functionality
+
+### 📊 Statistics Dashboard
+- **Professional UI** with responsive design and gradient styling
+- **Real-time metrics**: execution counts, success rates, timing analysis
+- **Hourly trend analysis** with interactive charts
+- **REST endpoints** for programmatic access to statistics
 
 ## Features
 
 - **Python Code Execution** - Execute Python code via Pyodide and return stdout/stderr
 - **Streaming Execution** - Real-time streaming endpoint for long-running operations
+- **Enhanced Security Logging** - SHA-256 hashing, audit trails, and comprehensive monitoring
+- **Statistics Dashboard** - Interactive Chart.js dashboard for security monitoring
 - **Package Management** - Install additional Python packages at runtime via micropip
 - **File Upload & Analysis** - Upload CSV and other data files for processing
 - **Data Science Ready** - Built-in support for matplotlib, seaborn, scikit-learn, pandas
@@ -57,18 +75,38 @@ pip install -r requirements.txt
 ```
 
 ## API Endpoints
+
+### Core Execution
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | POST | `/api/execute` | Execute Python code and return the output |
 | POST | `/api/execute-stream` | Execute code and stream results |
 | POST | `/api/install-package` | Install a Python package via `micropip` |
 | GET  | `/api/packages` | List installed packages |
+| POST | `/api/reset` | Reset the Python environment |
+
+### Health & Monitoring
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
 | GET  | `/api/status` | Pyodide initialization status |
 | GET  | `/api/health` | Python execution health check |
-| GET  | `/api/stats` | Server statistics |
-| POST | `/api/reset` | Reset the Python environment |
-| POST | `/api/upload-csv` | Upload a data file |
+| GET  | `/api/stats` | Server statistics (legacy format) |
 | GET  | `/health` | Overall server health |
+
+### 🔐 Security & Analytics (New!)
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| GET | `/api/dashboard/stats` | Real-time security statistics (JSON) |
+| GET | `/api/dashboard/stats/dashboard` | Interactive Chart.js dashboard (HTML) |
+| DELETE | `/api/dashboard/stats/clear` | Clear/reset security statistics |
+
+### File Management
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| POST | `/api/upload-csv` | Upload a data file |
+| GET | `/api/uploaded-files` | List uploaded files |
+| GET | `/api/uploaded-files/:filename` | Get file info |
+| DELETE | `/api/uploaded-files/:filename` | Delete uploaded file |
 
 ## Development Workflow
 
@@ -134,12 +172,14 @@ python run_comprehensive_tests.py --categories matplotlib seaborn sklearn
 - **Error Handling** - Error scenarios and edge cases  
 - **Integration** - End-to-end workflows
 - **Security** - Authentication and input validation
+- **Security Logging** - Enhanced logging system and dashboard (New!)
 - **Performance** - Load and stress testing
 - **Reset** - Environment reset functionality
 - **Extra Non-Happy Paths** - Additional edge cases
 - **Scikit-Learn** - Machine learning functionality
 - **Matplotlib** - Static plotting capabilities
 - **Seaborn** - Statistical visualization
+- **Dynamic Modules** - Package management and execution robustness
 
 ### Node.js Tests
 Basic server functionality tests:

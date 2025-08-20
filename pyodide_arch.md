@@ -649,17 +649,374 @@ const upload = multer({
 });
 ```
 
+## 9. Enhanced Security Logging System
+
+### 9.1 Security Architecture Overview
+
+The enhanced security logging system provides comprehensive monitoring and audit trails for all Python code execution without disrupting the core Pyodide functionality.
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────────┐
+│   execute.js    │    │   logger.js      │    │   stats.js          │
+│                 │    │                  │    │                     │
+│ ┌─executeCode()─┼────┼─security()───────┼────┼─GET /dashboard/stats │
+│ │               │    │                  │    │                     │
+│ │ SHA-256 hash  │    │ ┌─updateStats()─ │    │   Chart.js render   │
+│ │ IP tracking   │    │ │               │    │                     │
+│ │ Timing        │    │ └─Dual logging  │    │   Interactive UI    │
+│ └─Response      │    │                  │    │                     │
+└─────────────────┘    └──────────────────┘    └─────────────────────┘
+```
+
+### 9.2 Security Event Logging
+
+**File: `src/utils/logger.js`**
+
+#### Enhanced Logger Structure
+```javascript
+// Lines 45-95: security() method - Core security logging
+security(event, details = {}) {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    level: 'SECURITY',
+    event,
+    details,
+    ...this.getRequestContext()
+  };
+
+  // Write to security.log
+  this.writeToSecurityLog(logEntry);
+  
+  // Update real-time statistics
+  this.updateExecutionStats(event, details);
+}
+```
+
+#### Crypto Hash Generation
+```javascript
+// Lines 156-168: generateCodeHash() - SHA-256 hashing
+generateCodeHash(code) {
+  try {
+    return crypto.createHash('sha256')
+      .update(code, 'utf8')
+      .digest('hex');
+  } catch (error) {
+    console.error('Error generating code hash:', error);
+    return 'hash-error-' + Date.now();
+  }
+}
+```
+
+### 9.3 Code Execution Integration
+
+**File: `src/routes/execute.js`**
+
+The security logging is seamlessly integrated into the execution flow:
+
+```javascript
+// Lines 45-65: Enhanced execution with security logging
+router.post('/execute', asyncHandler(async (req, res) => {
+  try {
+    const { code, timeout = 30000 } = req.body;
+    
+    // Generate security hash BEFORE execution
+    const codeHash = logger.generateCodeHash(code);
+    const startTime = Date.now();
+    
+    // Execute code with Pyodide
+    const result = await pyodideService.executeCode(code, timeout);
+    const executionTime = Date.now() - startTime;
+    
+    // Log successful execution with security details
+    logger.security('code_execution', {
+      success: true,
+      codeHash,
+      executionTime,
+      resultLength: result?.length || 0,
+      hasOutput: !!(result && result.trim())
+    });
+    
+    // Return standard response (unchanged for compatibility)
+    res.json({ success: true, result });
+    
+  } catch (error) {
+    // Log security event for failed executions
+    logger.security('code_execution_error', {
+      success: false,
+      error: error.message,
+      codeHash: logger.generateCodeHash(code || ''),
+      executionTime: Date.now() - startTime
+    });
+    
+    res.status(500).json({ success: false, error: error.message });
+  }
+}));
+```
+
+### 9.4 Real-time Statistics Collection
+
+**File: `src/utils/logger.js`**
+
+#### Statistics Structure
+```javascript
+// Lines 170-185: Statistics data structure
+this.executionStats = {
+  totalExecutions: 0,
+  successfulExecutions: 0,
+  failedExecutions: 0,
+  totalExecutionTime: 0,
+  averageExecutionTime: 0,
+  lastExecutionTime: null,
+  startTime: Date.now(),
+  errorCategories: {},
+  topIPs: {},
+  userAgents: {},
+  hourlyTrend: new Array(24).fill(0)  // 24-hour trend
+};
+```
+
+#### Real-time Updates
+```javascript
+// Lines 201-245: updateExecutionStats() - Live statistics
+updateExecutionStats(event, details) {
+  if (event === 'code_execution') {
+    this.executionStats.totalExecutions++;
+    
+    if (details.success) {
+      this.executionStats.successfulExecutions++;
+      
+      // Track execution time
+      if (details.executionTime) {
+        this.executionStats.totalExecutionTime += details.executionTime;
+        this.executionStats.averageExecutionTime = 
+          this.executionStats.totalExecutionTime / this.executionStats.successfulExecutions;
+      }
+    } else {
+      this.executionStats.failedExecutions++;
+      
+      // Categorize errors
+      const errorType = this.categorizeError(details.error);
+      this.executionStats.errorCategories[errorType] = 
+        (this.executionStats.errorCategories[errorType] || 0) + 1;
+    }
+    
+    // Update hourly trend
+    const currentHour = new Date().getHours();
+    this.executionStats.hourlyTrend[currentHour]++;
+    
+    // Track IP addresses
+    const clientIP = this.getClientIP();
+    if (clientIP) {
+      this.executionStats.topIPs[clientIP] = 
+        (this.executionStats.topIPs[clientIP] || 0) + 1;
+    }
+    
+    // Track User-Agent strings
+    const userAgent = this.getUserAgent();
+    if (userAgent) {
+      this.executionStats.userAgents[userAgent] = 
+        (this.executionStats.userAgents[userAgent] || 0) + 1;
+    }
+    
+    this.executionStats.lastExecutionTime = new Date().toISOString();
+  }
+}
+```
+
+### 9.5 Interactive Dashboard System
+
+**File: `src/routes/stats.js`**
+
+#### Dashboard Endpoints
+```javascript
+// Lines 15-45: Dashboard statistics API
+router.get('/dashboard/stats', (req, res) => {
+  try {
+    const stats = logger.getStats();
+    const uptime = process.uptime();
+    
+    const response = {
+      success: true,
+      stats: {
+        overview: {
+          totalExecutions: stats.totalExecutions,
+          successRate: ((stats.successfulExecutions / stats.totalExecutions) * 100).toFixed(1),
+          averageExecutionTime: Math.round(stats.averageExecutionTime || 0),
+          uptimeSeconds: Math.round(uptime),
+          uptimeHuman: formatUptime(uptime)
+        },
+        recent: {
+          lastHourExecutions: stats.hourlyTrend[new Date().getHours()],
+          recentSuccessRate: calculateRecentSuccessRate(stats),
+          packagesInstalled: stats.packagesInstalled || 0,
+          filesUploaded: stats.filesUploaded || 0
+        },
+        topIPs: formatTopEntries(stats.topIPs),
+        topErrors: formatTopEntries(stats.errorCategories),
+        userAgents: formatTopEntries(stats.userAgents),
+        hourlyTrend: stats.hourlyTrend
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    res.json(response);
+  } catch (error) {
+    logger.error('Error getting dashboard stats:', error);
+    res.status(500).json({ success: false, error: 'Failed to get statistics' });
+  }
+});
+```
+
+#### Chart.js Dashboard Generation
+```javascript
+// Lines 150-300: Interactive HTML dashboard
+router.get('/dashboard/stats/dashboard', (req, res) => {
+  try {
+    const stats = logger.getStats();
+    
+    // Generate professional HTML with Chart.js
+    const dashboardHTML = generateDashboardHTML(stats);
+    
+    res.setHeader('Content-Type', 'text/html');
+    res.send(dashboardHTML);
+  } catch (error) {
+    logger.error('Error generating dashboard:', error);
+    res.status(500).send('<h1>Error generating dashboard</h1>');
+  }
+});
+
+function generateDashboardHTML(stats) {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Pyodide Express Server - Statistics Dashboard</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <style>
+            /* Professional CSS with gradients and responsive design */
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+            .container { max-width: 1200px; margin: 0 auto; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+            /* ... extensive CSS for professional appearance ... */
+        </style>
+    </head>
+    <body>
+        <!-- Interactive charts and statistics display -->
+        <script>
+            // Chart.js configuration for real-time visualization
+            const hourlyTrendChart = new Chart(ctx, {
+                type: 'line',
+                data: { /* real-time data */ },
+                options: { /* responsive configuration */ }
+            });
+        </script>
+    </body>
+    </html>
+  `;
+}
+```
+
+### 9.6 Backward Compatibility
+
+The security enhancements maintain 100% backward compatibility:
+
+#### Legacy API Compatibility
+```javascript
+// Lines 25-45: /api/stats endpoint (unchanged format)
+router.get('/api/stats', asyncHandler(async (req, res) => {
+  try {
+    // Get enhanced statistics
+    const enhancedStats = logger.getStats();
+    
+    // Format in legacy structure for existing clients
+    const legacyResponse = {
+      uptime: process.uptime(),
+      pyodideReady: pyodideService.isReady(),
+      // ... other legacy fields preserved ...
+      
+      // NEW: Enhanced data nested under executionStats
+      executionStats: {
+        totalExecutions: enhancedStats.totalExecutions,
+        successRate: enhancedStats.successfulExecutions / enhancedStats.totalExecutions,
+        averageExecutionTime: enhancedStats.averageExecutionTime,
+        errorCategories: enhancedStats.errorCategories,
+        hourlyTrend: enhancedStats.hourlyTrend
+      }
+    };
+    
+    res.json(legacyResponse);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}));
+```
+
+### 9.7 Test Coverage
+
+**File: `tests/test_security_logging.py`**
+
+The security logging system includes comprehensive test coverage:
+
+```python
+class SecurityLoggingTestCase(unittest.TestCase):
+    """Test the enhanced security logging system."""
+    
+    def test_01_security_logging_code_execution(self):
+        """Test that code execution events are properly logged with security data."""
+        # Execute Python code and verify security logging
+        
+    def test_02_security_logging_error_tracking(self):
+        """Test that errors are properly categorized and tracked."""
+        # Test error categorization and statistics
+        
+    def test_06_dashboard_endpoints_functionality(self):
+        """Test all dashboard endpoints for proper functionality."""
+        # Verify all dashboard endpoints work correctly
+        
+    def test_07_legacy_stats_endpoint_compatibility(self):
+        """Test that legacy stats endpoint maintains backward compatibility."""
+        # Ensure existing clients continue to work
+```
+
 ## Summary
 
-The Pyodide integration follows this flow:
+The Pyodide integration with enhanced security logging follows this comprehensive flow:
 
+### Core Execution Flow
 1. **Server Start** → `server.js:startServer()` 
 2. **Initialize** → `pyodide-service.js:initialize()` → `_performInitialization()`
 3. **Load Pyodide** → `await loadPyodide()` 
 4. **Load Packages** → `loadPackage()` and `micropip.install()`
 5. **Setup Environment** → Python code setup with output capture
 6. **Ready State** → `this.isReady = true`
-7. **Handle Requests** → `execute.js` routes call `executeCode()`
-8. **Execute Python** → Context injection → Code execution → Output capture → Response
 
-The system provides a robust Python execution environment in Node.js through WebAssembly, with comprehensive error handling, output capture, and package management capabilities.
+### Enhanced Security Flow (New!)
+1. **Request Received** → `execute.js` routes with security context
+2. **Code Hashing** → SHA-256 hash generation for audit trails
+3. **Security Logging** → Real-time event logging with IP/User-Agent tracking
+4. **Execute Python** → Standard Pyodide execution (unchanged)
+5. **Statistics Update** → Real-time metrics collection and trend analysis
+6. **Response** → Standard API response (backward compatible)
+7. **Dashboard Update** → Live statistics available via Chart.js interface
+
+### Security Architecture Benefits
+- **Non-Disruptive**: 100% backward compatibility with existing APIs
+- **Comprehensive Monitoring**: SHA-256 hashing, IP tracking, error categorization
+- **Real-time Analytics**: Live dashboard with Chart.js visualizations
+- **Audit Trail**: Dual logging streams (server.log + security.log)
+- **Performance Metrics**: Execution timing, success rates, hourly trends
+- **Professional UI**: Responsive dashboard with professional design
+
+### System Capabilities
+The enhanced system provides a robust Python execution environment in Node.js through WebAssembly, with:
+- **Comprehensive error handling** and output capture
+- **Package management** capabilities via micropip
+- **Security monitoring** with audit trails and real-time statistics
+- **Interactive dashboard** for monitoring and analytics
+- **Extensive test coverage** including security-specific test suite
+- **Professional documentation** and development tools
+
+The architecture demonstrates how security enhancements can be seamlessly integrated into existing systems without disrupting functionality while providing enterprise-grade monitoring and audit capabilities.

@@ -1,103 +1,349 @@
 # 🚀 Complete Setup Instructions for Pyodide Express Server
 
-Follow these steps to get your Pyodide Express Server up and running.
+Follow these steps to get your Pyodide Express Server with **Enhanced Security Logging** up and running.
 
-## 📁 1. Directory Structure
+## 🎯 Quick Start (Fastest Way)
 
-Create this exact folder structure:
+If you're using the existing repository:
+
+```bash
+# Clone the repository
+git clone https://github.com/brisacoder/pyodide-express-server.git
+cd pyodide-express-server
+
+# Install Node.js dependencies
+npm ci
+
+# Set up Python testing environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows (.venv/bin/activate on macOS/Linux)
+pip install -r requirements.txt
+
+# Start the server
+npm start
+
+# In another terminal, test everything works
+python run_simple_tests.py
+```
+
+## 📁 Project Structure (Current)
+
+The repository includes these key components:
 
 ```
 pyodide-express-server/
-├── package.json                 # Dependencies and scripts
-├── .env.example                 # Environment template
-├── .gitignore                   # Git ignore rules
-├── test-client.js               # Test client
-├── README.md                    # Documentation
-├── src/                         # Source code
-│   ├── server.js                # Main server file
-│   ├── services/
-│   │   └── pyodide-service.js   # Pyodide service
-│   ├── middleware/
-│   │   └── validation.js        # Input validation
-│   └── utils/
-│       └── logger.js            # Logging utility
-├── uploads/                     # File uploads (will be created)
-│   └── .gitkeep                 # Keep empty directory
-└── logs/                        # Log files (will be created)
-    └── .gitkeep                 # Keep empty directory
+├── 📦 Core Server
+│   ├── src/                     # Source code
+│   │   ├── server.js            # Main server file
+│   │   ├── app.js               # Express app configuration
+│   │   ├── services/
+│   │   │   └── pyodide-service.js # Pyodide service
+│   │   ├── controllers/         # Route controllers
+│   │   ├── middleware/          # Express middleware
+│   │   ├── routes/              # API route definitions
+│   │   └── utils/
+│   │       ├── logger.js        # 🔐 Enhanced security logging
+│   │       ├── metrics.js       # Performance metrics
+│   │       └── requestContext.js # Request tracking
+│   ├── public/                  # Static files
+│   │   └── index.html           # Server landing page
+│   └── package.json             # Dependencies and scripts
+├── 🔐 Security & Monitoring
+│   ├── logs/                    # Log files (auto-created)
+│   │   ├── server.log           # General application logs
+│   │   └── security.log         # Security event logs
+│   └── Dashboard at /api/dashboard/stats/dashboard
+├── 📊 Data & Files
+│   ├── uploads/                 # File uploads
+│   ├── plots/                   # Generated plots
+│   │   ├── matplotlib/          # Direct matplotlib saves
+│   │   └── seaborn/             # Direct seaborn saves
+│   └── Filesystem mounting enabled
+├── 🧪 Testing Infrastructure
+│   ├── tests/                   # Comprehensive test suite
+│   │   ├── test_api.py          # Basic API tests
+│   │   ├── test_security_logging.py # 🔐 Security logging tests
+│   │   ├── test_matplotlib.py   # Visualization tests
+│   │   └── ... (20+ test modules)
+│   ├── run_simple_tests.py      # Quick development tests
+│   └── run_comprehensive_tests.py # Full validation
+└── 📚 Documentation
+    ├── docs/                    # Detailed documentation
+    ├── README.md                # Main documentation
+    ├── TESTING.md               # Testing guide
+    ├── TODO.md                  # 🆕 Development roadmap
+    └── setup.md                 # This file
 ```
 
-## 📦 2. Create package.json
+## 🔐 New Security Features
 
-Save this as `package.json`:
+### Enhanced Security Logging System
+- **SHA-256 code hashing** for audit trails
+- **Real-time statistics collection** with IP and User-Agent tracking
+- **Interactive Chart.js dashboard** at `/api/dashboard/stats/dashboard`
+- **Dual logging streams** (server.log + security.log)
+- **Comprehensive test coverage** (10 security logging tests)
 
-```json
-{
-  "name": "pyodide-express-server",
-  "version": "1.0.0",
-  "description": "Express server for executing Python code using Pyodide",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
-    "test": "node test-client.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "multer": "^1.4.5-lts.1",
-    "pyodide": "^0.28.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "keywords": ["pyodide", "python", "express", "api"],
-  "author": "Your Name",
-  "license": "MIT"
-}
-```
+### Dashboard Features
+- **Professional UI** with responsive design
+- **Real-time metrics**: execution counts, success rates, timing analysis
+- **Hourly trend tracking** with interactive charts
+- **REST API access** for programmatic monitoring
 
-## 🔧 3. Install Dependencies
+## �️ Manual Setup (If Building from Scratch)
 
+### 1. Initialize Project
 ```bash
-# Navigate to your project directory
+mkdir pyodide-express-server
 cd pyodide-express-server
-
-# Install all dependencies
-npm install
+npm init -y
 ```
 
-## 📂 4. Create Required Directories
-
+### 2. Install Dependencies
 ```bash
-# Create directories that might not exist
-mkdir -p src/services src/middleware src/utils uploads logs
+# Core dependencies
+npm install express multer pyodide cors helmet compression
 
-# Create .gitkeep files to track empty directories
-touch uploads/.gitkeep logs/.gitkeep
+# Development dependencies  
+npm install --save-dev nodemon prettier eslint
+
+# Security and monitoring
+npm install crypto fs path
 ```
 
-## 📄 5. Copy All Source Files
+### 3. Create Directory Structure
+```bash
+# Create all required directories
+mkdir -p src/{controllers,middleware,routes,services,utils,config}
+mkdir -p public docs tests logs uploads plots/{matplotlib,seaborn}
+mkdir -p examples
+```
 
-You now need to create these files with the code I provided:
+### 4. Copy Source Files
+You'll need to create all the source files. The key files with enhanced security logging:
 
-### Required Files:
-1. **`src/services/pyodide-service.js`** - Main Pyodide service
-2. **`src/utils/logger.js`** - Logging utility  
-3. **`src/server.js`** - Main server file
-4. **`src/middleware/validation.js`** - Input validation
-5. **`test-client.js`** - Test client (in root directory)
+**Enhanced Files:**
+- `src/utils/logger.js` - Security logging with SHA-256 hashing
+- `src/routes/stats.js` - Dashboard endpoints
+- `src/routes/execute.js` - Enhanced execution logging
+- `tests/test_security_logging.py` - Security test suite
 
-Copy the complete code from the artifacts I created above into each file.
+**Core Files:**
+- `src/server.js` - Main server
+- `src/app.js` - Express configuration  
+- `src/services/pyodide-service.js` - Pyodide integration
+- `src/swagger-config.js` - API documentation
 
-## 🌍 6. Environment Setup (Optional)
+## 🧪 Testing Setup
 
-Create `.env` file for custom configuration:
+### Python Environment (Required for Tests)
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+# Install test dependencies
+pip install requests pytest unittest-xml-reporting
+
+# Or use UV for faster installs:
+pip install uv
+uv pip install requests pytest
+```
+
+### Test Validation
+```bash
+# Start the server (keep running)
+npm start
+
+# In another terminal, run quick tests (39 tests)
+python run_simple_tests.py
+
+# Run comprehensive tests (100+ tests)
+python run_comprehensive_tests.py
+
+# Run just security logging tests
+python -m unittest tests.test_security_logging -v
+```
+
+## 🌍 Environment Configuration
+
+Create `.env` file for custom configuration (optional):
 
 ```bash
-# Copy the template
+# Copy the template  
 cp .env.example .env
+```
 
-# Edit if needed (default values work fine)
+Default `.env` contents:
+```bash
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Security Logging
+SECURITY_LOG_ENABLED=true
+SECURITY_LOG_FILE=logs/security.log
+
+# Dashboard Configuration  
+DASHBOARD_ENABLED=true
+DASHBOARD_TITLE="Pyodide Security Dashboard"
+
+# Performance Settings
+REQUEST_TIMEOUT=30000
+MAX_FILE_SIZE=10485760
+```
+
+## 🚀 Starting the Server
+
+### Development Mode (Recommended)
+```bash
+# Start with auto-reload
+npm run dev
+
+# Start with debugging
+npm run dev:inspect
+```
+
+### Production Mode
+```bash
+# Standard start
+npm start
+
+# With PM2 (process manager)
+npm install -g pm2
+pm2 start src/server.js --name pyodide-server
+```
+
+## 🔍 Verification Steps
+
+### 1. Basic Server Health
+```bash
+# Test server is running
+curl http://localhost:3000/health
+
+# Test Pyodide status  
+curl http://localhost:3000/api/status
+```
+
+### 2. Security Dashboard Access
+```bash
+# View security statistics (JSON)
+curl http://localhost:3000/api/dashboard/stats
+
+# Open interactive dashboard in browser
+start http://localhost:3000/api/dashboard/stats/dashboard
+```
+
+### 3. Execute Python Code
+```bash
+# Test basic execution
+curl -X POST http://localhost:3000/api/execute \
+  -H "Content-Type: application/json" \
+  -d '{"code": "print(\"Hello World!\"); result = 2 + 2; print(f\"Result: {result}\")"}'
+```
+
+### 4. Run Test Suite
+```bash
+# Quick tests (39 tests, ~1 second)
+python run_simple_tests.py
+
+# Full validation (100+ tests, ~60 seconds)  
+python run_comprehensive_tests.py
+```
+
+## 🔐 Security Features Verification
+
+### Check Security Logging
+```bash
+# View security log entries
+tail -f logs/security.log
+
+# Check statistics accumulation
+curl http://localhost:3000/api/dashboard/stats | jq '.stats.overview'
+```
+
+### Test Dashboard Features
+1. **Execute some Python code** to generate security events
+2. **Open dashboard**: `http://localhost:3000/api/dashboard/stats/dashboard`
+3. **Verify charts display**: execution counts, success rates, trends
+4. **Test statistics reset**: `curl -X DELETE http://localhost:3000/api/dashboard/stats/clear`
+
+## 📚 Next Steps
+
+### Explore the API
+- **Swagger Documentation**: `http://localhost:3000/api-docs`
+- **API Examples**: See `docs/curl-commands.md`
+- **Test Scripts**: Try `examples/basic-client.js`
+
+### Development Workflow
+- **Quick Testing**: Use `run_simple_tests.py` during development
+- **Pre-commit**: Run `run_comprehensive_tests.py` before commits  
+- **Security Focus**: Use `--categories security security_logging` for security testing
+
+### Documentation
+- **Architecture**: Read `docs/architecture.md`
+- **Testing Guide**: See `TESTING.md`
+- **Development Roadmap**: Check `TODO.md`
+- **Filesystem Guide**: See `docs/FILESYSTEM_MOUNTING_GUIDE.md`
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**Server won't start:**
+```bash
+# Check Node.js version (requires 18+)
+node --version
+
+# Clear npm cache  
+npm cache clean --force
+npm ci
+```
+
+**Tests failing:**
+```bash
+# Ensure virtual environment is active
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # macOS/Linux
+
+# Reinstall test dependencies
+pip install -r requirements.txt
+```
+
+**Security logging not working:**
+```bash
+# Check logs directory permissions
+ls -la logs/
+
+# Verify security logging is enabled
+curl http://localhost:3000/api/dashboard/stats
+```
+
+**Dashboard not loading:**
+```bash
+# Check browser console for errors
+# Verify Chart.js CDN is accessible
+# Test with: curl http://localhost:3000/api/dashboard/stats/dashboard
+```
+
+### Performance Issues
+- **Memory usage**: Monitor with `top` or Task Manager
+- **Response times**: Check dashboard performance metrics
+- **Log file size**: Rotate logs regularly (see `npm run clean:logs`)
+
+### Getting Help
+- **Issue Tracker**: Create GitHub issue with logs and steps to reproduce
+- **Documentation**: Check all `.md` files in the repository
+- **Test Results**: Include `run_comprehensive_tests.py` output for debugging
+
+---
+
+🎉 **Congratulations!** You now have a fully functional Pyodide Express Server with enhanced security logging, interactive dashboard, and comprehensive testing. The server provides a robust foundation for executing Python code via REST API with enterprise-grade monitoring and audit capabilities.
 nano .env
 ```
 
