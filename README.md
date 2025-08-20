@@ -55,7 +55,12 @@ plt.savefig('/plots/matplotlib/my_chart.png')  # Appears instantly in local plot
 git clone https://github.com/brisacoder/pyodide-express-server.git
 cd pyodide-express-server
 npm ci
-cp .env.example .env   # optional
+
+# Create environment file (optional)
+cp .env.example .env   # Edit PORT, NODE_ENV, etc. as needed
+
+# Create required directories
+mkdir -p logs uploads plots/matplotlib plots/seaborn
 
 # Start the server
 npm start
@@ -75,8 +80,77 @@ For testing and development, also set up the Python environment using uv:
 curl -LsSf https://astral.sh/uv/install.sh | sh  # macOS/Linux
 # or: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"  # Windows
 
-# Install Python dependencies using uv
+# Install Python dependencies using uv (creates virtual environment automatically)
 uv sync
+```
+
+## Project Structure
+
+The repository includes these key components:
+
+```
+pyodide-express-server/
+├── 📦 Core Server
+│   ├── src/                     # Source code
+│   │   ├── server.js            # Main server file
+│   │   ├── app.js               # Express app configuration
+│   │   ├── services/pyodide-service.js # Pyodide WebAssembly runtime
+│   │   ├── controllers/         # Route controllers
+│   │   ├── middleware/          # Express middleware
+│   │   ├── routes/              # API route definitions
+│   │   └── utils/
+│   │       ├── logger.js        # 🔐 Enhanced security logging
+│   │       ├── metrics.js       # Performance metrics
+│   │       └── requestContext.js # Request tracking
+│   ├── public/index.html        # Server landing page
+│   └── package.json             # Dependencies and scripts
+├── 🔐 Security & Monitoring
+│   ├── logs/                    # Log files (auto-created)
+│   │   ├── server.log           # General application logs
+│   │   └── security.log         # Security event logs
+│   └── Dashboard at /api/dashboard/stats/dashboard
+├── 📊 Data & Files
+│   ├── uploads/                 # File uploads
+│   ├── plots/                   # Generated plots
+│   │   ├── matplotlib/          # Direct matplotlib saves
+│   │   └── seaborn/             # Direct seaborn saves
+│   └── examples/                # Example client applications
+├── 🧪 Testing Infrastructure
+│   ├── tests/                   # Comprehensive Python test suite (30+ modules)
+│   ├── run_simple_tests.py      # Quick development tests
+│   └── run_comprehensive_tests.py # Full validation
+└── 📚 Documentation
+    ├── docs/                    # Detailed documentation
+    ├── TESTING.md               # Testing guide
+    └── pyodide_arch.md          # Pyodide integration specifics
+```
+
+## Environment Configuration
+
+Create `.env` file for custom configuration (optional):
+
+```bash
+# Copy the template  
+cp .env.example .env
+```
+
+Default configuration values:
+```bash
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Security Logging
+SECURITY_LOG_ENABLED=true
+SECURITY_LOG_FILE=logs/security.log
+
+# Dashboard Configuration  
+DASHBOARD_ENABLED=true
+DASHBOARD_TITLE="Pyodide Security Dashboard"
+
+# Performance Settings
+REQUEST_TIMEOUT=30000
+MAX_FILE_SIZE=10485760
 ```
 
 ## API Endpoints
@@ -198,6 +272,122 @@ npm test
 ```
 
 **Requirements:** The Python tests are managed with `uv` which automatically handles dependencies and virtual environments. See [TESTING.md](TESTING.md) for detailed testing documentation.
+
+## Verification & Health Checks
+
+### Basic Server Health
+```bash
+# Test server is running
+curl http://localhost:3000/health
+
+# Test Pyodide status  
+curl http://localhost:3000/api/status
+
+# View security statistics
+curl http://localhost:3000/api/dashboard/stats
+```
+
+### Interactive Dashboard
+Open the security monitoring dashboard in your browser:
+```bash
+# Windows
+start http://localhost:3000/api/dashboard/stats/dashboard
+
+# macOS
+open http://localhost:3000/api/dashboard/stats/dashboard
+
+# Linux
+xdg-open http://localhost:3000/api/dashboard/stats/dashboard
+```
+
+### Test Python Code Execution
+```bash
+# Test basic execution
+curl -X POST http://localhost:3000/api/execute \
+  -H "Content-Type: application/json" \
+  -d '{"code": "print(\"Hello World!\"); result = 2 + 2; print(f\"Result: {result}\")"}'
+
+# Test raw execution (better for complex code)
+curl -X POST http://localhost:3000/api/execute-raw \
+  -H "Content-Type: text/plain" \
+  -d "import pandas as pd; print(pd.__version__)"
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Server won't start:**
+```bash
+# Check Node.js version (requires 18+)
+node --version
+
+# Clear npm cache and reinstall
+npm cache clean --force
+npm ci
+
+# Check if port is in use
+netstat -tulpn | grep :3000  # Linux/macOS
+netstat -an | findstr :3000  # Windows
+```
+
+**Tests failing:**
+```bash
+# Ensure uv environment is ready
+uv sync
+
+# Check if server is running
+curl http://localhost:3000/health
+
+# Run tests with verbose output
+uv run python run_simple_tests.py
+```
+
+**Python execution errors:**
+```bash
+# Check Pyodide status
+curl http://localhost:3000/api/status
+
+# Check server logs
+tail -f logs/server.log
+
+# Test package installation
+curl -X POST http://localhost:3000/api/install-package \
+  -H "Content-Type: application/json" \
+  -d '{"package": "requests"}'
+```
+
+**Security logging not working:**
+```bash
+# Check logs directory exists
+ls -la logs/
+
+# Verify security logging is enabled
+curl http://localhost:3000/api/dashboard/stats
+
+# Check security log file
+tail -f logs/security.log
+```
+
+**Dashboard not loading:**
+```bash
+# Test JSON endpoint first
+curl http://localhost:3000/api/dashboard/stats
+
+# Check browser console for JavaScript errors
+# Verify Chart.js CDN is accessible
+```
+
+### Performance Issues
+- **Memory usage**: Monitor with `top` or Task Manager during heavy usage
+- **Response times**: Check dashboard performance metrics
+- **Log file size**: Clean logs regularly with `npm run clean:logs`
+- **File uploads**: Ensure `uploads/` directory has proper permissions
+
+### Getting Help
+- **Issue Tracker**: Create GitHub issue with logs and reproduction steps
+- **Documentation**: Check all documentation files in `docs/` directory  
+- **Test Results**: Include output from `uv run python run_comprehensive_tests.py`
 
 ## Contributing
 We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.

@@ -19,7 +19,7 @@
 ## 🧪 Testing
 
 - **[TESTING.md](../TESTING.md)** - Complete testing guide including security logging tests
-- **[setup.md](../setup.md)** - Environment setup instructions
+- **[README.md](../README.md)** - Quick start and environment setup instructions
 
 ## 📊 Features Overview
 

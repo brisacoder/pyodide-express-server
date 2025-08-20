@@ -12,7 +12,7 @@ This test suite covers:
 
 import concurrent.futures
 import unittest
-from typing import Dict, Any
+from typing import Any, Dict
 
 import requests
 

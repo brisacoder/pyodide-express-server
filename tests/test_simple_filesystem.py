@@ -11,7 +11,6 @@ from pathlib import Path
 
 import requests
 
-
 BASE_URL = "http://localhost:3000"
 
 

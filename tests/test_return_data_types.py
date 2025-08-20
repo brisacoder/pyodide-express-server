@@ -12,7 +12,6 @@ import unittest
 
 import requests
 
-
 # Configuration for tests
 BASE_URL = "http://localhost:3000"
 TIMEOUT = 30

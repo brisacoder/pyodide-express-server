@@ -165,8 +165,8 @@ increment()"""
 
     def test_concurrent_isolation(self):
         """Test isolation between simultaneous requests"""
-        import threading
         import queue
+        import threading
         
         results = queue.Queue()
         
