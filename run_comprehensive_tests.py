@@ -33,7 +33,8 @@ test_modules = [
     'tests.test_javascript_module',
     'tests.test_filesystem_mount',
     'tests.test_virtual_filesystem',
-    'tests.test_direct_filesystem_mount'
+    'tests.test_direct_filesystem_mount',
+    'tests.test_dynamic_modules_and_execution_robustness'
 ]
 
 
@@ -346,7 +347,8 @@ class ComprehensiveTestRunner:
             ('tests.test_javascript_module', 'JavaScript Module'),
             ('tests.test_filesystem_mount', 'Filesystem Mount'),
             ('tests.test_virtual_filesystem', 'Virtual Filesystem'),
-            ('tests.test_direct_filesystem_mount', 'Direct Filesystem Mount')
+            ('tests.test_direct_filesystem_mount', 'Direct Filesystem Mount'),
+            ('tests.test_dynamic_modules_and_execution_robustness', 'Dynamic Modules & Execution Robustness')
         ]
         
         if selected_categories:
@@ -385,7 +387,7 @@ def main():
     parser.add_argument('--categories', nargs='*',
                         choices=['basic', 'error', 'integration', 'security', 'performance', 
                                 'isolation', 'reset', 'extra', 'sklearn', 'matplotlib_base64', 'matplotlib_vfs', 
-                                'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs', 'direct_mount'],
+                                'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs', 'direct_mount', 'dynamic'],
                         help='Specific test categories to run (default: all)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Verbose output')
@@ -419,7 +421,8 @@ def main():
         'javascript': 'JavaScript Module',
         'mount': 'Filesystem Mount',
         'vfs': 'Virtual Filesystem',
-        'direct_mount': 'Direct Filesystem Mount'
+        'direct_mount': 'Direct Filesystem Mount',
+        'dynamic': 'Dynamic Modules & Execution Robustness'
     }
     
     selected_categories = None

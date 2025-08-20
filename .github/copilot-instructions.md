@@ -22,16 +22,37 @@ This is a **Node.js Express server** that provides a REST API for executing Pyth
 - **YOU MUST WAIT 15+ SECONDS AFTER CREATING A TERMINAL BEFORE ISSUING ANY COMMANDS**
 - **THIS AFFECTS ALL OPERATIONS: npm, python, curl, node, etc.**
 
+⚠️ **CRITICAL: COMMANDS THAT DO NOT CREATE NEW TERMINALS**
+- **`echo` commands run in EXISTING terminals and do NOT create new ones**
+- **If `echo` responds immediately, that terminal is ALREADY INITIALIZED and ready to use**
+- **Use `echo` to test if a terminal is ready before running other commands**
+- **DO NOT assume that running `run_in_terminal()` uses the same terminal as previous commands**
+
+⚠️ **CRITICAL: TERMINAL REUSE PATTERN**
+- **Every `run_in_terminal()` call creates a NEW terminal unless specified otherwise**
+- **To reuse a terminal: First run `echo "test"` to check if it responds immediately**
+- **If echo responds, that terminal is ready for immediate use**
+- **If echo doesn't respond or creates new terminal, wait 15+ seconds before next command**
+
 ```powershell
 # ❌ WRONG - Command is lost because terminal isn't ready
 run_in_terminal("npm start")           # Creates new terminal, command is lost
 get_terminal_output(terminal_id)       # Will show empty prompt
+
+# ❌ WRONG - Creates too many terminals
+run_in_terminal("echo test")           # Creates terminal 1
+run_in_terminal("node server.js")     # Creates terminal 2 (command lost)
+run_in_terminal("curl localhost:3000") # Creates terminal 3 (command lost)
 
 # ✅ CORRECT - Wait for terminal to initialize first
 run_in_terminal("echo 'Terminal ready'")  # Create terminal with simple command
 # WAIT 15-20 SECONDS for terminal initialization
 get_terminal_output(terminal_id)           # Check if terminal is ready
 run_in_terminal("npm start")               # Now issue the actual command
+
+# ✅ CORRECT - Test terminal readiness first
+run_in_terminal("echo 'Testing terminal readiness'")  # If this responds immediately, terminal is ready
+run_in_terminal("node src/server.js")                 # This will work in the ready terminal
 
 # ✅ ALTERNATIVE - Use existing ready terminals when possible
 # Check context for existing terminals that are already initialized

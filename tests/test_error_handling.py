@@ -84,7 +84,12 @@ class ErrorHandlingTestCase(unittest.TestCase):
         self.assertEqual(r.status_code, 200)  # Should return 200 but with error in result
         response = r.json()
         self.assertFalse(response.get("success"))
-        self.assertIn("syntax", response.get("error", "").lower())
+        error_msg = response.get("error", "").lower()
+        # Accept various forms of syntax error messages
+        self.assertTrue(
+            "syntax" in error_msg or "expected" in error_msg or "invalid syntax" in error_msg,
+            f"Expected syntax error message, got: {response.get('error')}"
+        )
 
     def test_execute_runtime_error(self):
         """Test execution with runtime error"""

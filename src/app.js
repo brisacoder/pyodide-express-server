@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const multer = require('multer');
+const helmet = require('helmet');
 const logger = require('./utils/logger');
 const config = require('./config');
 const { swaggerSpec, swaggerUi, swaggerUiOptions } = require('./swagger-config');
@@ -14,6 +15,22 @@ const executeRawRoutes = require('./routes/executeRaw');
 const uploadRoutes = require('./routes/upload');
 
 const app = express();
+
+// **SECURITY HEADERS - Express Team Standard (Helmet)**
+// Used by major companies for production security
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Needed for Pyodide
+      workerSrc: ["'self'", "blob:"], // Needed for WebAssembly workers
+      childSrc: ["'self'", "blob:"], // Needed for WebAssembly
+      connectSrc: ["'self'", "https://cdn.jsdelivr.net"], // Pyodide CDN
+      styleSrc: ["'self'", "'unsafe-inline'"], // For Swagger UI
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Disabled for WebAssembly compatibility
+}));
 
 app.use(requestContextMiddleware);
 app.use(metricsMiddleware);

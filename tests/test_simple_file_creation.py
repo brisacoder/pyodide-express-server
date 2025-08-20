@@ -29,6 +29,13 @@ class SimpleFileCreationTestCase(unittest.TestCase):
             cls.server = None
         except RuntimeError:
             raise unittest.SkipTest("Server is not running on localhost:3000")
+        
+        # Reset Pyodide environment to clean state
+        reset_response = requests.post(f"{BASE_URL}/api/reset", timeout=30)
+        if reset_response.status_code == 200:
+            print("✅ Pyodide environment reset successfully")
+        else:
+            print(f"⚠️ Warning: Could not reset Pyodide environment: {reset_response.status_code}")
 
     @classmethod
     def tearDownClass(cls):
@@ -47,12 +54,15 @@ result = {
 }
 
 try:
-    # Try to create a simple text file in root
-    filename = Path("/test_simple.txt")
+    # Try to create a simple text file in root with dynamic filename
+    import time
+    timestamp = int(time.time() * 1000)  # Generate unique timestamp
+    filename = Path(f"/test_simple_{timestamp}.txt")
     filename.write_text("Hello from Pyodide virtual filesystem!")
     
     # Check if file was created
     result["file_exists"] = filename.exists()
+    result["filename"] = str(filename)
     
     if result["file_exists"]:
         # Read back the content
@@ -95,12 +105,15 @@ result = {
 }
 
 try:
-    # Try to create a simple text file in /tmp
-    filename = Path("/tmp/test_simple.txt")
+    # Try to create a simple text file in /tmp with dynamic filename
+    import time
+    timestamp = int(time.time() * 1000)  # Generate unique timestamp
+    filename = Path(f"/tmp/test_simple_{timestamp}.txt")
     filename.write_text("Hello from /tmp directory!")
     
     # Check if file was created
     result["file_exists"] = filename.exists()
+    result["filename"] = str(filename)
     
     if result["file_exists"]:
         # Read back the content

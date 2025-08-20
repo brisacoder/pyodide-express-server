@@ -145,7 +145,8 @@ increment()"""
         r1 = requests.post(f"{BASE_URL}/api/execute", json={"code": code_a}, timeout=10)
         self.assertEqual(r1.status_code, 200)
         response1 = r1.json()
-        self.assertTrue(response1.get("success"))
+        print(f"Response1: {response1}")  # Debug output
+        self.assertTrue(response1.get("success"), f"Execution failed: {response1}")
         self.assertEqual(response1.get("result"), 101)
         
         # User B tries to access the global counter (should fail)

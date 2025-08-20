@@ -39,6 +39,24 @@ def run_basic_tests():
     return result.returncode == 0
 
 
+def run_dynamic_modules_tests():
+    """Run the dynamic modules and execution robustness tests."""
+    print("\n🔬 Running Dynamic Modules & Execution Robustness Tests...")
+    print("=" * 60)
+
+    # Change to the project directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Run the dynamic modules tests
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", "tests.test_dynamic_modules_and_execution_robustness", "-v"],
+        capture_output=False,
+        check=False,
+    )
+
+    return result.returncode == 0
+
+
 def main():
     """Main entry point."""
     print("🚀 Simple Test Runner for Pyodide Express Server")
@@ -53,13 +71,20 @@ def main():
     print("✅ Server is running on localhost:3000")
 
     # Run basic tests
-    success = run_basic_tests()
+    basic_success = run_basic_tests()
+    
+    # Run dynamic modules tests
+    dynamic_success = run_dynamic_modules_tests()
 
-    if success:
+    if basic_success and dynamic_success:
         print("\n🎉 All tests passed!")
         return 0
     else:
         print("\n❌ Some tests failed!")
+        if not basic_success:
+            print("   - Basic API tests failed")
+        if not dynamic_success:
+            print("   - Dynamic modules tests failed")
         return 1
 
 

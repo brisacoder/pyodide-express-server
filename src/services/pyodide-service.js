@@ -354,16 +354,57 @@ print(f"Mount verification: {mount_test_result}")
       throw new Error('Code must be a non-empty string');
     }
 
-    try {
-      // Set up context variables
-      for (const [key, value] of Object.entries(context)) {
-        this.pyodide.globals.set(key, value);
-      }
+    // Security validation - block dangerous patterns
+    const dangerousPatterns = [
+      /\bsys\.exit\b/i,
+      /\bexit\s*\(/i,
+      /\bquit\s*\(/i,
+      /\b__import__\s*\(\s*['"]os['"]\s*\)/i,
+      /\bsubprocess\b/i,
+      /\bos\.system\b/i,
+    ];
 
-      // Execute everything in Python and return JSON to completely avoid proxy issues
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(code)) {
+        logger.warn(`Security violation detected: ${pattern.source}`, { code: code.substring(0, 100) });
+        return {
+          success: false,
+          result: null,
+          error: `Security violation: Dangerous operation detected`,
+          stdout: '',
+          stderr: `SecurityError: Code contains potentially dangerous patterns`,
+          timestamp: new Date().toISOString()
+        };
+      }
+    }
+
+    try {
+      // **SIMPLE USER ISOLATION**
+      // Create isolated namespace by copying globals FIRST - exactly as per Pyodide FAQ
+      const namespace = this.pyodide.runPython(`
+        import types
+        # Create a new namespace as a copy of the main global namespace
+        # This ensures we get all the module aliases like np, pd, plt, etc.
+        namespace = dict(globals())
+        namespace
+      `);
+      
+      // Ensure essential items are present
+      namespace.set("__builtins__", this.pyodide.globals.get("__builtins__"));
+      
+      // Set up context variables in the isolated namespace (not main globals)
+      for (const [key, value] of Object.entries(context)) {
+        namespace.set(key, value);
+      }
+      
+      // Execute the execution wrapper in the isolated namespace
       const wrappedCode = `
 import json
 import traceback
+import uuid
+
+# Generate unique execution ID for this request
+_exec_id = str(uuid.uuid4())
 
 # Start output capture
 output_capture.start_capture()
@@ -372,25 +413,72 @@ _exec_error = None
 _exec_result = None
 
 try:
-    # Execute user code - use the same namespace for globals and locals
-    # This ensures function definitions are available for recursive calls
-    _exec_namespace = globals().copy()
+    # **SECURE EXECUTION**: Code is passed via JSON.stringify, executed in isolated namespace
+    _user_code = ${JSON.stringify(code)}
     
-    # Execute the user code with unified namespace
-    exec('''${code.replace(/'/g, "\\'")}''', _exec_namespace, _exec_namespace)
-    
-    # Get the result - try to eval the last line as an expression first
-    _code_lines = '''${code.replace(/'/g, "\\'")}'''.strip().split('\\n')
-    if _code_lines:
-        _last_line = _code_lines[-1].strip()
-        if _last_line and not _last_line.startswith(('#', 'import ', 'from ', 'def ', 'class ', 'if ', 'for ', 'while ', 'with ', 'try:', 'except:', 'finally:', 'else:')):
+    # Execute in the current isolated namespace (not global namespace)
+    if '\\n' in _user_code:
+        # Multi-line code: execute all lines, try to capture result of last line if it's an expression
+        lines = [line.rstrip() for line in _user_code.split('\\n')]
+        # Remove empty lines from the end
+        while lines and not lines[-1]:
+            lines.pop()
+        
+        if len(lines) > 1:
+            # Execute all lines except the last in isolated namespace
+            setup_code = '\\n'.join(lines[:-1])
+            exec(setup_code)
+            
+            # Try to evaluate the last line as an expression in isolated namespace
+            last_line = lines[-1].strip()
+            if last_line and not last_line.startswith(('import ', 'from ', 'def ', 'class ', 'if ', 'for ', 'while ', 'with ', 'try:', 'except:', 'finally:', 'else:', '#')):
+                try:
+                    _exec_result = eval(last_line)
+                except SyntaxError:
+                    # If it's not an expression, execute as statement in isolated namespace
+                    exec(last_line)
+                    _exec_result = None
+            else:
+                # Execute as statement for def, class, etc. in isolated namespace
+                exec(last_line)
+                _exec_result = None
+        else:
+            # Single line - try as expression first, then as statement in isolated namespace
             try:
-                _exec_result = eval(_last_line, _exec_namespace, _exec_namespace)
-            except:
-                # If eval fails, check if the last line is a variable name that exists
-                if _last_line in _exec_namespace:
-                    _exec_result = _exec_namespace[_last_line]
+                _exec_result = eval(_user_code)
+            except SyntaxError:
+                exec(_user_code)
+                _exec_result = None
+    elif ';' in _user_code:
+        # Semicolon-separated code like "x = 42; x" in isolated namespace
+        parts = [p.strip() for p in _user_code.split(';') if p.strip()]
+        if len(parts) > 1:
+            # Execute all parts except the last as statements in isolated namespace
+            for part in parts[:-1]:
+                exec(part)
+            # Try to evaluate the last part as expression in isolated namespace
+            last_part = parts[-1]
+            try:
+                _exec_result = eval(last_part)
+            except SyntaxError:
+                # If last part is not an expression, execute as statement in isolated namespace
+                exec(last_part)
+                _exec_result = None
+        else:
+            # Single statement in isolated namespace
+            exec(_user_code)
+            _exec_result = None
+    else:
+        # Single line code - try as expression first, then as statement in isolated namespace
+        try:
+            _exec_result = eval(_user_code)
+        except SyntaxError:
+            exec(_user_code)
+            _exec_result = None
                     
+except SystemExit as e:
+    _exec_success = False
+    _exec_error = f"SystemExit blocked: exit() and sys.exit() are not allowed (code: {e.code})"
 except Exception as e:
     _exec_success = False
     _exec_error = str(e)
@@ -405,7 +493,8 @@ _final_result = {
     'success': _exec_success,
     'stdout': _output['stdout'],
     'stderr': _output['stderr'],
-    'timestamp': '${new Date().toISOString()}'
+    'timestamp': '${new Date().toISOString()}',
+    'execution_id': _exec_id
 }
 
 if _exec_success:
@@ -418,15 +507,25 @@ else:
     _final_result['result'] = None
     _final_result['error'] = _exec_error
 
-# Return as JSON string to completely avoid any proxy issues
+# Return as JSON string
 json.dumps(_final_result)
 `;
 
-      // Execute the wrapped code and get JSON result
-      const jsonResult = await this.pyodide.runPythonAsync(wrappedCode);
+      // Execute the wrapped code with timeout protection using isolated namespace
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Execution timeout after ${timeout}ms`)), timeout);
+      });
+
+      // Execute in the isolated namespace - simple user isolation
+      const executionPromise = this.pyodide.runPythonAsync(wrappedCode, { globals: namespace });
+      
+      const jsonResult = await Promise.race([executionPromise, timeoutPromise]);
       
       // Parse the JSON result
       const result = JSON.parse(jsonResult);
+      
+      // Clean up the namespace
+      namespace.destroy();
       
       return {
         success: result.success,
@@ -438,6 +537,18 @@ json.dumps(_final_result)
       };
 
     } catch (error) {
+      // Handle specific Pyodide errors
+      if (error.type === 'SystemExit') {
+        return {
+          success: false,
+          result: null,
+          error: 'SystemExit blocked: exit() and sys.exit() are not allowed',
+          stdout: '',
+          stderr: 'SystemExit error occurred',
+          timestamp: new Date().toISOString()
+        };
+      }
+      
       // Ensure cleanup
       try {
         await this.pyodide.runPythonAsync('output_capture.reset()');
@@ -445,7 +556,14 @@ json.dumps(_final_result)
         // Ignore cleanup errors
       }
 
-      throw new Error(`Execution error: ${error.message}`);
+      return {
+        success: false,
+        result: null,
+        error: `Execution error: ${error.message}`,
+        stdout: '',
+        stderr: error.stack || error.message,
+        timestamp: new Date().toISOString()
+      };
     }
   }
 
@@ -836,10 +954,11 @@ json.dumps(result)
 
     try {
       await this.pyodide.runPythonAsync(`
-# Clear user-defined variables but keep system ones
+# Clear user-defined variables but keep system ones AND core module aliases
 user_vars = [var for var in globals().keys() 
              if not var.startswith('_') 
-             and var not in ['sys', 'io', 'StringIO', 'output_capture', 'make_json_safe']]
+             and var not in ['sys', 'io', 'StringIO', 'output_capture', 'make_json_safe',
+                            'np', 'pd', 'plt', 'sns', 'requests', 'micropip', 'httpx']]
              
 for var in user_vars:
     try:

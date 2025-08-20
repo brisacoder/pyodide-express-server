@@ -39,6 +39,11 @@ class MatplotlibFilesystemTestCase(unittest.TestCase):
             # If no server is running, we'll skip these tests
             raise unittest.SkipTest("Server is not running on localhost:3000")
 
+        # Reset Pyodide environment to clear any accumulated state
+        reset_response = requests.post(f"{BASE_URL}/api/reset", timeout=30)
+        if reset_response.status_code != 200:
+            raise unittest.SkipTest("Failed to reset Pyodide environment")
+
         # Ensure matplotlib is available (Pyodide package). Give it ample time.
         r = requests.post(
             f"{BASE_URL}/api/install-package",
@@ -63,8 +68,9 @@ class MatplotlibFilesystemTestCase(unittest.TestCase):
         cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "matplotlib")
         os.makedirs(cls.plots_dir, exist_ok=True)
         
-        # Clean up any existing plots before running tests
+        # Clean up any existing plots before running tests - BOTH local and Pyodide
         cls._cleanup_existing_plots()
+        cls._cleanup_pyodide_plots()
 
     @classmethod
     def tearDownClass(cls):
@@ -76,26 +82,72 @@ class MatplotlibFilesystemTestCase(unittest.TestCase):
         """Remove any existing plot files before running tests."""
         if hasattr(cls, 'plots_dir') and os.path.exists(cls.plots_dir):
             for filename in os.listdir(cls.plots_dir):
-                if filename.endswith('.png'):
-                    file_path = os.path.join(cls.plots_dir, filename)
-                    try:
+                file_path = os.path.join(cls.plots_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
                         os.remove(file_path)
-                        print(f"Removed existing plot: {filename}")
-                    except OSError as e:
-                        print(f"Warning: Could not remove {filename}: {e}")
+                        print(f"Removed existing file: {filename}")
+                except OSError as e:
+                    print(f"Warning: Could not remove {filename}: {e}")
+
+    @classmethod
+    def _cleanup_pyodide_plots(cls):
+        """Remove any existing plot files from Pyodide virtual filesystem."""
+        cleanup_code = '''
+from pathlib import Path
+import os
+
+# Clean up existing files in /plots/matplotlib/
+plots_dir = Path('/plots/matplotlib')
+if plots_dir.exists():
+    files_removed = 0
+    for file_path in plots_dir.iterdir():
+        if file_path.is_file():
+            try:
+                file_path.unlink()
+                files_removed += 1
+                print(f"Removed Pyodide file: {file_path.name}")
+            except Exception as e:
+                print(f"Failed to remove {file_path.name}: {e}")
+    
+    if files_removed == 0:
+        print("No existing files found in Pyodide /plots/matplotlib/")
+else:
+    print("Pyodide plots directory does not exist yet")
+    
+print("Pyodide cleanup completed")
+'''
+        try:
+            cleanup_response = requests.post(f"{BASE_URL}/api/execute", 
+                                           json={"code": cleanup_code},
+                                           timeout=30)
+            if cleanup_response.status_code == 200:
+                result = cleanup_response.json()
+                if result.get("success"):
+                    print("✅ Pyodide filesystem cleaned successfully")
+                else:
+                    print(f"⚠️ Pyodide cleanup failed: {result.get('error')}")
+            else:
+                print(f"⚠️ Pyodide cleanup request failed: {cleanup_response.status_code}")
+        except Exception as e:
+            print(f"⚠️ Exception during Pyodide cleanup: {e}")
 
     def test_direct_file_save_basic_plot(self):
         """Create and save a plot directly to filesystem from within Pyodide."""
         if not getattr(self.__class__, "has_matplotlib", False):
             self.skipTest("matplotlib not available in this Pyodide environment")
         
+        # Use unique timestamp-based filename to avoid conflicts
+        import time
+        timestamp = int(time.time() * 1000)
+        
         # Create and save a plot directly to the mounted filesystem
-        code = r'''
+        code = '''
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib.use("Agg")  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
-from pathlib import Path
+import os
 
 # Create sample data
 x = np.linspace(0, 2*np.pi, 100)
@@ -104,27 +156,28 @@ y2 = np.cos(x)
 
 # Create the plot
 plt.figure(figsize=(10, 6))
-plt.plot(x, y1, 'b-', linewidth=2, label='sin(x)')
-plt.plot(x, y2, 'r--', linewidth=2, label='cos(x)')
-plt.xlabel('X values')
-plt.ylabel('Y values')
-plt.title('Direct File Save - Trigonometric Functions')
+plt.plot(x, y1, "b-", linewidth=2, label="sin(x)")
+plt.plot(x, y2, "r--", linewidth=2, label="cos(x)")
+plt.xlabel("X values")
+plt.ylabel("Y values")
+plt.title("Direct File Save - Trigonometric Functions")
 plt.legend()
 plt.grid(True, alpha=0.3)
 
 # Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
-# First create the directory structure
-plots_dir = Path('/plots/matplotlib')
-plots_dir.mkdir(parents=True, exist_ok=True)
-output_path = plots_dir / 'direct_save_basic.png'
+# Use string paths exclusively to avoid pathlib escaping issues
+import time
+timestamp = int(time.time() * 1000)  # Generate unique timestamp
+os.makedirs('/plots/matplotlib', exist_ok=True)
+output_path = f'/plots/matplotlib/direct_save_basic_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
-# Verify the file was created
-file_exists = output_path.exists()
-file_size = output_path.stat().st_size if file_exists else 0
+# Verify the file was created using os module
+file_exists = os.path.exists(output_path)
+file_size = os.path.getsize(output_path) if file_exists else 0
 
-result = {"file_saved": file_exists, "file_size": file_size, "plot_type": "direct_save_basic"}
+result = {"file_saved": file_exists, "file_size": file_size, "plot_type": "direct_save_basic", "filename": output_path}
 result
 '''
         r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
@@ -144,8 +197,11 @@ result
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
         
+        # Get the actual filename from the result
+        actual_filename = result.get("filename", "").split("/")[-1]  # Get just the filename part
+        
         # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_basic.png")
+        local_filepath = os.path.join(self.plots_dir, actual_filename)
         self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
         self.assertGreater(os.path.getsize(local_filepath), 0, "Local file has zero size")
 
@@ -153,6 +209,11 @@ result
         """Create and save a complex multi-subplot plot directly to filesystem from within Pyodide."""
         if not getattr(self.__class__, "has_matplotlib", False):
             self.skipTest("matplotlib not available in this Pyodide environment")
+        
+        # Use unique timestamp-based filename and small delay to avoid race conditions
+        import time
+        time.sleep(0.1)  # Small delay to avoid timestamp collisions
+        timestamp = int(time.time() * 1000)
         
         # Create a complex visualization and save directly
         code = r'''
@@ -208,13 +269,16 @@ ax4.set_ylabel('Values')
 plt.tight_layout()
 
 # Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
-# First create the directory structure
+# Use string paths exclusively to avoid pathlib escaping issues
+import os
+import time
+timestamp = int(time.time() * 1000)  # Generate unique timestamp
 os.makedirs('/plots/matplotlib', exist_ok=True)
-output_path = '/plots/matplotlib/direct_save_complex.png'
+output_path = f'/plots/matplotlib/direct_save_complex_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
-# Verify the file was created and get statistics
+# Verify the file was created and get statistics using os module
 file_exists = os.path.exists(output_path)
 file_size = os.path.getsize(output_path) if file_exists else 0
 
@@ -223,7 +287,8 @@ result = {
     "file_size": file_size,
     "plot_type": "direct_save_complex",
     "data_points": n_points,
-    "subplot_count": 4
+    "subplot_count": 4,
+    "filename": output_path
 }
 result
 '''
@@ -240,14 +305,18 @@ result
         self.assertEqual(result.get("data_points"), 1000)
         self.assertEqual(result.get("subplot_count"), 4)
         
+        # Extract the actual filename from the result
+        filename = result.get("filename", "").split("/")[-1]  # Get filename from path
+        self.assertTrue(filename, "No filename returned in result")
+        
         # Extract virtual files to real filesystem
         extract_response = requests.post(f"{BASE_URL}/api/extract-plots", timeout=30)
         self.assertEqual(extract_response.status_code, 200)
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
         
-        # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_complex.png")
+        # Verify the file exists in the local filesystem using the actual filename
+        local_filepath = os.path.join(self.plots_dir, filename)
         self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
         self.assertGreater(os.path.getsize(local_filepath), 0, "Local complex file has zero size")
 

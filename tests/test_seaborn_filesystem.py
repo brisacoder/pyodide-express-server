@@ -39,6 +39,13 @@ class SeabornFilesystemTestCase(unittest.TestCase):
             # If no server is running, we'll skip these tests
             raise unittest.SkipTest("Server is not running on localhost:3000")
 
+        # Reset Pyodide environment to clean state
+        reset_response = requests.post(f"{BASE_URL}/api/reset", timeout=30)
+        if reset_response.status_code == 200:
+            print("✅ Pyodide environment reset successfully")
+        else:
+            print(f"⚠️ Warning: Could not reset Pyodide environment: {reset_response.status_code}")
+
         # Ensure seaborn and matplotlib are available (Pyodide packages). Give it ample time.
         for package in ["matplotlib", "seaborn"]:
             r = requests.post(
@@ -66,6 +73,9 @@ class SeabornFilesystemTestCase(unittest.TestCase):
         
         # Clean up any existing plots before running tests
         cls._cleanup_existing_plots()
+        
+        # Clean up Pyodide virtual filesystem plots
+        cls._cleanup_pyodide_plots()
 
     @classmethod
     def tearDownClass(cls):
@@ -81,9 +91,32 @@ class SeabornFilesystemTestCase(unittest.TestCase):
                     file_path = os.path.join(cls.plots_dir, filename)
                     try:
                         os.remove(file_path)
-                        print(f"Removed existing plot: {filename}")
+                        print(f"Removed existing file: {filename}")
                     except OSError as e:
                         print(f"Warning: Could not remove {filename}: {e}")
+
+    @classmethod
+    def _cleanup_pyodide_plots(cls):
+        """Clean up any existing plots in Pyodide virtual filesystem."""
+        cleanup_code = '''
+import os
+plot_dir = '/plots/seaborn'
+if os.path.exists(plot_dir):
+    for file in os.listdir(plot_dir):
+        if file.endswith('.png'):
+            try:
+                os.remove(os.path.join(plot_dir, file))
+                print(f"Removed Pyodide file: {file}")
+            except:
+                pass
+"Pyodide filesystem cleaned"
+'''
+        try:
+            response = requests.post(f"{BASE_URL}/api/execute", json={"code": cleanup_code}, timeout=30)
+            if response.status_code == 200:
+                print("✅ Pyodide filesystem cleaned successfully")
+        except Exception as e:
+            print(f"Warning: Could not clean Pyodide filesystem: {e}")
 
     def test_direct_file_save_regression_plot(self):
         """Create and save a seaborn regression plot directly to filesystem from within Pyodide."""
@@ -128,9 +161,11 @@ plt.text(0.05, 0.95, f'Correlation: {correlation:.3f}',
          bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
 # Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
-# First create the directory structure
+# Use string paths exclusively to avoid pathlib escaping issues
+import time
+timestamp = int(time.time() * 1000)  # Generate unique timestamp
 os.makedirs('/plots/seaborn', exist_ok=True)
-output_path = '/plots/seaborn/direct_save_regression.png'
+output_path = f'/plots/seaborn/direct_save_regression_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -143,7 +178,8 @@ result = {
     "file_size": file_size,
     "plot_type": "direct_save_regression",
     "correlation": float(correlation),
-    "n_points": n
+    "n_points": n,
+    "filename": output_path
 }
 result
 '''
@@ -160,14 +196,18 @@ result
         self.assertGreater(result.get("correlation"), 0.8, "Correlation should be strong positive")
         self.assertEqual(result.get("n_points"), 200)
         
+        # Extract the actual filename from the result
+        filename = result.get("filename", "").split("/")[-1]  # Get filename from path
+        self.assertTrue(filename, "No filename returned in result")
+        
         # Extract virtual files to real filesystem
         extract_response = requests.post(f"{BASE_URL}/api/extract-plots", timeout=30)
         self.assertEqual(extract_response.status_code, 200)
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
         
-        # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_regression.png")
+        # Verify the file exists in the local filesystem using the actual filename
+        local_filepath = os.path.join(self.plots_dir, filename)
         self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
         self.assertGreater(os.path.getsize(local_filepath), 0, "Local regression file has zero size")
 
@@ -254,9 +294,12 @@ plt.title('Sample Counts by Group and Category')
 plt.tight_layout()
 
 # Save directly to the virtual filesystem using /plots/ path (extract-plots API monitors this)
-# First create the directory structure
+# Use string paths exclusively to avoid pathlib escaping issues
+import time
+time.sleep(0.1)  # Small delay to prevent timestamp collisions
+timestamp = int(time.time() * 1000)  # Generate unique timestamp
 os.makedirs('/plots/seaborn', exist_ok=True)
-output_path = '/plots/seaborn/direct_save_dashboard.png'
+output_path = f'/plots/seaborn/direct_save_dashboard_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -274,7 +317,8 @@ result = {
     "n_samples": n_samples,
     "n_groups": len(df['group'].unique()),
     "n_categories": len(df['category'].unique()),
-    "group_means": group_stats['mean']
+    "group_means": group_stats['mean'],
+    "filename": output_path
 }
 result
 '''
@@ -293,14 +337,18 @@ result
         self.assertEqual(result.get("n_categories"), 2)
         self.assertIn("A", result.get("group_means", {}))
         
+        # Extract the actual filename from the result
+        filename = result.get("filename", "").split("/")[-1]  # Get filename from path
+        self.assertTrue(filename, "No filename returned in result")
+        
         # Extract virtual files to real filesystem
         extract_response = requests.post(f"{BASE_URL}/api/extract-plots", timeout=30)
         self.assertEqual(extract_response.status_code, 200)
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
         
-        # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_dashboard.png")
+        # Verify the file exists in the local filesystem using the actual filename
+        local_filepath = os.path.join(self.plots_dir, filename)
         self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
         self.assertGreater(os.path.getsize(local_filepath), 0, "Local dashboard file has zero size")
 

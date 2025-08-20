@@ -30,6 +30,13 @@ class VirtualFilesystemTestCase(unittest.TestCase):
         except RuntimeError:
             raise unittest.SkipTest("Server is not running on localhost:3000")
         
+        # Reset Pyodide environment to clean state
+        reset_response = requests.post(f"{BASE_URL}/api/reset", timeout=30)
+        if reset_response.status_code == 200:
+            print("✅ Pyodide environment reset successfully")
+        else:
+            print(f"⚠️ Warning: Could not reset Pyodide environment: {reset_response.status_code}")
+        
         # Ensure matplotlib is available for filesystem tests
         r = requests.post(
             f"{BASE_URL}/api/install-package",
@@ -207,11 +214,14 @@ except Exception as e:
     result["plot_creation_error"] = str(e)
 
 if result["plot_creation"]:
-    # Test different save paths using pathlib
+    # Test different save paths using pathlib with dynamic timestamps
+    import time
+    timestamp = int(time.time() * 1000)  # Generate unique timestamp
+    
     test_paths = [
-        Path("/tmp/debug_test.png"),
-        Path("/debug_test.png"),
-        Path("/test_vfs/debug_test.png")
+        Path(f"/tmp/debug_test_{timestamp}.png"),
+        Path(f"/debug_test_{timestamp}.png"),
+        Path(f"/test_vfs/debug_test_{timestamp}.png")
     ]
     
     for test_path in test_paths:
@@ -293,18 +303,22 @@ from pathlib import Path
 test_plots_dir = Path("/tmp/test_plots")
 test_plots_dir.mkdir(parents=True, exist_ok=True)
 
-# Create a simple plot
+# Create a simple plot with dynamic filename
+import time
+timestamp = int(time.time() * 1000)  # Generate unique timestamp
+
 plt.figure(figsize=(5, 3))
 plt.plot([1, 2, 3], [1, 4, 2])
 plt.title('Extract API Test')
-plot_file = test_plots_dir / "extract_test.png"
+plot_file = test_plots_dir / f"extract_test_{timestamp}.png"
 plt.savefig(plot_file, dpi=100)
 plt.close()
 
 result = {
     "setup_complete": True,
     "file_exists": plot_file.exists(),
-    "file_size": plot_file.stat().st_size if plot_file.exists() else 0
+    "file_size": plot_file.stat().st_size if plot_file.exists() else 0,
+    "filename": str(plot_file)
 }
 result
 '''
