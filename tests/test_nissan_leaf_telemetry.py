@@ -4,11 +4,12 @@ This test uploads real automotive signal telemetry data and performs complex
 pandas and numpy operations including time series analysis, geospatial calculations,
 energy efficiency metrics, and driving behavior analytics.
 """
-import unittest
-import requests
-import time
 import json
+import time
+import unittest
 from pathlib import Path
+
+import requests
 
 
 class NissanLeafTelemetryTestCase(unittest.TestCase):
@@ -741,40 +742,83 @@ print(f"  • Power variability (CV): {{(df['Motor Pwr(w)'].std()/df['Motor Pwr(
 print("\\n✅ Analysis completed successfully!")
 print("   Dashboard and insights generated from {{:,}} telemetry data points".format(len(df)))
 
-# Return result for test verification
-result = {{
-    "file_saved": file_exists,
-    "file_size": file_size,
-    "filename": dashboard_file,
-    "plot_type": "nissan_leaf_dashboard",
-    "data_points_analyzed": len(df),
-    "analysis_completed": True
-}}
-result
+# Output structured verification data for test parsing
+print("\\n=== FILE_VERIFICATION_DATA ===")
+print(f"FILE_SAVED: {{file_exists}}")
+print(f"FILE_SIZE: {{file_size}}")
+print(f"FILE_PATH: {{dashboard_file}}")
+print(f"PLOT_TYPE: nissan_leaf_dashboard")
+print(f"DATA_POINTS: {{len(df)}}")
+print(f"ANALYSIS_COMPLETED: True")
+print("=== END_FILE_VERIFICATION_DATA ===")
         """
+        
         
         response = self.session.post(f"{self.base_url}/api/execute-raw",
                                    data=python_code,
                                    headers={"Content-Type": "text/plain"},
-                                   timeout=90)
+                                   timeout=120)
         self.assertEqual(response.status_code, 200)
         
-        result = response.text
-        self.assertIn("COMPREHENSIVE AUTOMOTIVE INSIGHTS", result)
-        self.assertIn("Dashboard saved:", result)
-        self.assertIn("EXECUTIVE SUMMARY REPORT", result)
-        self.assertIn("Journey Overview:", result)
-        self.assertIn("Vehicle Performance:", result)
-        self.assertIn("Battery Analysis:", result)
-        self.assertIn("Route Characteristics:", result)
-        self.assertIn("Advanced Analytics:", result)
-        self.assertIn("Analysis completed successfully!", result)
+        output_text = response.text
         
-        # Verify plot was generated and extract to real filesystem
+        # Verify the analysis sections are present in output
+        self.assertIn("COMPREHENSIVE AUTOMOTIVE INSIGHTS", output_text)
+        self.assertIn("Dashboard saved:", output_text)
+        self.assertIn("EXECUTIVE SUMMARY REPORT", output_text)
+        self.assertIn("Journey Overview:", output_text)
+        self.assertIn("Vehicle Performance:", output_text)
+        self.assertIn("Battery Analysis:", output_text)
+        self.assertIn("Route Characteristics:", output_text)
+        self.assertIn("Advanced Analytics:", output_text)
+        self.assertIn("Analysis completed successfully!", output_text)
+        
+        # Parse structured verification data from output
+        verification_data = {}
+        in_verification_section = False
+        
+        for line in output_text.split('\\n'):
+            if "=== FILE_VERIFICATION_DATA ===" in line:
+                in_verification_section = True
+                continue
+            elif "=== END_FILE_VERIFICATION_DATA ===" in line:
+                in_verification_section = False
+                continue
+            elif in_verification_section and ":" in line:
+                key, value = line.split(":", 1)
+                verification_data[key.strip()] = value.strip()
+        
+        # Verify file creation in Pyodide virtual filesystem
+        self.assertEqual(verification_data.get("FILE_SAVED"), "True", "Plot file was not saved to virtual filesystem")
+        self.assertGreater(int(verification_data.get("FILE_SIZE", "0")), 0, "Plot file has zero size in virtual filesystem")
+        self.assertEqual(verification_data.get("PLOT_TYPE"), "nissan_leaf_dashboard")
+        self.assertEqual(verification_data.get("ANALYSIS_COMPLETED"), "True", "Analysis did not complete successfully")
+        self.assertEqual(verification_data.get("DATA_POINTS"), "5843", "Unexpected number of data points analyzed")
+        
+        # Extract virtual files to real filesystem
         plots_response = self.session.post(f"{self.base_url}/api/extract-plots", timeout=30)
         self.assertEqual(plots_response.status_code, 200)
         plots_data = plots_response.json()
         self.assertTrue(plots_data.get("success"), "Failed to extract plot files")
+        
+        # Verify the file exists in the real filesystem
+        import os
+        file_path = verification_data.get("FILE_PATH", "")
+        actual_filename = file_path.split("/")[-1]  # Get just the filename part
+        expected_plots_dir = os.path.join(os.getcwd(), "plots", "matplotlib")
+        local_filepath = os.path.join(expected_plots_dir, actual_filename)
+        
+        self.assertTrue(os.path.exists(local_filepath), f"Plot file not found at {local_filepath}")
+        self.assertGreater(os.path.getsize(local_filepath), 0, "Local plot file has zero size")
+        
+        # Verify it's a reasonable plot file size (should be > 100KB for a complex dashboard)
+        file_size_mb = os.path.getsize(local_filepath) / (1024 * 1024)
+        self.assertGreater(file_size_mb, 0.1, f"Plot file seems too small ({file_size_mb:.2f} MB)")
+        self.assertLess(file_size_mb, 10, f"Plot file seems too large ({file_size_mb:.2f} MB)")
+        
+        print(f"✅ Successfully verified plot file: {actual_filename} ({file_size_mb:.2f} MB)")
+        print(f"   Virtual filesystem size: {verification_data.get('FILE_SIZE')} bytes")
+        print(f"   Real filesystem size: {os.path.getsize(local_filepath)} bytes")
 
 
 if __name__ == '__main__':
