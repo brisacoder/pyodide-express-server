@@ -61,9 +61,12 @@ cp .env.example .env   # optional
 npm start
 ```
 
-With the server running, try the sample client:
+With the server running, try the sample clients:
 ```bash
-node examples/basic-client.js
+node examples/basic-client.js           # Simple execution example
+node examples/data-science-client.js    # Data science workflow with matplotlib/seaborn  
+node examples/file-upload-client.js     # File upload and pandas analysis
+node examples/execute-raw-client.js     # Raw endpoint for complex Python code
 ```
 
 For testing and development, also set up the Python environment using uv:
@@ -133,8 +136,8 @@ python -m venv .venv
 # macOS/Linux:
 source .venv/bin/activate
 
-# Install test dependencies
-pip install -r requirements.txt  # or use uv for faster installs
+# Install test dependencies using uv
+uv sync
 ```
 
 ### File Organization
@@ -156,7 +159,7 @@ For fast validation during development:
 npm start
 
 # In another terminal, run quick smoke tests
-python run_simple_tests.py
+uv run python run_simple_tests.py
 ```
 
 ### Comprehensive Testing (CI/CD & Pre-commit)
@@ -164,13 +167,13 @@ For complete system validation with automatic server management:
 
 ```bash
 # Run all test categories (recommended)
-python run_comprehensive_tests.py
+uv run python run_comprehensive_tests.py
 
 # Run specific test categories
-python run_comprehensive_tests.py --categories basic integration security
+uv run python run_comprehensive_tests.py --categories basic integration security
 
 # Run plotting and data science tests
-python run_comprehensive_tests.py --categories matplotlib seaborn sklearn
+uv run python run_comprehensive_tests.py --categories matplotlib seaborn sklearn
 ```
 
 **Test Categories Available:**
@@ -194,7 +197,7 @@ Basic server functionality tests:
 npm test
 ```
 
-**Requirements:** The Python tests require a virtual environment with `requests` and other dependencies. See [TESTING.md](TESTING.md) for detailed testing documentation.
+**Requirements:** The Python tests are managed with `uv` which automatically handles dependencies and virtual environments. See [TESTING.md](TESTING.md) for detailed testing documentation.
 
 ## Contributing
 We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
