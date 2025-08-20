@@ -21,6 +21,7 @@ test_modules = [
     'tests.test_error_handling',
     'tests.test_integration',
     'tests.test_security',
+    'tests.test_security_logging',
     'tests.test_performance',
     'tests.test_user_isolation',
     'tests.test_reset',
@@ -335,6 +336,7 @@ class ComprehensiveTestRunner:
             ('tests.test_error_handling', 'Error Handling'),
             ('tests.test_integration', 'Integration'),
             ('tests.test_security', 'Security'),
+            ('tests.test_security_logging', 'Security Logging'),
             ('tests.test_performance', 'Performance'),
             ('tests.test_user_isolation', 'User Isolation'),
             ('tests.test_reset', 'Reset'),
@@ -385,7 +387,7 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description='Run comprehensive tests for Pyodide Express Server')
     parser.add_argument('--categories', nargs='*',
-                        choices=['basic', 'error', 'integration', 'security', 'performance', 
+                        choices=['basic', 'error', 'integration', 'security', 'security_logging', 'performance', 
                                 'isolation', 'reset', 'extra', 'sklearn', 'matplotlib_base64', 'matplotlib_vfs', 
                                 'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs', 'direct_mount', 'dynamic'],
                         help='Specific test categories to run (default: all)')
@@ -409,6 +411,7 @@ def main():
         'error': 'Error Handling',
         'integration': 'Integration',
         'security': 'Security',
+        'security_logging': 'Security Logging',
         'performance': 'Performance',
         'isolation': 'User Isolation',
         'reset': 'Reset',

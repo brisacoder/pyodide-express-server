@@ -57,6 +57,24 @@ def run_dynamic_modules_tests():
     return result.returncode == 0
 
 
+def run_security_logging_tests():
+    """Run the security logging tests."""
+    print("\n🔐 Running Security Logging Tests...")
+    print("=" * 40)
+
+    # Change to the project directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Run the security logging tests
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", "tests.test_security_logging", "-v"],
+        capture_output=False,
+        check=False,
+    )
+
+    return result.returncode == 0
+
+
 def main():
     """Main entry point."""
     print("🚀 Simple Test Runner for Pyodide Express Server")
@@ -75,8 +93,11 @@ def main():
     
     # Run dynamic modules tests
     dynamic_success = run_dynamic_modules_tests()
+    
+    # Run security logging tests
+    security_success = run_security_logging_tests()
 
-    if basic_success and dynamic_success:
+    if basic_success and dynamic_success and security_success:
         print("\n🎉 All tests passed!")
         return 0
     else:
@@ -85,6 +106,8 @@ def main():
             print("   - Basic API tests failed")
         if not dynamic_success:
             print("   - Dynamic modules tests failed")
+        if not security_success:
+            print("   - Security logging tests failed")
         return 1
 
 
