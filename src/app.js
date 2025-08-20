@@ -13,6 +13,7 @@ const fileRoutes = require('./routes/files');
 const healthRoutes = require('./routes/health');
 const executeRawRoutes = require('./routes/executeRaw');
 const uploadRoutes = require('./routes/upload');
+const statsRoutes = require('./routes/stats');
 
 const app = express();
 
@@ -114,6 +115,7 @@ app.use('/api', executeRoutes);
 app.use('/api', fileRoutes);
 app.use('/api', executeRawRoutes);
 app.use('/api', uploadRoutes);
+app.use('/api/dashboard', statsRoutes);
 app.use('/', healthRoutes);
 app.get('/metrics', metricsEndpoint);
 

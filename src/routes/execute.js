@@ -615,13 +615,26 @@ router.post('/execute-stream', validateCode, async (req, res) => {
  */
 router.get('/stats', (req, res) => {
   try {
+    // Get enhanced statistics from logger
+    const enhancedStats = logger.getStats();
+    
     const stats = {
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      // Include the Pyodide interpreter status for observability.
-      pyodide: pyodideService.getStatus(),
-      timestamp: new Date().toISOString()
+      // Enhanced execution statistics
+      ...enhancedStats,
+      // Legacy system stats for compatibility
+      system: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        pyodide: pyodideService.getStatus(),
+        timestamp: new Date().toISOString()
+      }
     };
+
+    logger.info('Enhanced statistics retrieved', {
+      component: 'stats-endpoint',
+      totalExecutions: enhancedStats.overview.totalExecutions,
+      successRate: enhancedStats.overview.successRate
+    });
 
     res.json(stats);
   } catch (error) {

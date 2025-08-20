@@ -15,6 +15,16 @@ async function uploadCsv(req, res) {
 
     tempFilePath = req.file.path;
 
+    // Security logging for file uploads
+    logger.security('file_upload', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      timestamp: new Date().toISOString()
+    });
+
     logger.info('=== CSV UPLOAD DEBUG START ===');
     logger.info('File info:', {
       originalName: req.file.originalname,
