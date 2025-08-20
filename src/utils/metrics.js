@@ -1,3 +1,20 @@
+/**
+ * Prometheus-style Metrics Collection for HTTP Performance Monitoring
+ * 
+ * Collects and exposes HTTP request metrics in Prometheus format for
+ * monitoring, alerting, and performance analysis.
+ */
+
+/**
+ * In-memory metrics storage object.
+ * Tracks counters and timing data for HTTP requests.
+ * 
+ * @type {Object}
+ * @property {number} requestsTotal - Total HTTP requests received
+ * @property {number} requestErrorsTotal - Total 5xx error responses
+ * @property {number} requestDurationSecondsSum - Sum of all request durations
+ * @property {number} requestDurationSecondsCount - Count of timed requests
+ */
 const metrics = {
   requestsTotal: 0,
   requestErrorsTotal: 0,
@@ -5,6 +22,43 @@ const metrics = {
   requestDurationSecondsCount: 0,
 };
 
+/**
+ * Express middleware that collects HTTP request metrics.
+ * Measures request duration and counts total requests and errors.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {void} Calls next() after setting up metrics collection
+ * 
+ * @example
+ * // In app.js
+ * const { metricsMiddleware } = require('./utils/metrics');
+ * app.use(metricsMiddleware);
+ * 
+ * // Automatically collects metrics for all requests:
+ * // - Total request count
+ * // - Request duration timing
+ * // - Error count (5xx responses)
+ * 
+ * @description
+ * Metrics Collected:
+ * - http_requests_total: Counter of all HTTP requests
+ * - http_request_errors_total: Counter of 5xx error responses
+ * - http_request_duration_seconds: Summary of request durations
+ * 
+ * Performance Characteristics:
+ * - Uses high-resolution process.hrtime.bigint() for accurate timing
+ * - Minimal overhead (~microseconds per request)
+ * - Memory-efficient counters
+ * - Non-blocking metrics collection
+ * 
+ * Integration:
+ * - Compatible with Prometheus monitoring
+ * - Works with Grafana dashboards
+ * - Suitable for alerting rules
+ * - Enables SLA/SLO tracking
+ */
 function metricsMiddleware(req, res, next) {
   metrics.requestsTotal += 1;
   const start = process.hrtime.bigint();
@@ -20,6 +74,54 @@ function metricsMiddleware(req, res, next) {
   next();
 }
 
+/**
+ * Express route handler that exposes metrics in Prometheus format.
+ * Returns text/plain response with metric data for scraping.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {void} Sends metrics response in Prometheus format
+ * 
+ * @example
+ * // In routes setup
+ * app.get('/metrics', metricsEndpoint);
+ * 
+ * // GET /metrics returns:
+ * // # HELP http_requests_total Total number of HTTP requests
+ * // # TYPE http_requests_total counter
+ * // http_requests_total 1234
+ * // # HELP http_request_errors_total Total number of HTTP error responses (5xx)
+ * // # TYPE http_request_errors_total counter
+ * // http_request_errors_total 5
+ * // # HELP http_request_duration_seconds Summary of HTTP request durations in seconds
+ * // # TYPE http_request_duration_seconds summary
+ * // http_request_duration_seconds_sum 45.67
+ * // http_request_duration_seconds_count 1234
+ * 
+ * @description
+ * Prometheus Format:
+ * - Includes HELP and TYPE comments for each metric
+ * - Follows Prometheus naming conventions
+ * - Uses appropriate metric types (counter, summary)
+ * - Compatible with standard Prometheus scrapers
+ * 
+ * Monitoring Setup:
+ * ```yaml
+ * # prometheus.yml
+ * scrape_configs:
+ *   - job_name: 'pyodide-server'
+ *     static_configs:
+ *       - targets: ['localhost:3000']
+ *     metrics_path: '/metrics'
+ *     scrape_interval: 15s
+ * ```
+ * 
+ * Calculated Metrics:
+ * - Average request duration: sum / count
+ * - Error rate: errors / total requests
+ * - Request rate: total / uptime
+ * - P95/P99 latencies: requires additional histogram
+ */
 function metricsEndpoint(req, res) {
   res.setHeader('Content-Type', 'text/plain; version=0.0.4');
   let output = '';

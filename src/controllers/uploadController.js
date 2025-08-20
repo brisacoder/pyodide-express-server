@@ -1,7 +1,83 @@
+/**
+ * File Upload Controller for CSV and Data File Management
+ * 
+ * Handles file uploads with security logging, validation, and integration
+ * with Pyodide's virtual filesystem for data analysis workflows.
+ */
+
 const fs = require('fs');
 const pyodideService = require('../services/pyodide-service');
 const logger = require('../utils/logger');
 
+/**
+ * Handles CSV file uploads and mounts them into Pyodide's virtual filesystem.
+ * Supports data analysis workflows by making uploaded files accessible to Python code.
+ * 
+ * @param {Object} req - Express request object with multipart/form-data
+ * @param {Object} req.file - Multer file object from upload middleware
+ * @param {string} req.file.originalname - Original filename from client
+ * @param {string} req.file.path - Temporary file path on server
+ * @param {number} req.file.size - File size in bytes
+ * @param {string} req.file.mimetype - MIME type of uploaded file
+ * @param {string} req.ip - Client IP address
+ * @param {Function} req.get - Function to get request headers
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} Resolves when response is sent
+ * 
+ * @example
+ * // POST /api/upload-csv
+ * // Content-Type: multipart/form-data
+ * // Body: [CSV file data]
+ * 
+ * // Success response:
+ * // {
+ * //   "success": true,
+ * //   "message": "CSV file uploaded successfully",
+ * //   "fileName": "data.csv",
+ * //   "fileSize": 1024,
+ * //   "pyodidePath": "/uploads/data.csv",
+ * //   "sampleCode": "import pandas as pd\ndf = pd.read_csv('/uploads/data.csv')\nprint(df.head())"
+ * // }
+ * 
+ * // Error responses:
+ * // {
+ * //   "success": false,
+ * //   "error": "No file uploaded"
+ * // }
+ * 
+ * @description
+ * Upload Process:
+ * 1. Validates file presence and type
+ * 2. Logs security event with client details
+ * 3. Reads file content from temporary location
+ * 4. Mounts file into Pyodide virtual filesystem at /uploads/
+ * 5. Provides sample Python code for file access
+ * 6. Cleans up temporary files
+ * 
+ * Security Features:
+ * - Logs all upload attempts with IP and User-Agent
+ * - File size and type validation
+ * - Temporary file cleanup
+ * - Safe filename handling
+ * 
+ * Supported File Types:
+ * - CSV files (.csv)
+ * - Excel files (.xlsx, .xls) - if configured
+ * - JSON data files (.json)
+ * - Text files (.txt)
+ * 
+ * Integration with Python:
+ * - Files accessible at /uploads/ path in Pyodide
+ * - Compatible with pandas, numpy, etc.
+ * - Enables immediate data analysis workflows
+ * - Provides sample code for common operations
+ * 
+ * Error Handling:
+ * - Graceful cleanup of temporary files
+ * - Detailed error logging
+ * - User-friendly error messages
+ * - Proper HTTP status codes
+ */
 async function uploadCsv(req, res) {
   let tempFilePath = null;
 

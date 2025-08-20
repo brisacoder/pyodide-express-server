@@ -1,14 +1,58 @@
 /**
  * Validation middleware for Pyodide Express Server
  * 
- * Provides input validation for API endpoints to ensure
- * safe and proper data before processing.
+ * Provides comprehensive input validation for API endpoints to ensure
+ * safe and proper data before processing in Pyodide runtime.
  */
 
 const logger = require('../utils/logger');
 
 /**
- * Validate Python code execution request
+ * Validates Python code execution request parameters.
+ * Ensures code safety, size limits, and proper data types before execution.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body containing execution parameters
+ * @param {string} req.body.code - Python code to validate (required)
+ * @param {Object} [req.body.context] - Optional context object for variable injection
+ * @param {number} [req.body.timeout] - Optional execution timeout in milliseconds
+ * @param {string} req.ip - Client IP address for logging
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {void} Calls next() if validation passes, sends error response if not
+ * 
+ * @example
+ * // Valid request that passes validation:
+ * // {
+ * //   "code": "import numpy as np\nprint(np.__version__)",
+ * //   "context": {"debug": true},
+ * //   "timeout": 30000
+ * // }
+ * 
+ * // Invalid request that fails validation:
+ * // {
+ * //   "code": "",  // Empty code
+ * //   "timeout": -1000  // Negative timeout
+ * // }
+ * 
+ * @description
+ * Validation Rules:
+ * - Code must be non-empty string
+ * - Code length <= 100KB (configurable)
+ * - Context must be serializable object if provided
+ * - Context size <= 10KB (configurable)
+ * - Timeout must be positive number <= 5 minutes
+ * - Logs potentially dangerous patterns for monitoring
+ * 
+ * Security Features:
+ * - Pattern detection for dangerous operations
+ * - Size limits to prevent DoS attacks
+ * - Type validation to prevent injection
+ * - Logging of suspicious activity
+ * 
+ * HTTP Responses:
+ * - 400: Validation failure with specific error message
+ * - Calls next() for successful validation
  */
 function validateCode(req, res, next) {
   const { code, context, timeout } = req.body;
@@ -129,7 +173,50 @@ function validateCode(req, res, next) {
 }
 
 /**
- * Validate package installation request
+ * Validates Python package installation request parameters.
+ * Ensures package names are safe and compatible with Pyodide/micropip.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} req.body - Request body containing package information
+ * @param {string} req.body.package - Package name to validate (required)
+ * @param {string} req.ip - Client IP address for logging
+ * @param {Object} res - Express response object  
+ * @param {Function} next - Express next middleware function
+ * @returns {void} Calls next() if validation passes, sends error response if not
+ * 
+ * @example
+ * // Valid package installation requests:
+ * // { "package": "numpy" }
+ * // { "package": "pandas==1.5.0" }
+ * // { "package": "matplotlib>=3.0" }
+ * 
+ * // Invalid requests that fail validation:
+ * // { "package": "" }  // Empty name
+ * // { "package": "a" }  // Too short
+ * // { "package": "../malicious-package" }  // Invalid characters
+ * 
+ * @description
+ * Validation Rules:
+ * - Package name must be non-empty string
+ * - Name length between 2-100 characters
+ * - Alphanumeric, hyphens, underscores, dots only
+ * - Version specifiers allowed (==, >=, <=, >, <, !=)
+ * - No dangerous path characters (../, ..\)
+ * 
+ * Security Features:
+ * - Prevents package name injection attacks
+ * - Blocks filesystem traversal attempts
+ * - Validates against PyPI naming conventions
+ * - Logs invalid package requests
+ * 
+ * Compatible Formats:
+ * - Simple names: "numpy", "pandas", "matplotlib"
+ * - With versions: "numpy==1.21.0", "pandas>=1.3"
+ * - Git URLs and local files are blocked for security
+ * 
+ * HTTP Responses:
+ * - 400: Validation failure with specific error message
+ * - Calls next() for successful validation
  */
 function validatePackage(req, res, next) {
   const { package: packageName } = req.body;
