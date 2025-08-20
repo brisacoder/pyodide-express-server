@@ -517,16 +517,29 @@ json.dumps(result)
     try {
       return await this.executeCode(`
 import sys
+import micropip
+
 try:
-    # Try to get package list
-    installed_packages = list(sys.modules.keys())
-    {
+    # Get list of packages installed via micropip
+    installed_packages = micropip.list()
+    
+    # Also include currently loaded modules for reference
+    loaded_modules = list(sys.modules.keys())
+    
+    result = {
         'python_version': sys.version,
-        'installed_packages': sorted([pkg for pkg in installed_packages if not pkg.startswith('_')]),
+        'installed_packages': sorted(list(installed_packages.keys())),
+        'loaded_modules': sorted([pkg for pkg in loaded_modules if not pkg.startswith('_')]),
         'total_packages': len(installed_packages)
     }
 except Exception as e:
-    {'error': str(e)}
+    result = {
+        'error': str(e), 
+        'fallback_modules': sorted([pkg for pkg in sys.modules.keys() if not pkg.startswith('_')]),
+        'python_version': sys.version
+    }
+
+result
       `);
     } catch (error) {
       throw new Error(`Failed to get package list: ${error.message}`);

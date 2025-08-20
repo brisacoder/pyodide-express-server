@@ -40,6 +40,7 @@ class SklearnTestCase(unittest.TestCase):
         )
         # Installation may already be present; both should return 200
         assert r.status_code == 200, f"Failed to reach install endpoint: {r.status_code}"
+        
         # Verify availability by attempting an import inside the runtime
         check = requests.post(
             f"{BASE_URL}/api/execute",
@@ -48,6 +49,19 @@ class SklearnTestCase(unittest.TestCase):
         )
         cls.has_sklearn = False
         if check.status_code == 200:
+            payload = check.json()
+            cls.has_sklearn = bool(payload.get("success"))
+            
+        # IMPORTANT: Also verify that scikit-learn appears in the packages list
+        if cls.has_sklearn:
+            packages_r = requests.get(f"{BASE_URL}/api/packages", timeout=30)
+            if packages_r.status_code == 200:
+                packages_data = packages_r.json()
+                if packages_data.get("success") and packages_data.get("result"):
+                    installed_packages = packages_data["result"].get("installed_packages", [])
+                    if "scikit-learn" not in installed_packages:
+                        print(f"WARNING: scikit-learn not found in packages list: {installed_packages}")
+                        # Still proceed with tests, but log the issue
             payload = check.json()
             cls.has_sklearn = bool(payload.get("success"))
 
@@ -135,6 +149,29 @@ gs.fit(X, y)
         data = r.json()
         self.assertFalse(data.get("success"))
         self.assertIn("invalid parameter", data.get("error", "").lower())
+
+    def test_sklearn_package_listed(self):
+        """Test that scikit-learn appears in the packages list after installation."""
+        if not getattr(self.__class__, "has_sklearn", False):
+            self.skipTest("scikit-learn not available in this Pyodide environment")
+            
+        r = requests.get(f"{BASE_URL}/api/packages", timeout=30)
+        self.assertEqual(r.status_code, 200)
+        
+        data = r.json()
+        self.assertTrue(data.get("success"), f"Packages endpoint failed: {data}")
+        
+        result = data.get("result")
+        self.assertIsNotNone(result, "Packages result should not be null")
+        
+        installed_packages = result.get("installed_packages", [])
+        self.assertIn("scikit-learn", installed_packages, 
+                     f"scikit-learn not found in installed packages: {installed_packages}")
+        
+        # Also check that it has a reasonable number of total packages
+        total_packages = result.get("total_packages", 0)
+        self.assertGreater(total_packages, 10, 
+                          f"Expected more packages, got {total_packages}")
 
 
 if __name__ == "__main__":

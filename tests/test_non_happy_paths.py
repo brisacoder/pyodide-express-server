@@ -80,13 +80,24 @@ class NonHappyPathsTestCase(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         payload = r.json()
         self.assertIn("success", payload)
-        # The packages endpoint currently returns result: null, which is valid
-        # as long as the response structure is correct
+        
         if payload.get("success"):
             self.assertIn("result", payload)
-            # Result can be null or dict - both are acceptable responses
-            if payload["result"] is not None:
-                self.assertIsInstance(payload["result"], dict)
+            result = payload["result"]
+            
+            # Result should NOT be null - it should be a valid dictionary
+            self.assertIsNotNone(result, "Packages endpoint should return actual data, not null")
+            self.assertIsInstance(result, dict, "Packages result should be a dictionary")
+            
+            # Should have required fields
+            required_fields = ["python_version", "installed_packages", "total_packages"]
+            for field in required_fields:
+                self.assertIn(field, result, f"Missing required field: {field}")
+                
+            # Basic data validation
+            self.assertIsInstance(result["installed_packages"], list)
+            self.assertIsInstance(result["total_packages"], int)
+            self.assertGreater(result["total_packages"], 0, "Should have some packages")
         else:
             # On failure, should include an error field
             self.assertIn("error", payload)

@@ -82,7 +82,19 @@ class APITestCase(unittest.TestCase):
     def test_06_list_packages(self):
         r = requests.get(f"{BASE_URL}/api/packages", timeout=10)
         self.assertEqual(r.status_code, 200)
-        self.assertIn("result", r.json())
+        payload = r.json()
+        self.assertIn("result", payload)
+        
+        # Validate that result contains actual package data
+        result = payload["result"]
+        self.assertIsNotNone(result, "Packages result should not be null")
+        self.assertIsInstance(result, dict, "Packages result should be a dictionary")
+        
+        # Check for required fields
+        self.assertIn("installed_packages", result)
+        self.assertIn("total_packages", result)
+        self.assertIsInstance(result["installed_packages"], list)
+        self.assertGreater(result["total_packages"], 0, "Should have packages installed")
 
     def test_07_execute(self):
         exec_code = '''"""

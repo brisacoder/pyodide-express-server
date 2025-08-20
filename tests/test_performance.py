@@ -9,6 +9,7 @@ BASE_URL = "http://localhost:3000"
 
 
 class PerformanceTestCase(unittest.TestCase):
+    
     """Test performance characteristics and resource limits."""
 
     @classmethod

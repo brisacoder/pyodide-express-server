@@ -1,197 +1,335 @@
-# Curl commands for Pyodide Express Server
+# API Commands for Pyodide Express Server
 
-These examples show how to test the available endpoints with `curl`.
-For each endpoint there is a version that works on Unix-like shells
-(macOS/Linux) and a Windows PowerShell variant. Replace `sample.csv`
-with the path to your own file when needed.
+These examples show how to test the available endpoints using different methods:
+- **Unix/Linux/macOS**: `curl` commands
+- **PowerShell**: Both simplified `curl` and native `Invoke-RestMethod` commands
+- Replace `sample.csv` with the path to your own file when needed
 
-> The server is assumed to be running on `http://localhost:3000`.
+> The server is assumed to be running on `http://localhost:3000`
+
+## PowerShell Tips 💡
+- **Use `Invoke-RestMethod`** for cleaner JSON handling (recommended)
+- **Use here-strings `@"..."@`** for multi-line content
+- **Use single quotes** to avoid escaping in simple cases
 
 ## 1. Server health
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl http://localhost:3000/health
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
+# Both methods work the same for simple GET requests
 curl http://localhost:3000/health
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/health"
 ```
 
 ## 2. Pyodide status
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl http://localhost:3000/api/status
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl http://localhost:3000/api/status
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/status"
 ```
 
 ## 3. Execute Python code (`/execute`)
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl -X POST http://localhost:3000/api/execute \
   -H "Content-Type: application/json" \
-  -d '{"code": "\"\"\"curl demo\"\"\"\nname=\"Unix\"\nf\"Hello {name}\""}'
+  -d '{"code": "print(\"Hello from Unix!\")\nresult = 2 + 2\nprint(f\"Result: {result}\")"}'
 ```
 
-**Windows**
+**PowerShell (curl)**
 ```powershell
-curl -X POST "http://localhost:3000/api/execute" \
-  -H "Content-Type: application/json" \
-  -d "{\"code\": \"\\\"\\\"\\\"curl demo\\\"\\\"\\\"\\nname=\\\"Windows\\\"\\nf\\\"Hello {name}\\\"\"}"
+$code = 'print("Hello from PowerShell!")\nresult = 2 + 2\nprint(f"Result: {result}")'
+curl -X POST "http://localhost:3000/api/execute" `
+  -H "Content-Type: application/json" `
+  -d (@{code = $code} | ConvertTo-Json)
+```
+
+**PowerShell (Invoke-RestMethod - Recommended)**
+```powershell
+$body = @{
+    code = @"
+print("Hello from PowerShell!")
+result = 2 + 2
+print(f"Result: {result}")
+"@
+}
+
+Invoke-RestMethod -Uri "http://localhost:3000/api/execute" `
+  -Method POST -ContentType "application/json" `
+  -Body ($body | ConvertTo-Json)
 ```
 
 ## 4. Execute raw Python code (`/execute-raw`)
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl -X POST http://localhost:3000/api/execute-raw \
   -H "Content-Type: text/plain" \
-  --data '"""raw demo"""\nname="Unix"\nprint(f"""Hi {name}""")'
+  --data 'print("Raw execution from Unix")
+import math
+print(f"Pi = {math.pi:.4f}")'
 ```
 
-**Windows**
+**PowerShell (curl)**
 ```powershell
-curl -X POST "http://localhost:3000/api/execute-raw" \
-  -H "Content-Type: text/plain" \
-  --data "\"\"\"raw demo\"\"\"\\nname=\\\"Windows\\\"\\nprint(f\"\"\"Hi {name}\"\"\")"
+$pythonCode = @"
+print("Raw execution from PowerShell")
+import math
+print(f"Pi = {math.pi:.4f}")
+"@
+
+curl -X POST "http://localhost:3000/api/execute-raw" `
+  -H "Content-Type: text/plain" `
+  --data $pythonCode
+```
+
+**PowerShell (Invoke-RestMethod - Recommended)**
+```powershell
+$pythonCode = @"
+print("Raw execution from PowerShell")
+import math
+print(f"Pi = {math.pi:.4f}")
+"@
+
+Invoke-RestMethod -Uri "http://localhost:3000/api/execute-raw" `
+  -Method POST -ContentType "text/plain" `
+  -Body $pythonCode
 ```
 
 ## 5. Upload CSV (`/upload-csv`)
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl -X POST http://localhost:3000/api/upload-csv \
   -F "csvFile=@sample.csv"
 ```
 
-**Windows**
+**PowerShell (curl)**
 ```powershell
-curl -X POST "http://localhost:3000/api/upload-csv" \
+curl -X POST "http://localhost:3000/api/upload-csv" `
   -F "csvFile=@sample.csv"
+```
+
+**PowerShell (Invoke-RestMethod - Recommended)**
+```powershell
+$form = @{
+    csvFile = Get-Item "sample.csv"
+}
+
+Invoke-RestMethod -Uri "http://localhost:3000/api/upload-csv" `
+  -Method POST -Form $form
 ```
 
 ## 6. List uploaded files
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl http://localhost:3000/api/uploaded-files
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
+# Both methods work the same for GET requests
 curl http://localhost:3000/api/uploaded-files
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/uploaded-files"
 ```
 
 ## 7. File information
 
 Replace `FILENAME` with the name returned by the upload endpoint.
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl http://localhost:3000/api/file-info/FILENAME
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl "http://localhost:3000/api/file-info/FILENAME"
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/file-info/FILENAME"
 ```
 
 ## 8. List files in Pyodide filesystem
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl http://localhost:3000/api/pyodide-files
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl http://localhost:3000/api/pyodide-files
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/pyodide-files"
 ```
 
 ## 9. Delete file from Pyodide filesystem
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl -X DELETE http://localhost:3000/api/pyodide-files/FILENAME
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl -X DELETE "http://localhost:3000/api/pyodide-files/FILENAME"
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/pyodide-files/FILENAME" -Method DELETE
 ```
 
 ## 10. Delete uploaded file
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl -X DELETE http://localhost:3000/api/uploaded-files/FILENAME
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl -X DELETE "http://localhost:3000/api/uploaded-files/FILENAME"
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/uploaded-files/FILENAME" -Method DELETE
 ```
 
 ## 11. Install a Python package
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl -X POST http://localhost:3000/api/install-package \
   -H "Content-Type: application/json" \
   -d '{"package": "beautifulsoup4"}'
 ```
 
-**Windows**
+**PowerShell (curl)**
 ```powershell
-curl -X POST "http://localhost:3000/api/install-package" \
-  -H "Content-Type: application/json" \
-  -d "{\"package\": \"beautifulsoup4\"}"
+curl -X POST "http://localhost:3000/api/install-package" `
+  -H "Content-Type: application/json" `
+  -d '{"package": "beautifulsoup4"}'
+```
+
+**PowerShell (Invoke-RestMethod - Recommended)**
+```powershell
+$body = @{ package = "beautifulsoup4" }
+
+Invoke-RestMethod -Uri "http://localhost:3000/api/install-package" `
+  -Method POST -ContentType "application/json" `
+  -Body ($body | ConvertTo-Json)
 ```
 
 ## 12. List installed packages
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl http://localhost:3000/api/packages
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl http://localhost:3000/api/packages
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/packages"
 ```
 
 ## 13. Reset Pyodide environment
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl -X POST http://localhost:3000/api/reset
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl -X POST "http://localhost:3000/api/reset"
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/reset" -Method POST
 ```
 
 ## 14. Server statistics
 
-**Unix**
-```sh
+**Unix/Linux/macOS**
+```bash
 curl http://localhost:3000/api/stats
 ```
 
-**Windows**
+**PowerShell**
 ```powershell
 curl http://localhost:3000/api/stats
+# OR
+Invoke-RestMethod -Uri "http://localhost:3000/api/stats"
 ```
 
 These commands provide a quick way to verify every API route.
+
+## Practical PowerShell Examples 🚀
+
+### Data Science Workflow
+```powershell
+# 1. Execute Python code with matplotlib
+$pythonCode = @"
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Generate sample data
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
+
+# Create plot
+plt.figure(figsize=(10, 6))
+plt.plot(x, y, 'b-', linewidth=2, label='sin(x)')
+plt.title('Sample Sine Wave')
+plt.xlabel('x')
+plt.ylabel('sin(x)')
+plt.legend()
+plt.grid(True)
+plt.savefig('/plots/matplotlib/sine_wave.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("Plot saved successfully!")
+"@
+
+$result = Invoke-RestMethod -Uri "http://localhost:3000/api/execute" `
+  -Method POST -ContentType "application/json" `
+  -Body (@{code = $pythonCode} | ConvertTo-Json)
+
+Write-Output $result
+```
+
+### Package Management
+```powershell
+# Install a package and use it
+$installResult = Invoke-RestMethod -Uri "http://localhost:3000/api/install-package" `
+  -Method POST -ContentType "application/json" `
+  -Body (@{package = "requests"} | ConvertTo-Json)
+
+# Use the installed package
+$testCode = @"
+import requests
+print("Testing requests package...")
+print(f"requests version: {requests.__version__}")
+"@
+
+$testResult = Invoke-RestMethod -Uri "http://localhost:3000/api/execute" `
+  -Method POST -ContentType "application/json" `
+  -Body (@{code = $testCode} | ConvertTo-Json)
+
+Write-Output $testResult
+```
 
 ## Running the Python API tests
 
