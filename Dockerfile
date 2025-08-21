@@ -2,7 +2,7 @@
 # Optimized for AWS deployment with multi-stage build
 
 # Build stage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -16,19 +16,23 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     curl \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && /root/.local/bin/uv --version
+
+# Update npm to latest version
+RUN npm install -g npm@latest
 
 # Add uv to PATH
-ENV PATH="/root/.cargo/bin:$PATH"
+ENV PATH="/root/.local/bin:$PATH"
 
-# Install Node.js dependencies
-RUN npm ci --only=production
+# Install Node.js dependencies (production only)
+RUN npm ci --omit=dev
 
 # Install Python dependencies using uv
-RUN uv sync --frozen
+RUN /root/.local/bin/uv sync --frozen
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:20-alpine AS production
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -36,10 +40,11 @@ RUN apk add --no-cache \
     py3-pip \
     curl \
     dumb-init \
-    && curl -LsSf https://astral.sh/uv/install.sh | sh
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && npm install -g npm@latest
 
 # Add uv to PATH
-ENV PATH="/root/.cargo/bin:$PATH"
+ENV PATH="/root/.local/bin:$PATH"
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -70,7 +75,7 @@ USER appuser
 # Environment variables
 ENV NODE_ENV=production \
     PORT=3000 \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/root/.local/bin:/app/.venv/bin:$PATH"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

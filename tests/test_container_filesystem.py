@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""
+Container Filesystem Tests
+
+Tests to validate that containerized Pyodide execution maintains
+full filesystem compatibility with the host version.
+"""
+
+import os
+import time
+import unittest
+from pathlib import Path
+
+import requests
+
+BASE_URL = "http://localhost:3000"
+
+class ContainerFilesystemTestCase(unittest.TestCase):
+    """Test containerized filesystem mounting and file persistence"""
+    
+    def setUp(self):
+        """Setup for each test"""
+        self.uploaded_files = []
+        self.temp_files = []
+        self.start_time = time.time()
+        
+        # Test server availability
+        try:
+            response = requests.get(f"{BASE_URL}/health", timeout=5)
+            if response.status_code != 200:
+                self.skipTest("Server not available")
+        except requests.RequestException:
+            self.skipTest("Server not reachable")
+    
+    def tearDown(self):
+        """Clean up test artifacts"""
+        # Clean temporary files
+        for temp_file in self.temp_files:
+            if isinstance(temp_file, Path) and temp_file.exists():
+                temp_file.unlink()
+    
+    def track_temp_file(self, filepath):
+        """Track temporary files for cleanup"""
+        self.temp_files.append(Path(filepath))
+    
+    def test_basic_container_execution(self):
+        """Test basic Python execution in container"""
+        code = "print('Hello from containerized Pyodide!')"
+        
+        response = requests.post(f"{BASE_URL}/api/execute-raw",
+                               data=code,
+                               headers={"Content-Type": "text/plain"},
+                               timeout=30)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result.get('success'))
+        self.assertIn('Hello from containerized Pyodide!', result.get('stdout', ''))
+    
+    def test_container_plot_creation(self):
+        """Test matplotlib plot creation and filesystem persistence"""
+        timestamp = int(time.time() * 1000)
+        
+        plot_code = f"""
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
+
+# Generate test data
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
+
+# Create plot
+plt.figure(figsize=(8, 6))
+plt.plot(x, y, 'b-', linewidth=2)
+plt.title('Container Test Plot - {timestamp}')
+plt.xlabel('X values')
+plt.ylabel('sin(X)')
+plt.grid(True, alpha=0.3)
+
+# Save to mounted filesystem
+plot_path = Path('/plots/matplotlib/container_test_{timestamp}.png')
+plot_path.parent.mkdir(parents=True, exist_ok=True)
+plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+plt.close()
+
+print(f'Plot saved to: {{plot_path}}')
+print(f'File exists: {{plot_path.exists()}}')
+if plot_path.exists():
+    print(f'File size: {{plot_path.stat().st_size}} bytes')
+"""
+        
+        response = requests.post(f"{BASE_URL}/api/execute-raw",
+                               data=plot_code,
+                               headers={"Content-Type": "text/plain"},
+                               timeout=45)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result.get('success'))
+        
+        # Verify file exists on host filesystem
+        host_plot_path = Path(f"plots/matplotlib/container_test_{timestamp}.png")
+        self.track_temp_file(host_plot_path)
+        
+        # Wait a moment for file system sync
+        time.sleep(1)
+        
+        self.assertTrue(host_plot_path.exists(), 
+                       f"Plot file not found on host: {host_plot_path}")
+        
+        # Verify file has content
+        file_size = host_plot_path.stat().st_size
+        self.assertGreater(file_size, 1000, 
+                          f"Plot file too small: {file_size} bytes")
+    
+    def test_container_multi_plot_dashboard(self):
+        """Test complex multi-plot creation in container"""
+        timestamp = int(time.time() * 1000)
+        
+        dashboard_code = f"""
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
+
+# Create dashboard with subplots
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
+fig.suptitle('Container Dashboard - {timestamp}', fontsize=16)
+
+# Plot 1: Sine and Cosine
+x = np.linspace(0, 4*np.pi, 200)
+ax1.plot(x, np.sin(x), 'b-', label='sin(x)')
+ax1.plot(x, np.cos(x), 'r-', label='cos(x)')
+ax1.set_title('Trigonometric Functions')
+ax1.legend()
+ax1.grid(True, alpha=0.3)
+
+# Plot 2: Random scatter
+np.random.seed(42)
+x_rand = np.random.randn(100)
+y_rand = np.random.randn(100)
+colors = np.random.rand(100)
+ax2.scatter(x_rand, y_rand, c=colors, alpha=0.7)
+ax2.set_title('Random Scatter Plot')
+
+# Plot 3: Bar chart
+categories = ['A', 'B', 'C', 'D', 'E']
+values = [23, 45, 56, 78, 32]
+ax3.bar(categories, values, color='skyblue')
+ax3.set_title('Sample Bar Chart')
+
+# Plot 4: Histogram
+data = np.random.normal(0, 1, 1000)
+ax4.hist(data, bins=30, alpha=0.7, color='green')
+ax4.set_title('Normal Distribution')
+
+plt.tight_layout()
+
+# Save dashboard
+dashboard_path = Path('/plots/matplotlib/container_dashboard_{timestamp}.png')
+dashboard_path.parent.mkdir(parents=True, exist_ok=True)
+plt.savefig(dashboard_path, dpi=150, bbox_inches='tight')
+plt.close()
+
+print(f'Dashboard saved: {{dashboard_path}}')
+print(f'File exists: {{dashboard_path.exists()}}')
+"""
+        
+        response = requests.post(f"{BASE_URL}/api/execute-raw",
+                               data=dashboard_code,
+                               headers={"Content-Type": "text/plain"},
+                               timeout=60)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result.get('success'))
+        
+        # Verify dashboard file on host
+        host_dashboard_path = Path(f"plots/matplotlib/container_dashboard_{timestamp}.png")
+        self.track_temp_file(host_dashboard_path)
+        
+        time.sleep(1)
+        
+        self.assertTrue(host_dashboard_path.exists(),
+                       f"Dashboard file not found: {host_dashboard_path}")
+        
+        # Verify substantial file size (dashboard should be larger)
+        file_size = host_dashboard_path.stat().st_size
+        self.assertGreater(file_size, 50000,
+                          f"Dashboard file too small: {file_size} bytes")
+    
+    def test_container_environment_info(self):
+        """Test that container environment matches expected configuration"""
+        env_code = """
+import sys
+import platform
+import numpy as np
+import pandas as pd
+import matplotlib
+from pathlib import Path
+
+# Environment info
+print(f"Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+print(f"Platform: {platform.platform()}")
+print(f"NumPy version: {np.__version__}")
+print(f"Pandas version: {pd.__version__}")
+print(f"Matplotlib version: {matplotlib.__version__}")
+
+# Path accessibility
+test_paths = ['/plots', '/uploads', '/logs', '/plots/matplotlib']
+for path in test_paths:
+    p = Path(path)
+    status = "✅" if p.exists() and p.is_dir() else "❌"
+    print(f"{status} {path}: exists={p.exists()}")
+"""
+        
+        response = requests.post(f"{BASE_URL}/api/execute-raw",
+                               data=env_code,
+                               headers={"Content-Type": "text/plain"},
+                               timeout=30)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result.get('success'))
+        
+        stdout = result.get('stdout', '')
+        
+        # Verify Python version
+        self.assertIn('Python version: 3.1', stdout)
+        
+        # Verify key packages
+        self.assertIn('NumPy version:', stdout)
+        self.assertIn('Pandas version:', stdout) 
+        self.assertIn('Matplotlib version:', stdout)
+        
+        # Verify path accessibility - should have multiple ✅
+        success_count = stdout.count('✅')
+        self.assertGreaterEqual(success_count, 3, 
+                               "Not enough accessible paths in container")
+
+if __name__ == '__main__':
+    unittest.main()

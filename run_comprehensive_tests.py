@@ -6,14 +6,15 @@ This script runs all test categories and provides detailed reporting.
 Use this to validate the entire system after changes.
 """
 
-import os
-import sys
-import unittest
 import argparse
-import time
+import os
 import subprocess
-import requests
+import sys
+import time
+import unittest
 from io import StringIO
+
+import requests
 
 # Test modules to import
 test_modules = [
@@ -35,6 +36,7 @@ test_modules = [
     'tests.test_filesystem_mount',
     'tests.test_virtual_filesystem',
     'tests.test_direct_filesystem_mount',
+    'tests.test_container_filesystem',
     'tests.test_dynamic_modules_and_execution_robustness'
 ]
 
@@ -350,6 +352,7 @@ class ComprehensiveTestRunner:
             ('tests.test_filesystem_mount', 'Filesystem Mount'),
             ('tests.test_virtual_filesystem', 'Virtual Filesystem'),
             ('tests.test_direct_filesystem_mount', 'Direct Filesystem Mount'),
+            ('tests.test_container_filesystem', 'Container Filesystem'),
             ('tests.test_dynamic_modules_and_execution_robustness', 'Dynamic Modules & Execution Robustness')
         ]
         
@@ -425,6 +428,7 @@ def main():
         'mount': 'Filesystem Mount',
         'vfs': 'Virtual Filesystem',
         'direct_mount': 'Direct Filesystem Mount',
+        'container': 'Container Filesystem',
         'dynamic': 'Dynamic Modules & Execution Robustness'
     }
     

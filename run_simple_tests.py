@@ -6,9 +6,10 @@ This script runs tests against an existing server instance.
 Make sure the server is running on localhost:3000 before running tests.
 """
 
+import os
 import subprocess
 import sys
-import os
+
 import requests
 
 
@@ -75,6 +76,24 @@ def run_security_logging_tests():
     return result.returncode == 0
 
 
+def run_container_filesystem_tests():
+    """Run the container filesystem tests."""
+    print("\n🐳 Running Container Filesystem Tests...")
+    print("=" * 45)
+
+    # Change to the project directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Run the container filesystem tests
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", "tests.test_container_filesystem", "-v"],
+        capture_output=False,
+        check=False,
+    )
+
+    return result.returncode == 0
+
+
 def main():
     """Main entry point."""
     print("🚀 Simple Test Runner for Pyodide Express Server")
@@ -96,8 +115,11 @@ def main():
     
     # Run security logging tests
     security_success = run_security_logging_tests()
+    
+    # Run container filesystem tests
+    container_success = run_container_filesystem_tests()
 
-    if basic_success and dynamic_success and security_success:
+    if basic_success and dynamic_success and security_success and container_success:
         print("\n🎉 All tests passed!")
         return 0
     else:
