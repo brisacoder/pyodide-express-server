@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""
+Test suite for file upload system enhancements
+Tests the recent fixes for temp filename generation and file-type-specific analysis
+"""
+
+import json
+import os
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+import requests
+
+BASE_URL = "http://localhost:3000"
+
+
+class FileUploadEnhancementsTestCase(unittest.TestCase):
+    """Test recent file upload system enhancements"""
+    
+    def setUp(self):
+        """Set up test environment"""
+        self.session = requests.Session()
+        self.uploaded_files = []
+        self.temp_files = []
+        
+    def tearDown(self):
+        """Clean up uploaded files"""
+        for filename in self.uploaded_files:
+            try:
+                response = self.session.delete(f"{BASE_URL}/api/uploaded-files/{filename}")
+                print(f"Cleanup: Deleted {filename}, status: {response.status_code}")
+            except requests.RequestException as e:
+                print(f"Cleanup warning: Could not delete {filename}: {e}")
+        
+        # Clean up temp files
+        for temp_file in self.temp_files:
+            if isinstance(temp_file, Path) and temp_file.exists():
+                temp_file.unlink()
+
+    def track_upload(self, filename):
+        """Track uploaded file for cleanup"""
+        self.uploaded_files.append(filename)
+
+    def test_json_file_upload_proper_filename(self):
+        """Test JSON file upload generates proper temp filename (not csvFile prefix)"""
+        # Create sample JSON file
+        test_data = {
+            "test": "data",
+            "array": [1, 2, 3],
+            "nested": {"key": "value"}
+        }
+        
+        temp_file = Path(tempfile.mkdtemp()) / "test_data.json"
+        self.temp_files.append(temp_file)
+        
+        with open(temp_file, 'w') as f:
+            json.dump(test_data, f)
+        
+        # Upload file
+        with open(temp_file, 'rb') as f:
+            files = {'file': ('test_data.json', f, 'application/json')}
+            response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result['success'])
+        
+        # Verify temp filename contains original basename (not csvFile)
+        temp_path = result['file']['tempPath']
+        self.assertIn('test_data', temp_path)
+        self.assertNotIn('csvFile', temp_path)
+        
+        # Track for cleanup - extract filename from tempPath
+        temp_filename = Path(temp_path).name
+        self.track_upload(temp_filename)
+
+    def test_python_file_upload_proper_analysis(self):
+        """Test Python file upload gets line count analysis (not CSV analysis)"""
+        # Create sample Python file
+        python_code = '''#!/usr/bin/env python3
+"""Sample Python script for testing"""
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+def main():
+    x = np.linspace(0, 10, 100)
+    y = np.sin(x)
+    plt.plot(x, y)
+    plt.savefig('test.png')
+    print("Plot generated successfully")
+
+if __name__ == "__main__":
+    main()
+'''
+        
+        temp_file = Path(tempfile.mkdtemp()) / "test_script.py"
+        self.temp_files.append(temp_file)
+        
+        with open(temp_file, 'w') as f:
+            f.write(python_code)
+        
+        # Upload file
+        with open(temp_file, 'rb') as f:
+            files = {'file': ('test_script.py', f, 'text/x-python')}
+            response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result['success'])
+        
+        # Verify Python file gets line count analysis (not CSV shape analysis)
+        self.assertNotIn('Shape:', result['analysis']['message'])
+        self.assertNotIn('columns', result['analysis']['message'])
+        self.assertIn('line', result['analysis']['message'].lower())  # Should mention lines
+        
+        # Verify temp filename
+        temp_path = result['file']['tempPath']
+        self.assertIn('test_script', temp_path)
+        self.assertNotIn('csvFile', temp_path)
+        
+        # Track for cleanup - extract filename from tempPath
+        temp_filename = Path(temp_path).name
+        self.track_upload(temp_filename)
+
+    def test_csv_file_upload_proper_analysis(self):
+        """Test CSV file still gets proper pandas analysis"""
+        # Create sample CSV file
+        csv_content = '''name,age,city
+John,25,New York
+Jane,30,Boston
+Bob,35,Chicago
+Alice,28,Seattle'''
+        
+        temp_file = Path(tempfile.mkdtemp()) / "test_data.csv"
+        self.temp_files.append(temp_file)
+        
+        with open(temp_file, 'w') as f:
+            f.write(csv_content)
+        
+        # Upload file
+        with open(temp_file, 'rb') as f:
+            files = {'file': ('test_data.csv', f, 'text/csv')}
+            response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result['success'])
+        
+        # Verify CSV file gets proper pandas analysis
+        message = result['analysis']['message']
+        # Should either have shape analysis or pandas usage message
+        has_shape_analysis = 'rows' in message and 'columns' in message
+        has_pandas_guidance = 'pandas' in message and 'pd.read_csv' in message
+        
+        self.assertTrue(has_shape_analysis or has_pandas_guidance,
+                       f"CSV should have shape analysis or pandas guidance. Got: {message}")
+        
+        # Should mention CSV file upload
+        self.assertIn('CSV file uploaded', message)
+        
+        # Verify temp filename
+        temp_path = result['file']['tempPath']
+        self.assertIn('test_data', temp_path)
+        self.assertNotIn('csvFile', temp_path)
+        
+        # Track for cleanup - extract filename from tempPath
+        temp_filename = Path(temp_path).name
+        self.track_upload(temp_filename)
+
+    def test_text_file_upload_proper_analysis(self):
+        """Test text file upload gets appropriate analysis"""
+        # Create sample text file
+        text_content = '''This is a test text file.
+It contains multiple lines.
+Each line should be counted.
+This helps verify the text file analysis.
+End of test file.'''
+        
+        temp_file = Path(tempfile.mkdtemp()) / "test_document.txt"
+        self.temp_files.append(temp_file)
+        
+        with open(temp_file, 'w') as f:
+            f.write(text_content)
+        
+        # Upload file
+        with open(temp_file, 'rb') as f:
+            files = {'file': ('test_document.txt', f, 'text/plain')}
+            response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+        
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertTrue(result['success'])
+        
+        # Verify text file gets line count analysis (not CSV analysis)
+        self.assertNotIn('Shape:', result['analysis']['message'])
+        self.assertNotIn('columns', result['analysis']['message'])
+        self.assertIn('line', result['analysis']['message'].lower())
+        
+        # Verify temp filename
+        temp_path = result['file']['tempPath']
+        self.assertIn('test_document', temp_path)
+        self.assertNotIn('csvFile', temp_path)
+        
+        # Track for cleanup - extract filename from tempPath
+        temp_filename = Path(temp_path).name
+        self.track_upload(temp_filename)
+
+    def test_file_type_specific_messages(self):
+        """Test that different file types get appropriate success messages"""
+        test_cases = [
+            ('test.json', 'application/json', 'JSON file uploaded'),
+            ('script.py', 'text/x-python', 'Python file uploaded'),
+            ('data.csv', 'text/csv', 'CSV file uploaded'),
+            ('document.txt', 'text/plain', 'Text file uploaded')
+        ]
+        
+        for filename, mime_type, expected_message in test_cases:
+            with self.subTest(filename=filename):
+                # Create appropriate content
+                if filename.endswith('.json'):
+                    content = '{"test": "data"}'
+                elif filename.endswith('.py'):
+                    content = 'print("Hello, World!")'
+                elif filename.endswith('.csv'):
+                    content = 'col1,col2\nval1,val2'
+                else:
+                    content = 'Test text content'
+                
+                temp_file = Path(tempfile.mkdtemp()) / filename
+                self.temp_files.append(temp_file)
+                
+                with open(temp_file, 'w') as f:
+                    f.write(content)
+                
+                # Upload file
+                with open(temp_file, 'rb') as f:
+                    files = {'file': (filename, f, mime_type)}
+                    response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+                
+                self.assertEqual(response.status_code, 200)
+                result = response.json()
+                self.assertTrue(result['success'])
+                
+                # Verify appropriate message appears
+                self.assertIn(expected_message, result['analysis']['message'])
+                
+                # Track for cleanup - extract filename from tempPath
+                temp_filename = Path(result['file']['tempPath']).name
+                self.track_upload(temp_filename)
+
+    def test_temp_filename_uniqueness(self):
+        """Test that temp filenames are unique even for same original filename"""
+        # Create two identical filenames
+        content = '{"test": "data"}'
+        
+        uploaded_temp_paths = []
+        
+        for i in range(2):
+            temp_file = Path(tempfile.mkdtemp()) / "identical_name.json"
+            self.temp_files.append(temp_file)
+            
+            with open(temp_file, 'w') as f:
+                f.write(content)
+            
+            # Upload file
+            with open(temp_file, 'rb') as f:
+                files = {'file': ('identical_name.json', f, 'application/json')}
+                response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+            
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertTrue(result['success'])
+            
+            uploaded_temp_paths.append(result['file']['tempPath'])
+            temp_filename = Path(result['file']['tempPath']).name
+            self.track_upload(temp_filename)
+            
+            # Small delay to ensure unique timestamps
+            time.sleep(0.1)
+        
+        # Verify temp paths are unique
+        self.assertNotEqual(uploaded_temp_paths[0], uploaded_temp_paths[1])
+        
+        # Verify both contain the base filename
+        for temp_path in uploaded_temp_paths:
+            self.assertIn('identical_name', temp_path)
+            self.assertNotIn('csvFile', temp_path)
+
+
+if __name__ == '__main__':
+    unittest.main()

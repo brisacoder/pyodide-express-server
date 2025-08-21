@@ -1,21 +1,17 @@
 /**
  * File Management Routes
- * 
+ *
  * Handles all endpoints related to file operations (uploads, listing, deletion)
  */
-
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const pyodideService = require('../services/pyodide-service');
 const logger = require('../utils/logger');
 const config = require('../config');
-
 const router = express.Router();
-
 // Get upload directory from environment or default
 const UPLOAD_DIR = config.uploadDir;
-
 /**
  * @swagger
  * /api/uploaded-files:
@@ -71,45 +67,40 @@ router.get('/uploaded-files', (req, res) => {
         files: [],
         count: 0,
         uploadDir: UPLOAD_DIR,
-        message: 'Upload directory does not exist'
+        message: 'Upload directory does not exist',
       });
     }
-
     // Gather metadata for each file stored on disk.
-    const files = fs.readdirSync(UPLOAD_DIR)
-      .filter(file => !file.startsWith('.'))  // Exclude hidden files
-      .map(filename => {
+    const files = fs
+      .readdirSync(UPLOAD_DIR)
+      .filter((file) => !file.startsWith('.')) // Exclude hidden files
+      .map((filename) => {
         const filePath = path.join(UPLOAD_DIR, filename);
         const stats = fs.statSync(filePath);
-        
         return {
           filename: filename,
           size: stats.size,
           uploaded: stats.birthtime,
-          modified: stats.mtime
+          modified: stats.mtime,
         };
       })
       .sort((a, b) => new Date(b.uploaded) - new Date(a.uploaded)); // Sort by upload time, newest first
-
     logger.info(`Listed ${files.length} uploaded files`);
-
     res.json({
       success: true,
       files: files,
       count: files.length,
-      uploadDir: UPLOAD_DIR
+      uploadDir: UPLOAD_DIR,
     });
-
   } catch (error) {
     logger.error('Error listing uploaded files:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/uploaded-files/{filename}:
@@ -171,52 +162,44 @@ router.delete('/uploaded-files/:filename', (req, res) => {
   try {
     const filename = req.params.filename;
     const filePath = path.join(UPLOAD_DIR, filename);
-
     // Resolve paths to guard against directory traversal attacks and
     // ensure we operate only within the configured upload directory.
     // Security check - ensure file is in upload directory
     const resolvedUploadDir = path.resolve(UPLOAD_DIR);
     const resolvedFilePath = path.resolve(filePath);
-
     if (!resolvedFilePath.startsWith(resolvedUploadDir)) {
       logger.warn(`Attempted to delete file outside upload directory: ${filename}`);
       return res.status(400).json({
         success: false,
         error: 'Invalid filename',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     }
-
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
         error: 'File not found',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     }
-
     // Get file info before deletion for logging
     const stats = fs.statSync(filePath);
-    
     fs.unlinkSync(filePath);
     logger.info(`Deleted uploaded file: ${filename} (${stats.size} bytes)`);
-
     res.json({
       success: true,
       message: `File ${filename} deleted successfully`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
   } catch (error) {
     logger.error('Error deleting uploaded file:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/pyodide-files:
@@ -271,7 +254,7 @@ router.delete('/uploaded-files/:filename', (req, res) => {
  *                         modified: 1691234567
  *                       },
  *                       {
- *                         name: "uploaded_file.csv", 
+ *                         name: "uploaded_file.csv",
  *                         size: 2048,
  *                         modified: 1691234600
  *                       }
@@ -299,7 +282,6 @@ router.delete('/uploaded-files/:filename', (req, res) => {
 router.get('/pyodide-files', async (req, res) => {
   try {
     const result = await pyodideService.listPyodideFiles();
-    
     // Parse the Python result if it's a string, otherwise use as-is
     let parsedResult = result;
     if (result.success && result.result) {
@@ -307,13 +289,12 @@ router.get('/pyodide-files', async (req, res) => {
         try {
           // Convert Python dictionary string to JSON
           let jsonString = result.result
-            .replace(/'/g, '"')  // Single quotes to double quotes
-            .replace(/True/g, 'true')  // Python True to JSON true
-            .replace(/False/g, 'false');  // Python False to JSON false
-          
-          parsedResult = { 
-            ...result, 
-            result: JSON.parse(jsonString) 
+            .replace(/'/g, '"') // Single quotes to double quotes
+            .replace(/True/g, 'true') // Python True to JSON true
+            .replace(/False/g, 'false'); // Python False to JSON false
+          parsedResult = {
+            ...result,
+            result: JSON.parse(jsonString),
           };
         } catch (parseError) {
           logger.warn('Could not parse Pyodide files result:', parseError.message);
@@ -323,23 +304,20 @@ router.get('/pyodide-files', async (req, res) => {
         parsedResult = result;
       }
     }
-    
     logger.info('Listed Pyodide files:', {
       success: parsedResult.success,
-      fileCount: parsedResult.result?.count || 0
+      fileCount: parsedResult.result?.count || 0,
     });
-    
     res.json(parsedResult);
   } catch (error) {
     logger.error('Pyodide file list endpoint error:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/pyodide-files/{filename}:
@@ -395,42 +373,35 @@ router.get('/pyodide-files', async (req, res) => {
 router.delete('/pyodide-files/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
-    
     // Security check - prevent path traversal
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       logger.warn(`Attempted path traversal in pyodide file deletion: ${filename}`);
       return res.status(400).json({
         success: false,
         error: 'Invalid filename',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     }
-    
     logger.info(`Attempting to delete Pyodide file: ${filename}`);
-    
     const result = await pyodideService.deletePyodideFile(filename);
-    
     logger.info('Pyodide file deletion result:', {
       filename: filename,
       success: result.success,
-      result: result.result
+      result: result.result,
     });
-    
     if (!result.success && result.error && result.error.includes('not found')) {
       return res.status(404).json(result);
     }
-    
     res.json(result);
   } catch (error) {
     logger.error('Pyodide file deletion endpoint error:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/file-info/{filename}:
@@ -509,9 +480,8 @@ router.get('/file-info/:filename', async (req, res) => {
       success: true,
       filename: filename,
       uploadedFile: { exists: false },
-      pyodideFile: { exists: false }
+      pyodideFile: { exists: false },
     };
-
     // Check uploaded file on the Node.js filesystem
     const uploadPath = path.join(UPLOAD_DIR, filename);
     if (fs.existsSync(uploadPath)) {
@@ -521,10 +491,9 @@ router.get('/file-info/:filename', async (req, res) => {
         size: stats.size,
         uploaded: stats.birthtime,
         modified: stats.mtime,
-        path: uploadPath
+        path: uploadPath,
       };
     }
-
     // Check whether the file also exists inside Pyodide's in-memory FS
     try {
       const pyodideResult = await pyodideService.executeCode(`
@@ -539,10 +508,8 @@ if os.path.exists(filename):
     }
 else:
     result = {'exists': False}
-
 result
       `);
-
       if (pyodideResult.success && pyodideResult.result) {
         try {
           // The result is already a JavaScript object from the execute endpoint
@@ -550,11 +517,11 @@ result
             result.pyodideFile = pyodideResult.result;
           } else {
             // Fallback: if it's a string, try to parse it
-            let jsonString = pyodideResult.result.toString()
-              .replace(/'/g, '"')  // Single quotes to double quotes
-              .replace(/True/g, 'true')  // Python True to JSON true
-              .replace(/False/g, 'false');  // Python False to JSON false
-            
+            let jsonString = pyodideResult.result
+              .toString()
+              .replace(/'/g, '"') // Single quotes to double quotes
+              .replace(/True/g, 'true') // Python True to JSON true
+              .replace(/False/g, 'false'); // Python False to JSON false
             const pyodideFileInfo = JSON.parse(jsonString);
             result.pyodideFile = pyodideFileInfo;
           }
@@ -566,19 +533,16 @@ result
     } catch (pyodideError) {
       logger.warn(`Could not check Pyodide file ${filename}:`, pyodideError.message);
     }
-
     res.json(result);
-
   } catch (error) {
     logger.error('Error getting file info:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/extract-plots:
@@ -614,22 +578,131 @@ result
 router.post('/extract-plots', async (req, res) => {
   try {
     const extractedFiles = await pyodideService.extractAllPlotFiles();
-    
     res.json({
       success: true,
       extracted_files: extractedFiles,
       count: extractedFiles.length,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
   } catch (error) {
     logger.error('Error extracting plot files:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
+/**
+ * @swagger
+ * /api/clear-all-files:
+ *   post:
+ *     summary: Clear all uploaded files and reset Pyodide filesystem
+ *     description: Removes all uploaded files from server storage and clears the Pyodide virtual filesystem
+ *     tags: [File Operations]
+ *     responses:
+ *       200:
+ *         description: All files cleared successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "All files cleared successfully"
+ *                 cleared:
+ *                   type: object
+ *                   properties:
+ *                     uploaded_files:
+ *                       type: number
+ *                       example: 5
+ *                     pyodide_files:
+ *                       type: number
+ *                       example: 3
+ *       500:
+ *         description: Error clearing files
+ */
+router.post('/clear-all-files', async (req, res) => {
+  try {
+    let uploadedFilesCleared = 0;
+    let pyodideFilesCleared = 0;
+    // Clear uploaded files from server storage
+    if (fs.existsSync(UPLOAD_DIR)) {
+      const files = fs.readdirSync(UPLOAD_DIR);
+      for (const file of files) {
+        const filePath = path.join(UPLOAD_DIR, file);
+        if (fs.statSync(filePath).isFile()) {
+          fs.unlinkSync(filePath);
+          uploadedFilesCleared++;
+        }
+      }
+    }
+    // Clear Pyodide virtual filesystem
+    try {
+      const result = await pyodideService.executeCode(`
+import os
+import json
+from pathlib import Path
 
+# Get list of files from /uploads directory
+files_before = []
+uploads_dir = Path('/uploads')
+try:
+    if uploads_dir.exists():
+        files_before = [f.name for f in uploads_dir.iterdir() if f.is_file()]
+        files_before = [f for f in files_before if not f.startswith('_') and f != 'tmp']
+except:
+    pass
+
+# Clear user files from /uploads directory (keep system files)
+cleared_count = 0
+for filename in files_before:
+    try:
+        if not filename.startswith('_') and filename != 'tmp':
+            file_path = uploads_dir / filename
+            if file_path.exists():
+                file_path.unlink()
+                cleared_count += 1
+    except:
+        pass
+
+result = {
+    'files_before': files_before,
+    'cleared': cleared_count
+}
+result
+      `);
+      if (result.success && result.result) {
+        pyodideFilesCleared = result.result.cleared;
+      }
+    } catch (pyodideError) {
+      logger.warn('Error clearing Pyodide files:', pyodideError.message);
+      // Continue anyway, don't fail the whole operation
+    }
+    logger.info('Files cleared successfully', {
+      uploadedFiles: uploadedFilesCleared,
+      pyodideFiles: pyodideFilesCleared,
+    });
+    res.json({
+      success: true,
+      message: 'All files cleared successfully',
+      cleared: {
+        uploaded_files: uploadedFilesCleared,
+        pyodide_files: pyodideFilesCleared,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error('Error clearing files:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
 module.exports = router;

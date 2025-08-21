@@ -112,6 +112,54 @@ def run_container_filesystem_tests():
     return result.returncode == 0
 
 
+def run_enhancement_tests():
+    """Run the recent enhancement tests."""
+    print("\n🚀 Running Recent Enhancement Tests...")
+    print("=" * 50)
+
+    # Change to the project directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Run recent enhancement tests
+    enhancement_tests = [
+        "tests.test_file_upload_enhancements.FileUploadEnhancementsTestCase",
+        "tests.test_file_management_enhancements.FileManagementEnhancementsTestCase",
+        "tests.test_crash_reporting_system.CrashReportingSystemTestCase",
+        "tests.test_csp_compliance.CSPComplianceTestCase"
+    ]
+    
+    all_success = True
+    for test_class in enhancement_tests:
+        print(f"\n📋 Running {test_class.split('.')[-1]}...")
+        result = subprocess.run(
+            [sys.executable, "-m", "unittest", test_class, "-v"],
+            capture_output=False,
+            check=False,
+        )
+        if result.returncode != 0:
+            all_success = False
+
+    return all_success
+
+
+def run_code_quality_tests():
+    """Run the code quality compliance tests."""
+    print("\n📝 Running Code Quality Compliance Tests...")
+    print("=" * 50)
+
+    # Change to the project directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Run code quality tests
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", "tests.test_code_quality_compliance.CodeQualityTestCase", "-v"],
+        capture_output=False,
+        check=False,
+    )
+
+    return result.returncode == 0
+
+
 def main():
     """Main entry point."""
     print("🚀 Simple Test Runner for Pyodide Express Server")
@@ -137,13 +185,20 @@ def main():
     # Run function return patterns tests
     patterns_success = run_function_return_patterns_tests()
     
+    # Run enhancement tests
+    enhancement_success = run_enhancement_tests()
+    
+    # Run code quality tests
+    quality_success = run_code_quality_tests()
+    
     # Note: Container filesystem tests are skipped for native server testing
     # They are designed for containerized environments only
     print("\n🐳 Container Filesystem Tests: SKIPPED (native server mode)")
     print("   - These tests are designed for containerized environments")
     print("   - Use 'run_comprehensive_tests.py --categories container' for container testing")
 
-    if basic_success and dynamic_success and security_success and patterns_success:
+    if all([basic_success, dynamic_success, security_success, patterns_success, 
+            enhancement_success, quality_success]):
         print("\n🎉 All tests passed!")
         return 0
     else:
@@ -156,6 +211,10 @@ def main():
             print("   - Security logging tests failed")
         if not patterns_success:
             print("   - Function return patterns tests failed")
+        if not enhancement_success:
+            print("   - Enhancement tests failed")
+        if not quality_success:
+            print("   - Code quality tests failed")
         return 1
 
 

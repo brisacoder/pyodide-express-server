@@ -1,9 +1,10 @@
 import os
+import subprocess
 import tempfile
 import time
-import subprocess
-import requests
 import unittest
+
+import requests
 
 BASE_URL = "http://localhost:3000"
 
@@ -191,7 +192,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
                     f"{BASE_URL}/api/upload-csv",
-                    files={"csvFile": ("malware.exe", fh, "application/octet-stream")},
+                    files={"file": ("malware.exe", fh, "application/octet-stream")},
                 )
             self.assertEqual(r.status_code, 400)
         finally:
@@ -209,7 +210,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
                     f"{BASE_URL}/api/upload-csv",
-                    files={"csvFile": ("large.csv", fh, "text/csv")},
+                    files={"file": ("large.csv", fh, "text/csv")},
                 )
             # Should either be 400 (rejected by validation) or 413 (entity too large)
             self.assertIn(r.status_code, [400, 413])

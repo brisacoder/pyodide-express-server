@@ -50,7 +50,7 @@ class IntegrationTestCase(unittest.TestCase):
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
                     f"{BASE_URL}/api/upload-csv",
-                    files={"csvFile": ("test.csv", fh, "text/csv")},
+                    files={"file": ("test.csv", fh, "text/csv")},
                     timeout=30
                 )
             self.assertEqual(r.status_code, 200)
@@ -111,7 +111,7 @@ class IntegrationTestCase(unittest.TestCase):
                 with open(tmp_path, "rb") as fh:
                     r = requests.post(
                         f"{BASE_URL}/api/upload-csv",
-                        files={"csvFile": (filename, fh, "text/csv")},
+                        files={"file": (filename, fh, "text/csv")},
                         timeout=30
                     )
                 
@@ -157,7 +157,7 @@ result
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
                     f"{BASE_URL}/api/upload-csv",
-                    files={"csvFile": ("concurrent.csv", fh, "text/csv")},
+                    files={"file": ("concurrent.csv", fh, "text/csv")},
                     timeout=30
                 )
             self.assertEqual(r.status_code, 200)
@@ -253,7 +253,7 @@ result
                 with open(tmp_path, "rb") as fh:
                     r = requests.post(
                         f"{BASE_URL}/api/upload-csv",
-                        files={"csvFile": (filename, fh, "text/csv")},
+                        files={"file": (filename, fh, "text/csv")},
                         timeout=30
                     )
                 self.assertEqual(r.status_code, 200)

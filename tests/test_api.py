@@ -130,7 +130,7 @@ f"{x + 3}"
         with open(tmp_path, "rb") as fh:
             r = requests.post(
                 f"{BASE_URL}/api/upload-csv",
-                files={"csvFile": ("data.csv", fh, "text/csv")},
+                files={"file": ("data.csv", fh, "text/csv")},
                 timeout=30,
             )
         os.unlink(tmp_path)

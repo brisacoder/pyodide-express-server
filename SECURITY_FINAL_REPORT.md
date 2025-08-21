@@ -12,9 +12,9 @@
 |------------------|--------|------------------|
 | **Request Isolation** | 9/10 | ✅ **EXCELLENT** - Perfect namespace isolation |
 | **WebAssembly Sandbox** | 8/10 | ✅ **STRONG** - OS properly sandboxed |
-| **Information Disclosure** | 2/10 | 🚨 **CRITICAL** - System info extracted |
-| **File System Security** | 3/10 | 🚨 **CRITICAL** - Can write/read server files |
-| **Authentication** | 1/10 | ❌ **MISSING** - No user authentication |
+| **Information Disclosure** | 2/10 | 🚨 **CRITICAL** - System info extracted | (Done, RP)
+| **File System Security** | 3/10 | 🚨 **CRITICAL** - Can write/read server files | (Done partially, RP)
+| **Authentication** | 1/10 | ❌ **MISSING** - No user authentication | (TBD once system is adopted)
 | **Dangerous Module Access** | 8/10 | ✅ **BLOCKED** - Subprocess access denied |
 
 **OVERALL SECURITY RATING: 5.2/10** 
@@ -45,12 +45,11 @@ File System Access:
   Plots contents: ['base64', 'matplotlib', 'README.md', 'seaborn']
 ```
 
-**CRITICAL ISSUE:** Server file path exposed: `C:/Users/reinaldo.penno/github/pyodide-express-server/src/server.js`
+**CRITICAL ISSUE:** Server file path exposed: `pyodide-express-server/src/server.js`
 
 ### 2. **File System Manipulation - CRITICAL**
 **Status:** ✅ **ACTIVELY EXPLOITABLE**
 
-**What We Successfully Did:**
 ```
 ✅ Created file: /plots/test.txt
 ✅ Read file content: "test"  
@@ -96,7 +95,7 @@ File System Access:
 
 ---
 
-## 🎯 REAL-WORLD ATTACK SCENARIOS
+## 🎯 REAL-WORLD ATTACK SCENARIOS (RP: fixed)
 
 ### Scenario 1: **Information Reconnaissance** ✅ **CONFIRMED POSSIBLE**
 ```python
@@ -128,7 +127,7 @@ for dir_name in ['plots', 'uploads', 'tmp', 'home']:
 
 ---
 
-## 📋 IMMEDIATE ACTION REQUIRED
+## 📋 IMMEDIATE ACTION REQUIRED (RP: Done)
 
 ### 🔥 **CRITICAL (Fix in 24 hours)**
 
@@ -150,7 +149,7 @@ for dir_name in ['plots', 'uploads', 'tmp', 'home']:
    const allowedWritePaths = ['/tmp', '/home/pyodide'];
    ```
 
-3. **Implement Basic Rate Limiting**
+3. **Implement Basic Rate Limiting** (RP: humm... Not really needed now)
    ```bash
    npm install express-rate-limit
    # Limit to 10 requests per minute per IP
@@ -219,4 +218,3 @@ for dir_name in ['plots', 'uploads', 'tmp', 'home']:
 
 ---
 
-*This report is based on live penetration testing conducted on August 19, 2025. All vulnerabilities have been confirmed through actual exploitation attempts.*

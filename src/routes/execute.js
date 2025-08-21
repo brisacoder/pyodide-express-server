@@ -1,17 +1,14 @@
 /**
  * Python Code Execution Routes
- * 
+ *
  * Handles all endpoints related to executing Python code using Pyodide
  */
-
 const express = require('express');
 const pyodideService = require('../services/pyodide-service');
 const { validateCode, validatePackage } = require('../middleware/validation');
 const logger = require('../utils/logger');
 const { executeCode } = require('../controllers/executeController');
-
 const router = express.Router();
-
 /**
  * @swagger
  * /api/execute:
@@ -39,7 +36,7 @@ const router = express.Router();
  *                 code: |
  *                   import pandas as pd
  *                   import numpy as np
- *                   
+ *
  *                   # Create sample dataset
  *                   data = {
  *                       'name': ['Alice', 'Bob', 'Charlie', 'Diana'],
@@ -47,17 +44,17 @@ const router = express.Router();
  *                       'score': [85, 92, 78, 96]
  *                   }
  *                   df = pd.DataFrame(data)
- *                   
+ *
  *                   print("Dataset:")
  *                   print(df)
- *                   
+ *
  *                   # Calculate statistics
  *                   stats = {
  *                       'mean_age': df['age'].mean(),
  *                       'max_score': df['score'].max(),
  *                       'correlation': df[['age', 'score']].corr().iloc[0,1]
  *                   }
- *                   
+ *
  *                   print(f"\nStatistics: {stats}")
  *                   stats
  *             with_context:
@@ -104,8 +101,6 @@ const router = express.Router();
  *         $ref: '#/components/responses/ServiceUnavailable'
  */
 router.post('/execute', validateCode, executeCode);
-
-
 /**
  * @swagger
  * /api/install-package:
@@ -162,30 +157,25 @@ router.post('/execute', validateCode, executeCode);
 router.post('/install-package', validatePackage, async (req, res) => {
   try {
     const { package: packageName } = req.body;
-
     logger.info('Installing package:', packageName);
     // Installation is performed via ``micropip`` inside the Pyodide runtime.
     // Only packages built for WebAssembly can be fetched successfully.
     const result = await pyodideService.installPackage(packageName);
-    
     if (result.success) {
       logger.info('Package installed successfully:', packageName);
     } else {
       logger.warn('Package installation failed:', packageName, result.error);
     }
-    
     res.json(result);
-    
   } catch (error) {
     logger.error('Package installation endpoint error:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/packages:
@@ -244,11 +234,10 @@ router.get('/packages', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/reset:
@@ -289,25 +278,21 @@ router.post('/reset', async (req, res) => {
   try {
     // Reset interpreter state to a clean slate.
     await pyodideService.reset();
-    
     logger.info('Pyodide environment reset successfully');
-    
     res.json({
       success: true,
       message: 'Pyodide environment reset successfully',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-    
   } catch (error) {
     logger.error('Reset endpoint error:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 });
-
 /**
  * @swagger
  * /api/status:
@@ -351,11 +336,10 @@ router.get('/status', (req, res) => {
     logger.error('Status check failed:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
-
 /**
  * @swagger
  * /api/health:
@@ -426,26 +410,23 @@ router.get('/health', async (req, res) => {
   try {
     // Start by checking whether the interpreter has completed initialization.
     const status = pyodideService.getStatus();
-    
     if (!status.isReady) {
       return res.status(503).json({
         success: false,
         status: 'not_ready',
         message: 'Pyodide is still initializing',
-        pyodide: status
+        pyodide: status,
       });
     }
-    
     // Test basic Python execution to verify the runtime actually works.
     const testResult = await pyodideService.executeCode('2 + 2');
-    
     if (testResult.success && testResult.result === 4) {
       res.json({
         success: true,
         status: 'healthy',
         message: 'Python execution is working correctly',
         pyodide: status,
-        testResult: testResult
+        testResult: testResult,
       });
     } else {
       res.status(500).json({
@@ -453,20 +434,18 @@ router.get('/health', async (req, res) => {
         status: 'unhealthy',
         message: 'Python execution test failed',
         pyodide: status,
-        testResult: testResult
+        testResult: testResult,
       });
     }
-    
   } catch (error) {
     logger.error('Python health check failed:', error);
     res.status(500).json({
       success: false,
       status: 'error',
-      error: error.message
+      error: error.message,
     });
   }
 });
-
 /**
  * @swagger
  * /api/execute-stream:
@@ -490,11 +469,11 @@ router.get('/health', async (req, res) => {
  *               description: Server-Sent Events stream
  *               example: |
  *                 data: {"type":"status","message":"Starting execution..."}
- *                 
+ *
  *                 data: {"type":"stdout","content":"Hello World\n"}
- *                 
+ *
  *                 data: {"type":"result","success":true,"result":42,"stdout":"Hello World\n","stderr":"","timestamp":"2024-01-15T10:30:00.000Z"}
- *                 
+ *
  *                 data: {"type":"complete"}
  *       400:
  *         $ref: '#/components/responses/BadRequest'
@@ -504,52 +483,42 @@ router.get('/health', async (req, res) => {
 router.post('/execute-stream', validateCode, async (req, res) => {
   try {
     const { code, context, timeout } = req.body;
-    
     // Set up Server-Sent Events
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
+      'Access-Control-Allow-Headers': 'Cache-Control',
     });
-    
     // Send initial status
     res.write(`data: ${JSON.stringify({ type: 'status', message: 'Starting execution...' })}\n\n`);
-
     try {
       // Execute code and stream the resulting output chunks back to the client
       // using Server-Sent Events.
       const result = await pyodideService.executeCode(code, context, timeout);
-      
       // Send output if available
       if (result.stdout) {
         res.write(`data: ${JSON.stringify({ type: 'stdout', content: result.stdout })}\n\n`);
       }
-      
       if (result.stderr) {
         res.write(`data: ${JSON.stringify({ type: 'stderr', content: result.stderr })}\n\n`);
       }
-      
       // Send final result
       res.write(`data: ${JSON.stringify({ type: 'result', ...result })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'complete' })}\n\n`);
-      
     } catch (executionError) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: executionError.message })}\n\n`);
     }
-    
     res.end();
-    
   } catch (error) {
     logger.error('Streaming execution error:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
-
 /**
  * @swagger
  * /api/stats:
@@ -560,7 +529,7 @@ router.post('/execute-stream', validateCode, async (req, res) => {
  *       - Legacy system info (uptime, memory, Pyodide status) for backward compatibility
  *       - Enhanced execution statistics (success rates, error tracking, IP monitoring)
  *       - Security logging data and performance metrics
- *       
+ *
  *       **Note**: This endpoint maintains backward compatibility while providing enhanced features.
  *       For dashboard-specific features, use `/api/dashboard/stats` instead.
  *     tags: [System]
@@ -674,7 +643,6 @@ router.get('/stats', (req, res) => {
   try {
     // Get enhanced statistics from logger
     const enhancedStats = logger.getStats();
-    
     // Maintain backward compatibility with original format
     const stats = {
       // Legacy top-level fields for existing tests (MUST be at top level)
@@ -682,7 +650,6 @@ router.get('/stats', (req, res) => {
       memory: process.memoryUsage(),
       pyodide: pyodideService.getStatus(),
       timestamp: new Date().toISOString(),
-      
       // Enhanced statistics (new fields) - add without conflicting
       executionStats: {
         overview: enhancedStats.overview,
@@ -690,25 +657,21 @@ router.get('/stats', (req, res) => {
         topIPs: enhancedStats.topIPs,
         topErrors: enhancedStats.topErrors,
         userAgents: enhancedStats.userAgents,
-        hourlyTrend: enhancedStats.hourlyTrend
-      }
+        hourlyTrend: enhancedStats.hourlyTrend,
+      },
     };
-
     logger.info('Enhanced statistics retrieved', {
       component: 'stats-endpoint',
       totalExecutions: enhancedStats.overview.totalExecutions,
-      successRate: enhancedStats.overview.successRate
+      successRate: enhancedStats.overview.successRate,
     });
-
     res.json(stats);
   } catch (error) {
     logger.error('Stats endpoint error:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
-
-
 module.exports = router;

@@ -371,6 +371,7 @@ result
                     <div class="button-group">
                         <button onclick="uploadFile()">📤 Upload File</button>
                         <button onclick="listFiles()">📋 List Files</button>
+                        <button onclick="clearAllFiles()">🗑️ Clear All Files</button>
                     </div>
                 </div>
                 
@@ -672,19 +673,66 @@ result
         
         async function resetEnvironment() {
             const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = '<div>Resetting environment...</div>';
+            resultDiv.innerHTML = '<div>Resetting environment and clearing all files...</div>';
             
             try {
-                const response = await fetch('/api/reset', { method: 'POST' });
-                const result = await response.json();
+                // First reset the Python environment
+                const resetResponse = await fetch('/api/reset', { method: 'POST' });
+                const resetResult = await resetResponse.json();
                 
-                if (result.success) {
-                    resultDiv.innerHTML = '<div class="success">Environment reset successfully!</div>';
-                } else {
-                    resultDiv.innerHTML = '<div class="error">Reset failed:<br>' + result.error + '</div>';
+                if (!resetResult.success) {
+                    resultDiv.innerHTML = '<div class="error">Reset failed:<br>' + resetResult.error + '</div>';
+                    return;
                 }
+                
+                // Then clear all files
+                await clearAllFilesInternal();
+                
+                resultDiv.innerHTML = '<div class="success">Environment reset and all files cleared successfully!</div>';
             } catch (error) {
                 resultDiv.innerHTML = '<div class="error">Reset Error:\n' + error.message + '</div>';
+            }
+        }
+        
+        async function clearAllFiles() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Clearing all files...</div>';
+            
+            try {
+                await clearAllFilesInternal();
+                resultDiv.innerHTML = '<div class="success">All files cleared successfully!</div>';
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">Clear Files Error:\n' + error.message + '</div>';
+            }
+        }
+        
+        async function clearAllFilesInternal() {
+            // Get list of uploaded files and delete them
+            const uploadedResponse = await fetch('/api/uploaded-files');
+            const uploadedResult = await uploadedResponse.json();
+            
+            if (uploadedResult.success && uploadedResult.files.length > 0) {
+                for (const file of uploadedResult.files) {
+                    try {
+                        await fetch(`/api/uploaded-files/${file.filename}`, { method: 'DELETE' });
+                    } catch (error) {
+                        console.warn(`Failed to delete uploaded file ${file.filename}:`, error);
+                    }
+                }
+            }
+            
+            // Get list of Pyodide files and delete them
+            const pyodideResponse = await fetch('/api/pyodide-files');
+            const pyodideResult = await pyodideResponse.json();
+            
+            if (pyodideResult.success && pyodideResult.result && pyodideResult.result.files) {
+                for (const file of pyodideResult.result.files) {
+                    try {
+                        await fetch(`/api/pyodide-files/${file.name}`, { method: 'DELETE' });
+                    } catch (error) {
+                        console.warn(`Failed to delete Pyodide file ${file.name}:`, error);
+                    }
+                }
             }
         }
         

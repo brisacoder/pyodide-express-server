@@ -1,23 +1,22 @@
 const pyodideService = require('../services/pyodide-service');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
-
 /**
  * Executes raw Python code submitted as plain text in request body.
  * Designed for simple API integrations and command-line tools.
- * 
+ *
  * @param {Object} req - Express request object
  * @param {string} req.body - Raw Python code as string (not JSON)
  * @param {string} req.ip - Client IP address (added by Express)
  * @param {Function} req.get - Function to get request headers
  * @param {Object} res - Express response object
  * @returns {Promise<void>} Resolves when response is sent
- * 
+ *
  * @example
  * // POST /api/execute-raw
  * // Content-Type: text/plain
  * // Body: import numpy as np; print(np.__version__)
- * 
+ *
  * // Success response:
  * // {
  * //   "success": true,
@@ -25,26 +24,26 @@ const crypto = require('crypto');
  * //   "executionTime": 150,
  * //   "timestamp": "2025-08-20T10:30:00Z"
  * // }
- * 
+ *
  * // Error response:
  * // {
  * //   "success": false,
  * //   "error": "SyntaxError: invalid syntax",
  * //   "timestamp": "2025-08-20T10:30:00Z"
  * // }
- * 
+ *
  * @description
  * HTTP Status Codes:
  * - 200: Successful execution (regardless of Python errors)
  * - 400: Invalid request (empty code, wrong content type)
  * - 500: Server error (Pyodide initialization failure, etc.)
- * 
+ *
  * Security Features:
  * - Generates SHA-256 hash of code for tracking
  * - Logs execution attempts with IP and User-Agent
  * - Measures and logs execution time
  * - Validates input format and content
- * 
+ *
  * Rate Limiting:
  * - Subject to global rate limits
  * - Large code blocks may be rejected
@@ -61,20 +60,16 @@ async function executeRaw(req, res) {
         timestamp: new Date().toISOString(),
       });
     }
-
     // Generate code hash for tracking and security
     const codeHash = crypto.createHash('sha256').update(code.trim()).digest('hex');
-    
     logger.info('Executing raw Python code:', {
       codeLength: code.length,
       codeHash: codeHash.substring(0, 16), // Log first 16 chars of hash
       ip: req.ip,
       contentType: req.get('Content-Type'),
     });
-
     const result = await pyodideService.executeCode(code);
     const executionTime = Date.now() - startTime;
-
     // Security logging with complete execution data
     logger.security('code_execution', {
       ip: req.ip,
@@ -85,39 +80,35 @@ async function executeRaw(req, res) {
       codeLength: code.length,
       executionType: 'raw',
       error: result.success ? null : result.error,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
     if (result.success) {
       logger.info('Raw code execution successful', {
         executionTime,
-        codeHash: codeHash.substring(0, 16)
+        codeHash: codeHash.substring(0, 16),
       });
     } else {
       logger.warn('Raw code execution failed:', {
         error: result.error,
         executionTime,
-        codeHash: codeHash.substring(0, 16)
+        codeHash: codeHash.substring(0, 16),
       });
     }
-
     res.json(result);
   } catch (error) {
     const executionTime = Date.now() - startTime;
     logger.error('Raw execution endpoint error:', {
       error: error.message,
-      executionTime
+      executionTime,
     });
-    
     // Log security event for errors
     logger.security('code_execution', {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
       success: false,
       executionTime,
-      error: error.message
+      error: error.message,
     });
-
     res.status(500).json({
       success: false,
       error: error.message,
@@ -125,11 +116,10 @@ async function executeRaw(req, res) {
     });
   }
 }
-
 /**
  * Executes Python code with structured JSON input and optional context.
  * Main execution endpoint supporting advanced features and configuration.
- * 
+ *
  * @param {Object} req - Express request object
  * @param {Object} req.body - JSON request body
  * @param {string} req.body.code - Python code to execute (required)
@@ -139,7 +129,7 @@ async function executeRaw(req, res) {
  * @param {Function} req.get - Function to get request headers
  * @param {Object} res - Express response object
  * @returns {Promise<void>} Resolves when response is sent
- * 
+ *
  * @example
  * // POST /api/execute
  * // Content-Type: application/json
@@ -148,7 +138,7 @@ async function executeRaw(req, res) {
  * //   "context": {"title": "My Chart"},
  * //   "timeout": 45000
  * // }
- * 
+ *
  * // Success response:
  * // {
  * //   "success": true,
@@ -157,13 +147,13 @@ async function executeRaw(req, res) {
  * //   "executionTime": 890,
  * //   "timestamp": "2025-08-20T10:30:00Z"
  * // }
- * 
+ *
  * // Complex execution with data analysis:
  * // {
  * //   "code": "df = pd.read_csv('/uploads/data.csv')\nresult = df.describe()\nprint(result)",
  * //   "context": {"debug": true}
  * // }
- * 
+ *
  * @description
  * Advanced Features:
  * - Context injection for dynamic variables
@@ -171,13 +161,13 @@ async function executeRaw(req, res) {
  * - Plot file detection and listing
  * - Comprehensive error reporting
  * - Execution time measurement
- * 
+ *
  * Security Features:
  * - Code hashing for duplicate detection
  * - Complete audit trail logging
  * - Input validation and sanitization
  * - Resource usage monitoring
- * 
+ *
  * Response Fields:
  * - success: Boolean indicating execution success
  * - output: Captured stdout/stderr from Python
@@ -190,10 +180,8 @@ async function executeCode(req, res) {
   const startTime = Date.now();
   try {
     const { code, context, timeout } = req.body;
-    
     // Generate code hash for tracking and security
     const codeHash = crypto.createHash('sha256').update(code.trim()).digest('hex');
-    
     logger.info('Executing Python code:', {
       codeLength: code.length,
       codeHash: codeHash.substring(0, 16), // Log first 16 chars of hash
@@ -201,10 +189,8 @@ async function executeCode(req, res) {
       timeout: timeout || 'default',
       ip: req.ip,
     });
-
     const result = await pyodideService.executeCode(code, context, timeout);
     const executionTime = Date.now() - startTime;
-
     // Security logging with complete execution data
     logger.security('code_execution', {
       ip: req.ip,
@@ -217,39 +203,35 @@ async function executeCode(req, res) {
       hasContext: !!context,
       timeout: timeout || 30000,
       error: result.success ? null : result.error,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-
     if (result.success) {
       logger.info('Code execution successful', {
         executionTime,
-        codeHash: codeHash.substring(0, 16)
+        codeHash: codeHash.substring(0, 16),
       });
     } else {
       logger.warn('Code execution failed:', {
         error: result.error,
         executionTime,
-        codeHash: codeHash.substring(0, 16)
+        codeHash: codeHash.substring(0, 16),
       });
     }
-
     res.json(result);
   } catch (error) {
     const executionTime = Date.now() - startTime;
     logger.error('Execution endpoint error:', {
       error: error.message,
-      executionTime
+      executionTime,
     });
-    
     // Log security event for errors
     logger.security('code_execution', {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
       success: false,
       executionTime,
-      error: error.message
+      error: error.message,
     });
-
     res.status(500).json({
       success: false,
       error: error.message,
@@ -257,18 +239,17 @@ async function executeCode(req, res) {
     });
   }
 }
-
 /**
  * Lists all files currently available in Pyodide's virtual filesystem.
  * Provides inventory of uploaded files, generated plots, and temporary files.
- * 
+ *
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @returns {Promise<void>} Resolves when response is sent
- * 
+ *
  * @example
  * // GET /api/files/pyodide
- * 
+ *
  * // Response:
  * // {
  * //   "success": true,
@@ -281,20 +262,20 @@ async function executeCode(req, res) {
  * //   "totalFiles": 6,
  * //   "timestamp": "2025-08-20T10:30:00Z"
  * // }
- * 
+ *
  * @description
  * Features:
  * - Recursive directory traversal
  * - Organized by directory structure
  * - File count and metadata
  * - Real-time filesystem state
- * 
+ *
  * Use Cases:
  * - File management interfaces
  * - Debugging filesystem issues
  * - Cleanup and maintenance
  * - API exploration and testing
- * 
+ *
  * Security Notes:
  * - Only shows Pyodide virtual filesystem
  * - No access to host filesystem
@@ -313,21 +294,20 @@ async function listPyodideFiles(req, res) {
     });
   }
 }
-
 /**
  * Deletes a specific file from Pyodide's virtual filesystem.
  * Removes uploaded files, generated plots, or temporary data.
- * 
+ *
  * @param {Object} req - Express request object
  * @param {Object} req.params - URL parameters
  * @param {string} req.params.filename - Name of file to delete (including path)
  * @param {Object} res - Express response object
  * @returns {Promise<void>} Resolves when response is sent
- * 
+ *
  * @example
  * // DELETE /api/files/pyodide/plots%2Fmatplotlib%2Fchart.png
  * // (URL encoded: plots/matplotlib/chart.png)
- * 
+ *
  * // Success response:
  * // {
  * //   "success": true,
@@ -335,34 +315,34 @@ async function listPyodideFiles(req, res) {
  * //   "filename": "plots/matplotlib/chart.png",
  * //   "timestamp": "2025-08-20T10:30:00Z"
  * // }
- * 
+ *
  * // File not found (404):
  * // {
  * //   "success": false,
  * //   "error": "File not found: plots/matplotlib/missing.png",
  * //   "timestamp": "2025-08-20T10:30:00Z"
  * // }
- * 
+ *
  * // Delete uploaded CSV file:
  * // DELETE /api/files/pyodide/uploads%2Fdata.csv
- * 
+ *
  * @description
  * HTTP Status Codes:
  * - 200: File successfully deleted
  * - 404: File not found
  * - 500: Server error during deletion
- * 
+ *
  * Security Features:
  * - Path validation to prevent directory traversal
  * - Only operates within Pyodide virtual filesystem
  * - Logging of all deletion attempts
- * 
+ *
  * Use Cases:
  * - Cleanup after data analysis
  * - File management in web interfaces
  * - Automated maintenance scripts
  * - Testing and development workflows
- * 
+ *
  * Path Encoding:
  * - URL encode special characters in filenames
  * - Forward slashes must be encoded as %2F
@@ -372,12 +352,10 @@ async function deletePyodideFile(req, res) {
   try {
     const filename = req.params.filename;
     const result = await pyodideService.deletePyodideFile(filename);
-    
     // Check if file was not found and return 404
     if (!result.success && result.error && result.error.includes('not found')) {
       return res.status(404).json(result);
     }
-    
     // Return appropriate status based on success
     const statusCode = result.success ? 200 : 500;
     res.status(statusCode).json(result);
@@ -390,5 +368,4 @@ async function deletePyodideFile(req, res) {
     });
   }
 }
-
 module.exports = { executeRaw, executeCode, listPyodideFiles, deletePyodideFile };

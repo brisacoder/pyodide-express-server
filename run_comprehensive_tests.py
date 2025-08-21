@@ -38,7 +38,12 @@ test_modules = [
     'tests.test_direct_filesystem_mount',
     'tests.test_container_filesystem',
     'tests.test_function_return_patterns',
-    'tests.test_dynamic_modules_and_execution_robustness'
+    'tests.test_dynamic_modules_and_execution_robustness',
+    'tests.test_file_upload_enhancements',
+    'tests.test_file_management_enhancements',
+    'tests.test_crash_reporting_system',
+    'tests.test_csp_compliance',
+    'tests.test_code_quality_compliance'
 ]
 
 
@@ -355,7 +360,12 @@ class ComprehensiveTestRunner:
             ('tests.test_direct_filesystem_mount', 'Direct Filesystem Mount'),
             ('tests.test_container_filesystem', 'Container Filesystem'),
             ('tests.test_function_return_patterns', 'Function Return Patterns'),
-            ('tests.test_dynamic_modules_and_execution_robustness', 'Dynamic Modules & Execution Robustness')
+            ('tests.test_dynamic_modules_and_execution_robustness', 'Dynamic Modules & Execution Robustness'),
+            ('tests.test_file_upload_enhancements', 'File Upload Enhancements'),
+            ('tests.test_file_management_enhancements', 'File Management Enhancements'),
+            ('tests.test_crash_reporting_system', 'Crash Reporting System'),
+            ('tests.test_csp_compliance', 'CSP Compliance'),
+            ('tests.test_code_quality_compliance', 'Code Quality Compliance')
         ]
         
         if selected_categories:
@@ -454,7 +464,12 @@ Examples:
         'direct_mount': 'Direct Filesystem Mount',
         'container': 'Container Filesystem',
         'function_patterns': 'Function Return Patterns',
-        'dynamic': 'Dynamic Modules & Execution Robustness'
+        'dynamic': 'Dynamic Modules & Execution Robustness',
+        'upload_enhancements': 'File Upload Enhancements',
+        'file_management': 'File Management Enhancements',
+        'crash_reporting': 'Crash Reporting System',
+        'csp': 'CSP Compliance',
+        'quality': 'Code Quality Compliance'
     }
     
     selected_categories = None

@@ -162,7 +162,7 @@ class SecurityTestCase(unittest.TestCase):
                 with open(tmp_path, "rb") as fh:
                     r = requests.post(
                         f"{BASE_URL}/api/upload-csv",
-                        files={"csvFile": (filename, fh, "text/csv")},
+                        files={"file": (filename, fh, "text/csv")},
                         timeout=30
                     )
                 
@@ -271,7 +271,7 @@ class SecurityTestCase(unittest.TestCase):
                 with open(tmp_path, "rb") as fh:
                     r = requests.post(
                         f"{BASE_URL}/api/upload-csv",
-                        files={"csvFile": ("malicious.csv", fh, "text/csv")},
+                        files={"file": ("malicious.csv", fh, "text/csv")},
                         timeout=30
                     )
                 

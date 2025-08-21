@@ -1,41 +1,36 @@
 /**
  * Prometheus-style Metrics Collection for HTTP Performance Monitoring
- * 
+ *
  * Collects and exposes HTTP request metrics in Prometheus format for
  * monitoring, alerting, and performance analysis.
  */
-
 /**
  * Express Request object with extended properties
  * @typedef {Object} ExpressRequest
  * @property {string} method - HTTP method
  * @property {string} url - Request URL
  */
-
 /**
- * Express Response object with extended properties  
+ * Express Response object with extended properties
  * @typedef {Object} ExpressResponse
  * @property {number} statusCode - HTTP status code
  * @property {Function} status - Set status code
  */
-
 /**
  * Express Next function
  * @typedef {Function} ExpressNext
  * @param {Error} [error] - Optional error to pass to error handler
  */
-
 /**
  * In-memory metrics storage object.
  * Tracks counters and timing data for HTTP requests.
- * 
+ *
  * @typedef {Object} MetricsStorage
  * @property {number} requestsTotal - Total HTTP requests received
  * @property {number} requestErrorsTotal - Total 5xx error responses
  * @property {number} requestDurationSecondsSum - Sum of all request durations in seconds
  * @property {number} requestDurationSecondsCount - Count of timed requests
  */
-
 /**
  * @type {MetricsStorage}
  */
@@ -45,38 +40,37 @@ const metrics = {
   requestDurationSecondsSum: 0,
   requestDurationSecondsCount: 0,
 };
-
 /**
  * Express middleware that collects HTTP request metrics.
  * Measures request duration and counts total requests and errors.
- * 
+ *
  * @param {ExpressRequest} req - Express request object with extended properties
  * @param {ExpressResponse} res - Express response object with extended properties
  * @param {ExpressNext} next - Express next middleware function
  * @returns {void} Calls next() after setting up metrics collection
- * 
+ *
  * @example
  * // In app.js
  * const { metricsMiddleware } = require('./utils/metrics');
  * app.use(metricsMiddleware);
- * 
+ *
  * // Automatically collects metrics for all requests:
  * // - Total request count
  * // - Request duration timing
  * // - Error count (5xx responses)
- * 
+ *
  * @description
  * Metrics Collected:
  * - http_requests_total: Counter of all HTTP requests
  * - http_request_errors_total: Counter of 5xx error responses
  * - http_request_duration_seconds: Summary of request durations
- * 
+ *
  * Performance Characteristics:
  * - Uses high-resolution process.hrtime.bigint() for accurate timing
  * - Minimal overhead (~microseconds per request)
  * - Memory-efficient counters
  * - Non-blocking metrics collection
- * 
+ *
  * Integration:
  * - Compatible with Prometheus monitoring
  * - Works with Grafana dashboards
@@ -97,19 +91,18 @@ function metricsMiddleware(req, res, next) {
   });
   next();
 }
-
 /**
  * Express route handler that exposes metrics in Prometheus format.
  * Returns text/plain response with metric data for scraping.
- * 
+ *
  * @param {ExpressRequest} req - Express request object
- * @param {ExpressResponse} res - Express response object  
+ * @param {ExpressResponse} res - Express response object
  * @returns {void} Sends Prometheus metrics as plain text response
- * 
+ *
  * @example
  * // In routes setup
  * app.get('/metrics', metricsEndpoint);
- * 
+ *
  * // GET /metrics returns:
  * // # HELP http_requests_total Total number of HTTP requests
  * // # TYPE http_requests_total counter
@@ -121,14 +114,14 @@ function metricsMiddleware(req, res, next) {
  * // # TYPE http_request_duration_seconds summary
  * // http_request_duration_seconds_sum 45.67
  * // http_request_duration_seconds_count 1234
- * 
+ *
  * @description
  * Prometheus Format:
  * - Includes HELP and TYPE comments for each metric
  * - Follows Prometheus naming conventions
  * - Uses appropriate metric types (counter, summary)
  * - Compatible with standard Prometheus scrapers
- * 
+ *
  * Monitoring Setup:
  * ```yaml
  * # prometheus.yml
@@ -139,7 +132,7 @@ function metricsMiddleware(req, res, next) {
  *     metrics_path: '/metrics'
  *     scrape_interval: 15s
  * ```
- * 
+ *
  * Calculated Metrics:
  * - Average request duration: sum / count
  * - Error rate: errors / total requests
@@ -161,5 +154,4 @@ function metricsEndpoint(req, res) {
   output += `http_request_duration_seconds_count ${metrics.requestDurationSecondsCount}\n`;
   res.send(output);
 }
-
 module.exports = { metricsMiddleware, metricsEndpoint };

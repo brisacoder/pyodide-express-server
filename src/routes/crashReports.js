@@ -45,7 +45,7 @@
  *         pyodide:
  *           type: object
  *           description: Pyodide service state at time of crash
- *     
+ *
  *     CrashSummary:
  *       type: object
  *       properties:
@@ -74,7 +74,7 @@
  *           type: string
  *           format: date-time
  *           description: File modification time
- *     
+ *
  *     CrashStats:
  *       type: object
  *       properties:
@@ -109,13 +109,10 @@
  *   - name: Crash Reports
  *     description: Debug and crash reporting endpoints for production monitoring
  */
-
 const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
-
 const router = express.Router();
-
 /**
  * @swagger
  * /api/debug/crash-reports:
@@ -180,60 +177,55 @@ const router = express.Router();
  */
 // Get crash reports list
 router.get('/crash-reports', async (req, res) => {
+  try {
+    const crashDir = path.join(process.cwd(), 'crash-reports');
     try {
-        const crashDir = path.join(process.cwd(), 'crash-reports');
-        
-        try {
-            await fs.access(crashDir);
-        } catch (error) {
-            return res.json({ 
-                success: true, 
-                crashes: [], 
-                message: 'No crash reports directory found'
-            });
-        }
-
-        const files = await fs.readdir(crashDir);
-        const crashFiles = files.filter(f => f.endsWith('.json') && f.startsWith('crash-'));
-        
-        const crashes = await Promise.all(crashFiles.map(async (file) => {
-            try {
-                const filePath = path.join(crashDir, file);
-                const stat = await fs.stat(filePath);
-                const content = await fs.readFile(filePath, 'utf8');
-                const crash = JSON.parse(content);
-                
-                return {
-                    id: crash.crashId,
-                    timestamp: crash.timestamp,
-                    type: crash.type,
-                    error: crash.error.name + ': ' + crash.error.message,
-                    file: file,
-                    size: stat.size,
-                    mtime: stat.mtime
-                };
-            } catch (error) {
-                return null;
-            }
-        }));
-
-        const validCrashes = crashes.filter(c => c !== null);
-        validCrashes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-        res.json({
-            success: true,
-            crashes: validCrashes,
-            count: validCrashes.length
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to list crash reports',
-            details: error.message
-        });
+      await fs.access(crashDir);
+    } catch {
+      return res.json({
+        success: true,
+        crashes: [],
+        message: 'No crash reports directory found',
+      });
     }
+    const files = await fs.readdir(crashDir);
+    const crashFiles = files.filter((f) => f.endsWith('.json') && f.startsWith('crash-'));
+    const crashes = await Promise.all(
+      crashFiles.map(async (file) => {
+        try {
+          const filePath = path.join(crashDir, file);
+          const stat = await fs.stat(filePath);
+          const content = await fs.readFile(filePath, 'utf8');
+          const crash = JSON.parse(content);
+          return {
+            id: crash.crashId,
+            timestamp: crash.timestamp,
+            type: crash.type,
+            error: crash.error.name + ': ' + crash.error.message,
+            file: file,
+            size: stat.size,
+            mtime: stat.mtime,
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const validCrashes = crashes.filter((c) => c !== null);
+    validCrashes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    res.json({
+      success: true,
+      crashes: validCrashes,
+      count: validCrashes.length,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to list crash reports',
+      details: error.message,
+    });
+  }
 });
-
 /**
  * @swagger
  * /api/debug/crash-reports/{crashId}:
@@ -294,31 +286,29 @@ router.get('/crash-reports', async (req, res) => {
  */
 // Get specific crash report
 router.get('/crash-reports/:crashId', async (req, res) => {
+  try {
+    const { crashId } = req.params;
+    const crashDir = path.join(process.cwd(), 'crash-reports');
+    const crashFile = path.join(crashDir, `${crashId}.json`);
     try {
-        const { crashId } = req.params;
-        const crashDir = path.join(process.cwd(), 'crash-reports');
-        const crashFile = path.join(crashDir, `${crashId}.json`);
-        
-        try {
-            const content = await fs.readFile(crashFile, 'utf8');
-            const crash = JSON.parse(content);
-            res.json({ success: true, crash });
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                error: 'Crash report not found',
-                crashId
-            });
-        }
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to read crash report',
-            details: error.message
-        });
+      const content = await fs.readFile(crashFile, 'utf8');
+      const crash = JSON.parse(content);
+      res.json({ success: true, crash });
+    } catch {
+      res.status(404).json({
+        success: false,
+        error: 'Crash report not found',
+        crashId,
+      });
     }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to read crash report',
+      details: error.message,
+    });
+  }
 });
-
 /**
  * @swagger
  * /api/debug/crash-reports/{crashId}/summary:
@@ -347,12 +337,12 @@ router.get('/crash-reports/:crashId', async (req, res) => {
  *                 Crash ID: crash-1640995200000-abc123
  *                 Timestamp: 2024-01-01T12:00:00.000Z
  *                 Type: uncaughtException
- *                 
+ *
  *                 ERROR DETAILS
  *                 =============
  *                 Name: TypeError
  *                 Message: Cannot read property 'test' of undefined
- *                 
+ *
  *                 STACK TRACE
  *                 ===========
  *                 TypeError: Cannot read property 'test' of undefined
@@ -390,31 +380,29 @@ router.get('/crash-reports/:crashId', async (req, res) => {
  */
 // Get crash report summary (human readable)
 router.get('/crash-reports/:crashId/summary', async (req, res) => {
+  try {
+    const { crashId } = req.params;
+    const crashDir = path.join(process.cwd(), 'crash-reports');
+    const summaryFile = path.join(crashDir, `${crashId}-summary.txt`);
     try {
-        const { crashId } = req.params;
-        const crashDir = path.join(process.cwd(), 'crash-reports');
-        const summaryFile = path.join(crashDir, `${crashId}-summary.txt`);
-        
-        try {
-            const content = await fs.readFile(summaryFile, 'utf8');
-            res.set('Content-Type', 'text/plain');
-            res.send(content);
-        } catch (error) {
-            res.status(404).json({
-                success: false,
-                error: 'Crash summary not found',
-                crashId
-            });
-        }
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to read crash summary',
-            details: error.message
-        });
+      const content = await fs.readFile(summaryFile, 'utf8');
+      res.set('Content-Type', 'text/plain');
+      res.send(content);
+    } catch {
+      res.status(404).json({
+        success: false,
+        error: 'Crash summary not found',
+        crashId,
+      });
     }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to read crash summary',
+      details: error.message,
+    });
+  }
 });
-
 /**
  * @swagger
  * /api/debug/crash-reports/{crashId}:
@@ -466,38 +454,34 @@ router.get('/crash-reports/:crashId/summary', async (req, res) => {
  */
 // Delete crash report
 router.delete('/crash-reports/:crashId', async (req, res) => {
+  try {
+    const { crashId } = req.params;
+    const crashDir = path.join(process.cwd(), 'crash-reports');
+    const crashFile = path.join(crashDir, `${crashId}.json`);
+    const summaryFile = path.join(crashDir, `${crashId}-summary.txt`);
     try {
-        const { crashId } = req.params;
-        const crashDir = path.join(process.cwd(), 'crash-reports');
-        const crashFile = path.join(crashDir, `${crashId}.json`);
-        const summaryFile = path.join(crashDir, `${crashId}-summary.txt`);
-        
-        try {
-            await fs.unlink(crashFile);
-        } catch (error) {
-            // File might not exist
-        }
-        
-        try {
-            await fs.unlink(summaryFile);
-        } catch (error) {
-            // Summary might not exist
-        }
-        
-        res.json({
-            success: true,
-            message: 'Crash report deleted',
-            crashId
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to delete crash report',
-            details: error.message
-        });
+      await fs.unlink(crashFile);
+    } catch {
+      // File might not exist
     }
+    try {
+      await fs.unlink(summaryFile);
+    } catch {
+      // Summary might not exist
+    }
+    res.json({
+      success: true,
+      message: 'Crash report deleted',
+      crashId,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete crash report',
+      details: error.message,
+    });
+  }
 });
-
 /**
  * @swagger
  * /api/debug/crash-stats:
@@ -560,83 +544,73 @@ router.delete('/crash-reports/:crashId', async (req, res) => {
  */
 // Crash statistics
 router.get('/crash-stats', async (req, res) => {
+  try {
+    const crashDir = path.join(process.cwd(), 'crash-reports');
     try {
-        const crashDir = path.join(process.cwd(), 'crash-reports');
-        
-        try {
-            await fs.access(crashDir);
-        } catch (error) {
-            return res.json({
-                success: true,
-                stats: {
-                    totalCrashes: 0,
-                    recentCrashes: 0,
-                    crashTypes: {},
-                    oldestCrash: null,
-                    newestCrash: null
-                }
-            });
-        }
-
-        const files = await fs.readdir(crashDir);
-        const crashFiles = files.filter(f => f.endsWith('.json') && f.startsWith('crash-'));
-        
-        if (crashFiles.length === 0) {
-            return res.json({
-                success: true,
-                stats: {
-                    totalCrashes: 0,
-                    recentCrashes: 0,
-                    crashTypes: {},
-                    oldestCrash: null,
-                    newestCrash: null
-                }
-            });
-        }
-
-        const crashes = await Promise.all(crashFiles.map(async (file) => {
-            try {
-                const content = await fs.readFile(path.join(crashDir, file), 'utf8');
-                return JSON.parse(content);
-            } catch (error) {
-                return null;
-            }
-        }));
-
-        const validCrashes = crashes.filter(c => c !== null);
-        const now = new Date();
-        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        
-        const recentCrashes = validCrashes.filter(c => 
-            new Date(c.timestamp) > oneDayAgo
-        );
-
-        const crashTypes = {};
-        validCrashes.forEach(crash => {
-            const type = crash.type || 'unknown';
-            crashTypes[type] = (crashTypes[type] || 0) + 1;
-        });
-
-        const timestamps = validCrashes.map(c => new Date(c.timestamp));
-        timestamps.sort();
-
-        res.json({
-            success: true,
-            stats: {
-                totalCrashes: validCrashes.length,
-                recentCrashes: recentCrashes.length,
-                crashTypes,
-                oldestCrash: timestamps.length > 0 ? timestamps[0].toISOString() : null,
-                newestCrash: timestamps.length > 0 ? timestamps[timestamps.length - 1].toISOString() : null
-            }
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Failed to get crash statistics',
-            details: error.message
-        });
+      await fs.access(crashDir);
+    } catch {
+      return res.json({
+        success: true,
+        stats: {
+          totalCrashes: 0,
+          recentCrashes: 0,
+          crashTypes: {},
+          oldestCrash: null,
+          newestCrash: null,
+        },
+      });
     }
+    const files = await fs.readdir(crashDir);
+    const crashFiles = files.filter((f) => f.endsWith('.json') && f.startsWith('crash-'));
+    if (crashFiles.length === 0) {
+      return res.json({
+        success: true,
+        stats: {
+          totalCrashes: 0,
+          recentCrashes: 0,
+          crashTypes: {},
+          oldestCrash: null,
+          newestCrash: null,
+        },
+      });
+    }
+    const crashes = await Promise.all(
+      crashFiles.map(async (file) => {
+        try {
+          const content = await fs.readFile(path.join(crashDir, file), 'utf8');
+          return JSON.parse(content);
+        } catch {
+          return null;
+        }
+      })
+    );
+    const validCrashes = crashes.filter((c) => c !== null);
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const recentCrashes = validCrashes.filter((c) => new Date(c.timestamp) > oneDayAgo);
+    const crashTypes = {};
+    validCrashes.forEach((crash) => {
+      const type = crash.type || 'unknown';
+      crashTypes[type] = (crashTypes[type] || 0) + 1;
+    });
+    const timestamps = validCrashes.map((c) => new Date(c.timestamp));
+    timestamps.sort();
+    res.json({
+      success: true,
+      stats: {
+        totalCrashes: validCrashes.length,
+        recentCrashes: recentCrashes.length,
+        crashTypes,
+        oldestCrash: timestamps.length > 0 ? timestamps[0].toISOString() : null,
+        newestCrash: timestamps.length > 0 ? timestamps[timestamps.length - 1].toISOString() : null,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get crash statistics',
+      details: error.message,
+    });
+  }
 });
-
 module.exports = router;

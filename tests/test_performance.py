@@ -158,7 +158,7 @@ total
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
                     f"{BASE_URL}/api/upload-csv",
-                    files={"csvFile": ("large.csv", fh, "text/csv")},
+                    files={"file": ("large.csv", fh, "text/csv")},
                     timeout=60
                 )
             upload_time = time.time() - start_time
@@ -220,7 +220,7 @@ result
                 with open(tmp_path, "rb") as fh:
                     r = requests.post(
                         f"{BASE_URL}/api/upload-csv",
-                        files={"csvFile": (f"file_{i}.csv", fh, "text/csv")},
+                        files={"file": (f"file_{i}.csv", fh, "text/csv")},
                         timeout=30
                     )
                 
@@ -310,7 +310,7 @@ result
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
                     f"{BASE_URL}/api/upload-csv",
-                    files={"csvFile": ("cleanup_test.csv", fh, "text/csv")},
+                    files={"file": ("cleanup_test.csv", fh, "text/csv")},
                     timeout=30
                 )
             self.assertEqual(r.status_code, 200)

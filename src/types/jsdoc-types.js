@@ -2,7 +2,6 @@
  * @file Type definitions for Pyodide Express Server
  * @description Centralized JSDoc type definitions for better IDE support and type checking
  */
-
 /**
  * Express Request object with extended properties
  * @typedef {Object} ExpressRequest
@@ -17,9 +16,8 @@
  * @property {Object} file - Uploaded file information (from multer)
  * @property {Array<Object>} files - Multiple uploaded files (from multer)
  */
-
 /**
- * Express Response object with extended properties  
+ * Express Response object with extended properties
  * @typedef {Object} ExpressResponse
  * @property {number} statusCode - HTTP status code
  * @property {Function} status - Set status code
@@ -28,24 +26,21 @@
  * @property {Function} set - Set response header
  * @property {Object} locals - Response local variables
  */
-
 /**
  * Express Next function
  * @typedef {Function} ExpressNext
  * @param {Error} [error] - Optional error to pass to error handler
  */
-
 /**
  * Execution statistics data object
  * @typedef {Object} ExecutionStatsData
  * @property {string} [ip] - Client IP address
  * @property {boolean} [success=false] - Whether execution was successful
- * @property {number} [executionTime] - Execution time in milliseconds  
+ * @property {number} [executionTime] - Execution time in milliseconds
  * @property {string} [error] - Error message if execution failed
  * @property {string} [userAgent] - Client user agent string
  * @property {string} [codeHash] - SHA-256 hash of executed code
  */
-
 /**
  * Security logging event data
  * @typedef {Object} SecurityEventData
@@ -55,7 +50,6 @@
  * @property {string} [endpoint] - API endpoint involved
  * @property {*} [details] - Additional event-specific details
  */
-
 /**
  * Statistics overview object
  * @typedef {Object} StatsOverview
@@ -67,7 +61,6 @@
  * @property {number} uniqueIPs - Number of unique IP addresses
  * @property {string} uptime - Formatted server uptime string
  */
-
 /**
  * Recent activity metrics
  * @typedef {Object} RecentMetrics
@@ -75,7 +68,6 @@
  * @property {number} lastMinute - Executions in the last minute
  * @property {Array<number>} hourlyTrend - 24-hour execution trend data
  */
-
 /**
  * Top IP address statistics
  * @typedef {Object} TopIPStats
@@ -83,7 +75,6 @@
  * @property {number} count - Number of requests from this IP
  * @property {number} percentage - Percentage of total requests
  */
-
 /**
  * Top error statistics
  * @typedef {Object} TopErrorStats
@@ -91,7 +82,6 @@
  * @property {number} count - Number of occurrences
  * @property {number} percentage - Percentage of total errors
  */
-
 /**
  * User agent statistics
  * @typedef {Object} UserAgentStats
@@ -99,7 +89,6 @@
  * @property {number} count - Number of requests from this user agent
  * @property {number} percentage - Percentage of total requests
  */
-
 /**
  * Complete statistics object returned by getStats()
  * @typedef {Object} CompleteStats
@@ -109,7 +98,6 @@
  * @property {Array<TopErrorStats>} topErrors - Most common error types
  * @property {Array<UserAgentStats>} userAgents - Most common user agents
  */
-
 /**
  * Logging configuration information
  * @typedef {Object} LoggingConfig
@@ -119,7 +107,6 @@
  * @property {boolean} isFileLoggingEnabled - Whether file logging is enabled
  * @property {string} logDirectory - Directory containing log files
  */
-
 /**
  * Execution object with timestamp for trend analysis
  * @typedef {Object} ExecutionRecord
@@ -129,13 +116,11 @@
  * @property {string} [ip] - Client IP address
  * @property {string} [error] - Error message if failed
  */
-
 /**
  * Python code execution context variables
  * @typedef {Object} PythonContext
  * @property {*} [key] - Any variables to make available in Python scope
  */
-
 /**
  * Python code execution result
  * @typedef {Object} PythonExecutionResult
@@ -147,7 +132,6 @@
  * @property {number} executionTime - Time taken to execute in milliseconds
  * @property {Object} [metadata] - Additional execution metadata
  */
-
 /**
  * Package installation result
  * @typedef {Object} PackageInstallResult
@@ -157,7 +141,6 @@
  * @property {string} [error] - Error message if installation failed
  * @property {number} installTime - Time taken to install in milliseconds
  */
-
 /**
  * Available packages list
  * @typedef {Object} AvailablePackages
@@ -166,7 +149,6 @@
  * @property {number} count - Total number of available packages
  * @property {string} [error] - Error message if retrieval failed
  */
-
 /**
  * Multer file upload object
  * @typedef {Object} UploadedFile
@@ -180,5 +162,4 @@
  * @property {string} [filename] - Generated filename (if using disk storage)
  * @property {string} [path] - Full path to uploaded file (if using disk storage)
  */
-
 module.exports = {}; // Export empty object for JSDoc purposes

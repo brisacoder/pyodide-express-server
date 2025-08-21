@@ -1,7 +1,8 @@
-import requests
-import unittest
-import tempfile
 import os
+import tempfile
+import unittest
+
+import requests
 
 BASE_URL = "http://localhost:3000"
 
@@ -99,7 +100,7 @@ class BasicErrorHandlingTestCase(unittest.TestCase):
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
                     f"{BASE_URL}/api/upload-csv",
-                    files={"csvFile": ("test.txt", fh, "text/plain")},
+                    files={"file": ("test.txt", fh, "text/plain")},
                     timeout=10
                 )
             # Should either reject or handle appropriately
