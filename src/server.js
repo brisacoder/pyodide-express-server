@@ -9,6 +9,19 @@ const app = require('./app');
 const config = require('./config');
 const pyodideService = require('./services/pyodide-service');
 const logger = require('./utils/logger');
+const CrashReporter = require('./utils/crashReporter');
+
+// Initialize crash reporter
+const crashReporter = new CrashReporter({
+    crashDir: './crash-reports',
+    maxCrashFiles: 50,
+    includeEnvironment: true,
+    includeMemoryInfo: true,
+    includePyodideState: true
+});
+
+// Make pyodideService globally accessible for crash reporting
+global.pyodideService = pyodideService;
 
 /**
  * Starts the Express server with Pyodide initialization and signal handling.

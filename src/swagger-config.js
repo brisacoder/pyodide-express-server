@@ -615,6 +615,7 @@ const swaggerOptions = {
     './src/routes/execute.js',
     './src/routes/files.js',    // ← File upload/management routes
     './src/routes/stats.js',    // ← NEW: Statistics dashboard routes
+    './src/routes/crashReports.js', // ← NEW: Crash reporting and debugging routes
     './src/server.js'
   ]
 };

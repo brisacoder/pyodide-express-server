@@ -68,6 +68,22 @@ class PyodideService {
     // Default timeout in milliseconds for executing user supplied Python
     // snippets.  Individual requests may override it.
     this.executionTimeout = constants.EXECUTION.DEFAULT_TIMEOUT;
+    
+    // Crash reporting state tracking
+    this.stats = {
+      executionCount: 0,
+      errorCount: 0,
+      lastExecutionTime: null,
+      totalExecutionTime: 0,
+      packageInstallCount: 0,
+      loadedPackages: new Set(),
+      memoryUsage: {
+        lastCheck: null,
+        heapSize: 0,
+        pyodideMemory: 0
+      },
+      errors: [] // Keep last 10 errors for debugging
+    };
   }
 
   /**
@@ -1303,7 +1319,84 @@ plot_files
       return [];
     }
   }
+
+  // Crash reporting helper methods
+  isInitialized() {
+    return this.isReady;
+  }
+
+  getLoadedPackages() {
+    return Array.from(this.stats.loadedPackages);
+  }
+
+  getLastExecutionTime() {
+    return this.stats.lastExecutionTime;
+  }
+
+  getErrorCount() {
+    return this.stats.errorCount;
+  }
+
+  getMemoryUsage() {
+    this.updateMemoryStats();
+    return this.stats.memoryUsage;
+  }
+
+  getExecutionStats() {
+    return {
+      executionCount: this.stats.executionCount,
+      errorCount: this.stats.errorCount,
+      averageExecutionTime: this.stats.executionCount > 0 
+        ? this.stats.totalExecutionTime / this.stats.executionCount 
+        : 0,
+      packageInstallCount: this.stats.packageInstallCount,
+      loadedPackages: this.getLoadedPackages(),
+      recentErrors: this.stats.errors.slice(-5) // Last 5 errors
+    };
+  }
+
+  recordExecution(executionTime, success = true, error = null) {
+    this.stats.executionCount++;
+    this.stats.lastExecutionTime = new Date().toISOString();
+    this.stats.totalExecutionTime += executionTime;
+    
+    if (!success && error) {
+      this.stats.errorCount++;
+      this.stats.errors.push({
+        timestamp: new Date().toISOString(),
+        error: error.message || String(error),
+        stack: error.stack
+      });
+      
+      // Keep only last 10 errors
+      if (this.stats.errors.length > 10) {
+        this.stats.errors = this.stats.errors.slice(-10);
+      }
+    }
+    
+    this.updateMemoryStats();
+  }
+
+  recordPackageInstall(packageName) {
+    this.stats.packageInstallCount++;
+    this.stats.loadedPackages.add(packageName);
+  }
+
+  updateMemoryStats() {
+    if (this.pyodide) {
+      try {
+        this.stats.memoryUsage = {
+          lastCheck: new Date().toISOString(),
+          heapSize: this.pyodide.runPython('import sys; sys.getsizeof(globals())') || 0,
+          processMemory: process.memoryUsage()
+        };
+      } catch (error) {
+        // Ignore errors in memory stat collection
+      }
+    }
+  }
 }
 
 // Export singleton instance
+
 module.exports = new PyodideService();

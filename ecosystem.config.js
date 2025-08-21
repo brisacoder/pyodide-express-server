@@ -25,7 +25,7 @@ module.exports = {
     kill_timeout: 8000, // Give Pyodide time to cleanup WebAssembly
     listen_timeout: 5000, // WebAssembly compilation can be slow
     
-    // Enhanced logging for debugging Pyodide issues
+    // Enhanced logging for debugging Pyodide issues and crash analysis
     log_file: './logs/pm2-combined.log',
     out_file: './logs/pm2-out.log',
     error_file: './logs/pm2-error.log',
@@ -33,7 +33,12 @@ module.exports = {
     merge_logs: true,
     log_type: 'json', // Structured logs for better debugging
     
-    // Health monitoring
+    // Crash reporting integration
+    crash_restart_delay: 5000, // Wait 5s before restart after crash
+    max_crash_restart: 20, // Allow more crash restarts for debugging
+    min_crash_interval: 10000, // Minimum time between crashes (10s)
+    
+    // Health monitoring with crash detection
     health_check_url: 'http://localhost:3000/health',
     health_check_grace_period: 3000,
     
