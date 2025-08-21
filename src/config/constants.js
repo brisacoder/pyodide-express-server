@@ -112,6 +112,55 @@ const PERFORMANCE = {
   MAX_RECENT_EXECUTIONS: 1000            // Keep last 1000 executions in memory
 };
 
+/**
+ * Dashboard and Chart.js configuration constants
+ */
+const DASHBOARD = {
+  // Chart.js CDN Configuration
+  CHARTJS: {
+    LOCAL_PATH: '/js/chart.js',           // Local Chart.js file path
+    CDN_PRIMARY: 'https://cdn.jsdelivr.net/npm/chart.js',
+    CDN_FALLBACK: 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js',
+    CDN_TERTIARY: 'https://unpkg.com/chart.js@3.9.1/dist/chart.min.js',
+    VERSION: '4.5.0',                     // Chart.js version
+    TIMEOUT: 5000                         // CDN load timeout in milliseconds
+  },
+  
+  // Chart Configuration
+  CHARTS: {
+    ANIMATION_DURATION: 750,              // Chart animation duration in ms
+    RESPONSIVE: true,                     // Make charts responsive
+    MAINTAIN_ASPECT_RATIO: false,         // Allow flexible aspect ratios
+    POINT_RADIUS: 4,                      // Chart point radius
+    BORDER_WIDTH: 2,                      // Chart border width
+    COLORS: {
+      PRIMARY: '#667eea',                 // Primary chart color
+      SUCCESS: '#28a745',                 // Success color
+      ERROR: '#dc3545',                   // Error color
+      BACKGROUND: 'rgba(102, 126, 234, 0.2)', // Background fill color
+      BORDER: '#fff'                      // Border color
+    }
+  },
+  
+  // Dashboard UI Configuration
+  UI: {
+    REFRESH_DEBOUNCE: 1000,              // Debounce refresh button (ms)
+    AUTO_REFRESH_INTERVAL: 30000,        // Auto-refresh every 30 seconds
+    MAX_TABLE_ROWS: 100,                 // Maximum rows in recent executions table
+    CHART_HEIGHT: 400,                   // Default chart height in pixels
+    CHART_WIDTH: 600                     // Default chart width in pixels
+  },
+  
+  // Data Display Configuration
+  DATA: {
+    TIME_FORMAT: 'HH:mm:ss',             // Time format for displays
+    DATE_FORMAT: 'YYYY-MM-DD HH:mm:ss',  // Full datetime format
+    DECIMAL_PLACES: 2,                   // Decimal places for metrics
+    HOURS_DISPLAYED: 24,                 // Hours shown in trend chart
+    MAX_RECENT_ITEMS: 50                 // Max items in recent executions
+  }
+};
+
 module.exports = {
   TIME,
   FILE_SIZE,
@@ -121,5 +170,6 @@ module.exports = {
   SERVER,
   NETWORK,
   PYODIDE,
-  PERFORMANCE
+  PERFORMANCE,
+  DASHBOARD
 };

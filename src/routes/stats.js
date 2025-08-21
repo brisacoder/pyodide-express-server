@@ -133,6 +133,55 @@ router.post('/stats/clear', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
+
+// Simple Chart.js test route
+router.get('/stats/test', (req, res) => {
+  const testHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chart.js Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+</head>
+<body>
+    <h1>Chart.js Test</h1>
+    <div style="width: 400px; height: 400px;">
+        <canvas id="testChart"></canvas>
+    </div>
+    <script>
+        console.log('Test page loaded');
+        console.log('Chart available:', typeof Chart !== 'undefined');
+        
+        if (typeof Chart !== 'undefined') {
+            console.log('Chart.js version:', Chart.version);
+            
+            const ctx = document.getElementById('testChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['A', 'B', 'C', 'D'],
+                    datasets: [{
+                        label: 'Test Data',
+                        data: [12, 19, 3, 5],
+                        backgroundColor: ['red', 'green', 'blue', 'yellow']
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+            console.log('Test chart created!');
+        } else {
+            document.body.innerHTML += '<p style="color: red;">Chart.js not loaded!</p>';
+        }
+    </script>
+</body>
+</html>`;
+  
+  res.setHeader('Content-Type', 'text/html');
+  res.send(testHTML);
+});
+
 router.get('/stats/dashboard', (req, res) => {
   try {
     const stats = logger.getStats();
@@ -144,7 +193,13 @@ router.get('/stats/dashboard', (req, res) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pyodide Express Server - Statistics Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Primary Chart.js CDN with integrity check -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js" 
+            integrity="sha512-ElRFoEQdI5Ht6kZvyzXhYG9NqjtkmlkfYk0wr6wHxU9JEHakS7UJZNeml5ALk+8IKlU6jDgMabC3vkumRokgJA==" 
+            crossorigin="anonymous" 
+            referrerpolicy="no-referrer"></script>
+    
     <style>
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
@@ -191,7 +246,9 @@ router.get('/stats/dashboard', (req, res) => {
             padding: 30px; 
             border-radius: 12px; 
             box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-            margin-bottom: 20px; 
+            margin-bottom: 20px;
+            position: relative;
+            height: 400px;
         }
         .chart-title { 
             font-size: 1.3em; 
@@ -255,7 +312,7 @@ router.get('/stats/dashboard', (req, res) => {
             <p><strong>Uptime:</strong> ${stats.overview.uptimeHuman} | <strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
         </div>
 
-        <button class="refresh-btn" onclick="location.reload()">🔄 Refresh Data</button>
+        <button class="refresh-btn" onclick="refreshDashboard()">🔄 Refresh Data</button>
 
         <div class="stats-grid">
             <div class="stat-card">
@@ -334,62 +391,213 @@ router.get('/stats/dashboard', (req, res) => {
                 </tbody>
             </table>
         </div>
+
+        <div class="table-container">
+            <div class="chart-title" style="padding: 20px 20px 0;">⚡ Recent Executions (CPU & Memory)</div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>IP</th>
+                        <th>Memory (MB)</th>
+                        <th>Code Hash</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${stats.recentExecutions.slice(0, 15).map(exec => 
+                        `<tr>
+                            <td style="font-size: 0.85em;">${exec.timestamp}</td>
+                            <td><span class="${exec.success ? 'success' : 'error'}">${exec.success ? '✅' : '❌'}</span></td>
+                            <td>${exec.executionTime}ms</td>
+                            <td style="font-family: monospace; font-size: 0.85em;">${exec.ip}</td>
+                            <td>${exec.memoryMB}/${exec.memoryTotalMB}</td>
+                            <td style="font-family: monospace; font-size: 0.8em;">${exec.codeHash}</td>
+                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-size: 0.8em;" title="${exec.error || ''}">${exec.error ? exec.error.substring(0, 50) + '...' : ''}</td>
+                        </tr>`
+                    ).join('')}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Debug Information -->
+    <div style="background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 8px; border: 1px solid #dee2e6;">
+        <h3>Debug Information</h3>
+        <div id="debugInfo">Loading debug info...</div>
     </div>
 
     <script>
-        // Hourly trend chart
-        const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
-        const hourLabels = Array.from({length: 24}, (_, i) => {
-            const hour = new Date();
-            hour.setHours(hour.getHours() - (23 - i));
-            return hour.getHours() + ':00';
-        });
+        console.log('Dashboard script starting...');
         
-        new Chart(hourlyCtx, {
-            type: 'line',
-            data: {
-                labels: hourLabels,
-                datasets: [{
-                    label: 'Executions',
-                    data: ${JSON.stringify(stats.hourlyTrend)},
-                    borderColor: '#667eea',
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: { beginAtZero: true }
-                },
-                plugins: {
-                    legend: { display: false }
-                }
+        function addDebugInfo(message) {
+            const debugDiv = document.getElementById('debugInfo');
+            if (debugDiv) {
+                debugDiv.innerHTML += '<p>' + new Date().toLocaleTimeString() + ': ' + message + '</p>';
             }
-        });
-
-        // Success rate doughnut chart
-        const successCtx = document.getElementById('successChart').getContext('2d');
-        new Chart(successCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Success', 'Errors'],
-                datasets: [{
-                    data: [${stats.overview.successRate}, ${100 - parseFloat(stats.overview.successRate)}],
-                    backgroundColor: ['#28a745', '#dc3545'],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: {
-                        position: 'bottom'
-                    }
-                }
+            console.log(message);
+        }
+        
+        // Check Chart.js availability immediately
+        addDebugInfo('Initial Chart.js check: ' + (typeof Chart !== 'undefined'));
+        
+        // Function to initialize charts
+        function initializeCharts() {
+            addDebugInfo('initializeCharts called');
+            
+            if (typeof Chart === 'undefined') {
+                addDebugInfo('Chart.js not available, loading fallback...');
+                
+                // Load fallback Chart.js
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
+                script.onload = function() {
+                    addDebugInfo('Fallback Chart.js loaded successfully');
+                    setTimeout(function() {
+                        if (typeof Chart !== 'undefined') {
+                            addDebugInfo('Chart.js now available after fallback');
+                            startDashboard();
+                        } else {
+                            addDebugInfo('ERROR: Chart.js still not available after fallback');
+                        }
+                    }, 100);
+                };
+                script.onerror = function() {
+                    addDebugInfo('ERROR: Fallback Chart.js also failed to load');
+                };
+                document.head.appendChild(script);
+            } else {
+                addDebugInfo('Chart.js available, starting dashboard');
+                startDashboard();
             }
-        });
+        }
+        
+        function startDashboard() {
+            addDebugInfo('Starting dashboard with Chart.js version: ' + Chart.version);
+            
+            // Get stats data
+            const stats = ${JSON.stringify(stats)};
+            addDebugInfo('Stats data loaded: ' + stats.overview.totalExecutions + ' executions');
+            
+            // Refresh function
+            window.refreshDashboard = function() {
+                location.reload();
+            };
+            
+            // Create charts
+            createCharts(stats);
+        }
+        
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeCharts);
+        } else {
+            // DOM already loaded
+            setTimeout(initializeCharts, 100);
+        }
+        
+        function createCharts(stats) {
+            addDebugInfo('Starting chart creation...');
+            
+            // Hourly trend chart
+            try {
+                const hourlyCanvas = document.getElementById('hourlyChart');
+                addDebugInfo('Hourly canvas found: ' + !!hourlyCanvas);
+                
+                if (hourlyCanvas) {
+                    addDebugInfo('Creating hourly chart...');
+                    const ctx = hourlyCanvas.getContext('2d');
+                    
+                    const chart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', 
+                                   '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23'],
+                            datasets: [{
+                                label: 'Executions',
+                                data: stats.hourlyTrend,
+                                borderColor: '#667eea',
+                                backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                                fill: true,
+                                pointBackgroundColor: '#667eea',
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
+                                pointRadius: 4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: '24-Hour Execution Trend'
+                                }
+                            },
+                            scales: {
+                                y: { 
+                                    beginAtZero: true,
+                                    ticks: { stepSize: 1 }
+                                }
+                            }
+                        }
+                    });
+                    addDebugInfo('✅ Hourly chart created successfully! Chart ID: ' + chart.id);
+                } else {
+                    addDebugInfo('❌ ERROR: Hourly chart canvas not found');
+                }
+            } catch (error) {
+                addDebugInfo('❌ ERROR creating hourly chart: ' + error.message);
+            }
+            
+            // Success rate chart
+            try {
+                const successCanvas = document.getElementById('successChart');
+                addDebugInfo('Success canvas found: ' + !!successCanvas);
+                
+                if (successCanvas) {
+                    addDebugInfo('Creating success chart...');
+                    const ctx = successCanvas.getContext('2d');
+                    
+                    const successRate = parseFloat(stats.overview.successRate) || 0;
+                    const errorRate = 100 - successRate;
+                    addDebugInfo('Success rate: ' + successRate + '%, Error rate: ' + errorRate + '%');
+                    
+                    const chart = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Success (' + successRate + '%)', 'Errors (' + errorRate + '%)'],
+                            datasets: [{
+                                data: [successRate, errorRate],
+                                backgroundColor: ['#28a745', '#dc3545'],
+                                borderWidth: 2,
+                                borderColor: '#fff'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: 'Success vs Error Rate'
+                                },
+                                legend: {
+                                    position: 'bottom'
+                                }
+                            }
+                        }
+                    });
+                    addDebugInfo('✅ Success chart created successfully! Chart ID: ' + chart.id);
+                } else {
+                    addDebugInfo('❌ ERROR: Success chart canvas not found');
+                }
+            } catch (error) {
+                addDebugInfo('❌ ERROR creating success chart: ' + error.message);
+            }
+            
+            addDebugInfo('🎉 Chart creation process completed');
+        }
     </script>
 </body>
 </html>`;

@@ -309,13 +309,18 @@ function updateExecutionStats(data) {
     executionStats.topErrors.set(errorType, (executionStats.topErrors.get(errorType) || 0) + 1);
   }
   
-  // Track recent executions (last hour)
+  // Track recent executions (last hour) with enhanced system metrics
   const now = Date.now();
   executionStats.lastHourExecutions.push({
     timestamp: now,
     success,
     executionTime: executionTime || 0,
-    ip
+    ip,
+    userAgent: (userAgent || 'unknown').substring(0, 100),
+    codeHash: (codeHash || '').substring(0, 16),
+    error: error || null,
+    memoryUsage: process.memoryUsage(),
+    cpuUsage: process.cpuUsage ? process.cpuUsage() : null
   });
   
   // Clean old entries (keep only last hour)
@@ -469,7 +474,21 @@ const logger = {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
         .map(([agent, count]) => ({ agent, count })),
-      hourlyTrend: generateHourlyTrend(recentExecutions)
+      hourlyTrend: generateHourlyTrend(recentExecutions),
+      recentExecutions: recentExecutions
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 20)
+        .map(exec => ({
+          timestamp: new Date(exec.timestamp).toLocaleString(),
+          success: exec.success,
+          executionTime: exec.executionTime,
+          ip: exec.ip,
+          userAgent: exec.userAgent || 'unknown',
+          codeHash: exec.codeHash || 'n/a',
+          error: exec.error || null,
+          memoryMB: exec.memoryUsage ? Math.round(exec.memoryUsage.heapUsed / 1024 / 1024) : 'n/a',
+          memoryTotalMB: exec.memoryUsage ? Math.round(exec.memoryUsage.heapTotal / 1024 / 1024) : 'n/a'
+        }))
     };
   },
   
