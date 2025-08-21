@@ -76,6 +76,24 @@ def run_security_logging_tests():
     return result.returncode == 0
 
 
+def run_function_return_patterns_tests():
+    """Run the function return patterns tests."""
+    print("\n🔧 Running Function Return Patterns Tests...")
+    print("=" * 50)
+
+    # Change to the project directory
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    # Run the function return patterns tests
+    result = subprocess.run(
+        [sys.executable, "-m", "unittest", "tests.test_function_return_patterns", "-v"],
+        capture_output=False,
+        check=False,
+    )
+
+    return result.returncode == 0
+
+
 def run_container_filesystem_tests():
     """Run the container filesystem tests."""
     print("\n🐳 Running Container Filesystem Tests...")
@@ -116,10 +134,16 @@ def main():
     # Run security logging tests
     security_success = run_security_logging_tests()
     
-    # Run container filesystem tests
-    container_success = run_container_filesystem_tests()
+    # Run function return patterns tests
+    patterns_success = run_function_return_patterns_tests()
+    
+    # Note: Container filesystem tests are skipped for native server testing
+    # They are designed for containerized environments only
+    print("\n🐳 Container Filesystem Tests: SKIPPED (native server mode)")
+    print("   - These tests are designed for containerized environments")
+    print("   - Use 'run_comprehensive_tests.py --categories container' for container testing")
 
-    if basic_success and dynamic_success and security_success and container_success:
+    if basic_success and dynamic_success and security_success and patterns_success:
         print("\n🎉 All tests passed!")
         return 0
     else:
@@ -130,6 +154,8 @@ def main():
             print("   - Dynamic modules tests failed")
         if not security_success:
             print("   - Security logging tests failed")
+        if not patterns_success:
+            print("   - Function return patterns tests failed")
         return 1
 
 

@@ -37,6 +37,7 @@ test_modules = [
     'tests.test_virtual_filesystem',
     'tests.test_direct_filesystem_mount',
     'tests.test_container_filesystem',
+    'tests.test_function_return_patterns',
     'tests.test_dynamic_modules_and_execution_robustness'
 ]
 
@@ -353,6 +354,7 @@ class ComprehensiveTestRunner:
             ('tests.test_virtual_filesystem', 'Virtual Filesystem'),
             ('tests.test_direct_filesystem_mount', 'Direct Filesystem Mount'),
             ('tests.test_container_filesystem', 'Container Filesystem'),
+            ('tests.test_function_return_patterns', 'Function Return Patterns'),
             ('tests.test_dynamic_modules_and_execution_robustness', 'Dynamic Modules & Execution Robustness')
         ]
         
@@ -388,12 +390,34 @@ class ComprehensiveTestRunner:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description='Run comprehensive tests for Pyodide Express Server')
+    parser = argparse.ArgumentParser(
+        description='Run comprehensive tests for Pyodide Express Server',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run native server tests (DEFAULT - fast for development)
+  python run_comprehensive_tests.py
+  
+  # Run ALL tests including container tests (slower)
+  python run_comprehensive_tests.py --compose
+  
+  # Run specific categories
+  python run_comprehensive_tests.py --categories basic security function_patterns
+  
+  # Run container tests only (requires containerized server)
+  python run_comprehensive_tests.py --categories container
+        """
+    )
     parser.add_argument('--categories', nargs='*',
                         choices=['basic', 'error', 'integration', 'security', 'security_logging', 'performance', 
                                 'isolation', 'reset', 'extra', 'sklearn', 'matplotlib_base64', 'matplotlib_vfs', 
-                                'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs', 'direct_mount', 'dynamic'],
-                        help='Specific test categories to run (default: all)')
+                                'seaborn_base64', 'seaborn_vfs', 'javascript', 'mount', 'vfs', 'direct_mount', 
+                                'container', 'function_patterns', 'dynamic'],
+                        help='Specific test categories to run')
+    parser.add_argument('--compose', action='store_true',
+                       help='Run ALL tests including container tests (slower, requires containerized server)')
+    parser.add_argument('--native', action='store_true',
+                       help='Run only native server tests (DEFAULT behavior - kept for backward compatibility)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Verbose output')
     parser.add_argument('--quiet', '-q', action='store_true', 
@@ -429,12 +453,27 @@ def main():
         'vfs': 'Virtual Filesystem',
         'direct_mount': 'Direct Filesystem Mount',
         'container': 'Container Filesystem',
+        'function_patterns': 'Function Return Patterns',
         'dynamic': 'Dynamic Modules & Execution Robustness'
     }
     
     selected_categories = None
     if args.categories:
+        # Explicit categories specified
         selected_categories = [category_map[cat] for cat in args.categories]
+    elif args.compose:
+        # Compose mode: run ALL tests including container tests (slower)
+        selected_categories = None  # Run all categories
+        print("🐳 Running in COMPOSE mode (all tests including container tests)")
+        print("   This includes slower container filesystem tests")
+        print("   Running: ALL categories including container tests")
+    else:
+        # Default: Native mode - exclude container tests for faster development
+        native_categories = [cat for cat in category_map.keys() if cat != 'container']
+        selected_categories = [category_map[cat] for cat in native_categories]
+        print("🚀 Running in NATIVE mode (DEFAULT - container tests excluded for faster development)")
+        print(f"   Use --compose to include container tests")
+        print(f"   Running: {len(selected_categories)} categories (container tests excluded)")
     
     # Run tests
     runner = ComprehensiveTestRunner(verbosity=verbosity)
