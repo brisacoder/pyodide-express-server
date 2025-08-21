@@ -640,7 +640,7 @@ result
                 const result = await response.json();
                 
                 if (result.success) {
-                    resultDiv.innerHTML = `<div class="success">Package installed successfully!\n${result.stdout}</div>`;
+                    resultDiv.innerHTML = `<div class="success">${result.message}</div>`;
                     document.getElementById('packageName').value = '';
                 } else {
                     resultDiv.innerHTML = `<div class="error">Installation failed:\n${result.error}</div>`;
