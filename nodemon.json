@@ -1,0 +1,33 @@
+{
+  "watch": [
+    "src/**/*",
+    "public/**/*",
+    ".env*",
+    "package.json"
+  ],
+  "ext": "js,json,html,css,env",
+  "ignore": [
+    "node_modules/**/*",
+    "logs/**/*",
+    "uploads/**/*",
+    "plots/**/*",
+    "tests/**/*",
+    "*.test.js",
+    "*.spec.js",
+    ".git/**/*",
+    "README.md",
+    "*.md",
+    "**/*.log",
+    "**/server.log"
+  ],
+  "exec": "node src/server.js",
+  "restartable": "rs",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "delay": 1500,
+  "verbose": false,
+  "colours": true,
+  "legacyWatch": false,
+  "polling": false
+}

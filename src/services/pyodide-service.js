@@ -153,15 +153,52 @@ class PyodideService {
       for (const packageName of micropipPackages) {
         try {
           logger.info(`Installing ${packageName} via micropip...`);
-          await this.pyodide.runPythonAsync(`
+          
+          // Special handling for seaborn which can have metadata issues
+          if (packageName === 'seaborn') {
+            await this.pyodide.runPythonAsync(`
+import micropip
+import asyncio
+
+# Try multiple installation methods for seaborn
+try:
+    # Method 1: Standard installation
+    await micropip.install("seaborn")
+    print("✅ seaborn installed successfully via standard method")
+except Exception as e1:
+    print(f"Standard installation failed: {e1}")
+    try:
+        # Method 2: Install with specific index
+        await micropip.install("seaborn", index_urls=["https://pypi.org/simple/"])
+        print("✅ seaborn installed successfully via PyPI index")
+    except Exception as e2:
+        print(f"PyPI index installation failed: {e2}")
+        try:
+            # Method 3: Install specific version that's known to work
+            await micropip.install("seaborn==0.13.2")
+            print("✅ seaborn installed successfully via specific version")
+        except Exception as e3:
+            print(f"Specific version installation failed: {e3}")
+            print("⚠️  All seaborn installation methods failed")
+            raise e3
+`);
+          } else {
+            // Standard installation for other packages
+            await this.pyodide.runPythonAsync(`
 import micropip
 await micropip.install("${packageName}")
 print("✅ ${packageName} installed successfully")
 `);
+          }
+          
           installedPackages.push(packageName);
           logger.info(`✅ ${packageName} installed successfully`);
         } catch (packageError) {
           logger.warn(`⚠️  Failed to install ${packageName}:`, packageError.message);
+          // For seaborn, this is not critical - it can be installed later via API
+          if (packageName === 'seaborn') {
+            logger.info(`ℹ️  Seaborn will be available for on-demand installation via /api/install-package`);
+          }
         }
       }
 
@@ -974,6 +1011,14 @@ json.dumps(result)
       version: this.pyodide?.version || 'unknown',
       timestamp: new Date().toISOString()
     };
+  }
+
+  /**
+   * Check if Pyodide is initialized and ready for code execution
+   * @returns {boolean} True if Pyodide is ready
+   */
+  isInitialized() {
+    return this.isReady && this.pyodide !== null;
   }
 
   /**

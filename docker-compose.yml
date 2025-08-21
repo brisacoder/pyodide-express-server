@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  pyodide-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - LOG_LEVEL=debug
+    volumes:
+      # Mount for development file watching (comment out for production)
+      - ./src:/app/src:ro
+      - ./public:/app/public:ro
+      # Persistent data
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+      - plots_data:/app/plots
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  uploads_data:
+  logs_data:
+  plots_data:
