@@ -9,9 +9,11 @@ const path = require('path');
 const pyodideService = require('../services/pyodide-service');
 const logger = require('../utils/logger');
 const config = require('../config');
+const { meta } = require('@eslint/js');
 const router = express.Router();
 // Get upload directory from environment or default
-const UPLOAD_DIR = config.uploadDir;
+const UPLOAD_DIR = path.resolve(path.join(config.pyodideDataDir, config.pyodideBases.uploads.urlBase));
+const PYODIDE_UPLOAD_DIR = config.pyodideBases.uploads.urlBase;
 /**
  * @swagger
  * /api/uploaded-files:
@@ -64,10 +66,12 @@ router.get('/uploaded-files', (req, res) => {
     if (!fs.existsSync(UPLOAD_DIR)) {
       return res.json({
         success: true,
-        files: [],
-        count: 0,
-        uploadDir: UPLOAD_DIR,
-        message: 'Upload directory does not exist',
+        data: {
+          files: [],
+          count: 0,
+          uploadDir: UPLOAD_DIR,
+          message: 'Upload directory does not exist',
+        }
       });
     }
     // Gather metadata for each file stored on disk.
@@ -88,16 +92,24 @@ router.get('/uploaded-files', (req, res) => {
     logger.info(`Listed ${files.length} uploaded files`);
     res.json({
       success: true,
-      files: files,
-      count: files.length,
-      uploadDir: UPLOAD_DIR,
+      data: {
+        files: files,
+        count: files.length,
+        uploadDir: PYODIDE_UPLOAD_DIR, // This is what external users see
+      },
+      error: null,
+      meta: {
+        timestamp: new Date().toISOString(),
+      },
     });
   } catch (error) {
     logger.error('Error listing uploaded files:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 });
@@ -161,7 +173,7 @@ router.get('/uploaded-files', (req, res) => {
 router.delete('/uploaded-files/:filename', (req, res) => {
   try {
     const filename = req.params.filename;
-    const filePath = path.join(UPLOAD_DIR, filename);
+    const filePath = path.join.posix(UPLOAD_DIR, filename);
     // Resolve paths to guard against directory traversal attacks and
     // ensure we operate only within the configured upload directory.
     // Security check - ensure file is in upload directory
@@ -172,14 +184,18 @@ router.delete('/uploaded-files/:filename', (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Invalid filename',
-        timestamp: new Date().toISOString(),
+        meta: {
+          timestamp: new Date().toISOString(),
+        },
       });
     }
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
         error: 'File not found',
-        timestamp: new Date().toISOString(),
+        meta: {
+          timestamp: new Date().toISOString(),
+        },
       });
     }
     // Get file info before deletion for logging
@@ -188,15 +204,21 @@ router.delete('/uploaded-files/:filename', (req, res) => {
     logger.info(`Deleted uploaded file: ${filename} (${stats.size} bytes)`);
     res.json({
       success: true,
-      message: `File ${filename} deleted successfully`,
-      timestamp: new Date().toISOString(),
+      data: {
+        message: `File ${filename} deleted successfully`,
+      },
+      meta: {
+        timestamp: new Date().toISOString(),
+      },
     });
   } catch (error) {
     logger.error('Error deleting uploaded file:', error);
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 });
@@ -478,27 +500,38 @@ router.get('/file-info/:filename', async (req, res) => {
     const filename = req.params.filename;
     const result = {
       success: true,
-      filename: filename,
-      uploadedFile: { exists: false },
-      pyodideFile: { exists: false },
+        data: {
+          exists: false,
+          filename: filename,
+          pyodideFile: null,        
+          size: null,
+          uploaded: null,
+          modified: null,
+          vfsPath: null,
+        },
+      meta: {
+        timestamp: new Date().toISOString(),
+      }     
     };
     // Check uploaded file on the Node.js filesystem
+    const vfsPath  = path.posix.join(config.pyodideBases.uploads.urlBase, filename);
     const uploadPath = path.join(UPLOAD_DIR, filename);
     if (fs.existsSync(uploadPath)) {
       const stats = fs.statSync(uploadPath);
-      result.uploadedFile = {
+      result.data = {
         exists: true,
+        filename: filename,
         size: stats.size,
         uploaded: stats.birthtime,
         modified: stats.mtime,
-        path: uploadPath,
+        vfsPath: vfsPath,
       };
-    }
+    } 
     // Check whether the file also exists inside Pyodide's in-memory FS
     try {
       const pyodideResult = await pyodideService.executeCode(`
 import os
-filename = '${filename}'
+filename = '${vfsPath}'
 if os.path.exists(filename):
     stat_info = os.stat(filename)
     result = {
@@ -514,7 +547,7 @@ result
         try {
           // The result is already a JavaScript object from the execute endpoint
           if (typeof pyodideResult.result === 'object') {
-            result.pyodideFile = pyodideResult.result;
+            result.data.pyodideFile = pyodideResult.result;
           } else {
             // Fallback: if it's a string, try to parse it
             let jsonString = pyodideResult.result
@@ -523,11 +556,11 @@ result
               .replace(/True/g, 'true') // Python True to JSON true
               .replace(/False/g, 'false'); // Python False to JSON false
             const pyodideFileInfo = JSON.parse(jsonString);
-            result.pyodideFile = pyodideFileInfo;
+            result.data.pyodideFile = pyodideFileInfo;
           }
         } catch (parseError) {
           logger.warn(`Could not parse Pyodide file result for ${filename}:`, parseError.message);
-          result.pyodideFile = { exists: false };
+          result.data.pyodideFile = { exists: false };
         }
       }
     } catch (pyodideError) {
@@ -539,7 +572,9 @@ result
     res.status(500).json({
       success: false,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString(),
+      }
     });
   }
 });

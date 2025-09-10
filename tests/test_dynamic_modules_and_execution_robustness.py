@@ -108,7 +108,7 @@ print(f"RESULT: {result_data}")
         # Install a simple package
         install_result = self.install_package("jsonschema")
         self.assertTrue(install_result["success"])
-        print(f"✅ Package installation: {install_result['message']}")
+        print(f"✅ Package installation: {install_result['data']['message']}")
         
         # Test immediate availability using RAW execution
         result = self.execute_code_raw("""
@@ -667,7 +667,7 @@ result
         # Install Pillow
         install_result = self.install_package("Pillow")
         self.assertTrue(install_result["success"])
-        print(f"✅ Pillow installation: {install_result['message']}")
+        print(f"✅ Pillow installation: {install_result['data']['message']}")
         
         # Test PIL availability and functionality using RAW execution
         result = self.execute_code_raw("""

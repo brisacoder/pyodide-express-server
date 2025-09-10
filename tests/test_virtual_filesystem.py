@@ -89,7 +89,7 @@ for path in test_paths:
 
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=60)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=60)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -169,7 +169,7 @@ except Exception as e:
 
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=60)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=60)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -270,7 +270,7 @@ except Exception as e:
 
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=60)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=60)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -323,8 +323,8 @@ result = {
 }
 result
 '''
-        
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": setup_code}, timeout=60)
+
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=setup_code, headers={"Content-Type": "text/plain"}, timeout=60)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))

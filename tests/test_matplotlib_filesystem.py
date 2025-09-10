@@ -180,7 +180,7 @@ file_size = os.path.getsize(output_path) if file_exists else 0
 result = {"file_saved": file_exists, "file_size": file_size, "plot_type": "direct_save_basic", "filename": output_path}
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))

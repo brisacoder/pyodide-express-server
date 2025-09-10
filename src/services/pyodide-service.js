@@ -47,7 +47,10 @@
  * @property {string} [error] - Error message if retrieval failed
  */
 const logger = require('../utils/logger');
+const config = require('../config/index');
 const constants = require('../config/constants');
+const layout = require('./layout');
+
 class PyodideService {
   constructor() {
     // Will hold the Pyodide instance once ``loadPyodide`` resolves. Until
@@ -93,6 +96,28 @@ class PyodideService {
     this.initializationPromise = this._performInitialization();
     return this.initializationPromise;
   }
+
+  async _loadMicropipPkgs() {
+    const micropipPackages = ['seaborn'];
+    const installedPackages = [];
+    for (const packageName of micropipPackages) {
+      try {
+        logger.info(`Installing ${packageName} via micropip...`);
+        // Special handling for seaborn which can have metadata issues
+        await this.pyodide.runPythonAsync(`
+import micropip
+await micropip.install("${packageName}")
+print("✅ ${packageName} installed successfully")
+`);
+        installedPackages.push(packageName);
+        logger.info(`✅ ${packageName} installed successfully`);
+      } catch (packageError) {
+        logger.warn(`⚠️  Failed to install ${packageName}:`, packageError.message);
+        // For seaborn, this is not critical - it can be installed later via API
+      }
+    }
+    logger.info(`Installed via micropip: ${installedPackages.join(', ')}`);    
+  }
   /**
    * Internal initialization method - Simple version that works
    * @private
@@ -104,272 +129,100 @@ class PyodideService {
    */
   async _performInitialization() {
     try {
-      logger.info('Starting Pyodide initialization...');
-      // Import Pyodide - try both import methods
-      let loadPyodide;
+    logger.info('Starting Pyodide initialization...');
       try {
-        logger.info('Importing Pyodide module...');
-        const pyodideModule = await import('pyodide');
-        loadPyodide = pyodideModule.loadPyodide;
-        logger.info('✅ Pyodide module imported successfully');
-      } catch (importError) {
-        logger.error('❌ Failed to import Pyodide:', importError.message);
-        throw new Error(`Could not import Pyodide: ${importError.message}`);
-      }
-      if (!loadPyodide || typeof loadPyodide !== 'function') {
-        throw new Error('loadPyodide is not a function');
-      }
-      logger.info('Loading Pyodide runtime (using default configuration)...');
-      // Use the simplest possible configuration - no CDN URLs
-      this.pyodide = await loadPyodide();
-      logger.info('✅ Pyodide loaded successfully!');
-      logger.info('Pyodide version:', this.pyodide.version || 'unknown');
-      logger.info('Loading essential packages...');
-      // Load packages one by one to see which ones work
-      const packagesToLoad = ['numpy', 'pandas', 'micropip', 'matplotlib', 'requests'];
-      const loadedPackages = [];
-      for (const packageName of packagesToLoad) {
-        try {
-          logger.info(`Loading ${packageName}...`);
-          await this.pyodide.loadPackage([packageName]);
-          loadedPackages.push(packageName);
-          logger.info(`✅ ${packageName} loaded successfully`);
-        } catch (packageError) {
-          logger.warn(`⚠️  Failed to load ${packageName}:`, packageError.message);
+        const { loadPyodide } = await import('pyodide');  // destructure directly
+        const packagesToLoad = ['numpy', 'pandas', 'micropip', 'matplotlib', 'requests'
+          ,'scikit-learn', 'scipy', 'httpx', 'statsmodels'];
+
+
+        if (typeof loadPyodide !== 'function') {
+          throw new Error('loadPyodide is not a function');
         }
+
+        logger.info('Loading Pyodide runtime...');
+
+        this.pyodide = await loadPyodide({fullStdLib:true, packages:packagesToLoad});
+      } catch (err) {
+        logger.error('❌ Pyodide initialization failed:', err);
+        throw err;
       }
-      logger.info(`Loaded packages: ${loadedPackages.join(', ')}`);
+      logger.info('✅ Pyodide loaded successfully!');
+      logger.info(`Pyodide version: ${ this.pyodide.version || 'unknown'}`);
+      logger.info('Loading essential packages...');
       logger.info('Installing additional packages via micropip...');
       // Install additional packages that aren't available via loadPackage
-      const micropipPackages = ['seaborn', 'httpx'];
-      const installedPackages = [];
-      for (const packageName of micropipPackages) {
-        try {
-          logger.info(`Installing ${packageName} via micropip...`);
-          // Special handling for seaborn which can have metadata issues
-          if (packageName === 'seaborn') {
-            await this.pyodide.runPythonAsync(`
-import micropip
-import asyncio
-# Try multiple installation methods for seaborn
-try:
-    # Method 1: Standard installation
-    await micropip.install("seaborn")
-    print("✅ seaborn installed successfully via standard method")
-except Exception as e1:
-    print(f"Standard installation failed: {e1}")
-    try:
-        # Method 2: Install with specific index
-        await micropip.install("seaborn", index_urls=["https://pypi.org/simple/"])
-        print("✅ seaborn installed successfully via PyPI index")
-    except Exception as e2:
-        print(f"PyPI index installation failed: {e2}")
-        try:
-            # Method 3: Install specific version that's known to work
-            await micropip.install("seaborn==0.13.2")
-            print("✅ seaborn installed successfully via specific version")
-        except Exception as e3:
-            print(f"Specific version installation failed: {e3}")
-            print("⚠️  All seaborn installation methods failed")
-            raise e3
-`);
-          } else {
-            // Standard installation for other packages
-            await this.pyodide.runPythonAsync(`
-import micropip
-await micropip.install("${packageName}")
-print("✅ ${packageName} installed successfully")
-`);
-          }
-          installedPackages.push(packageName);
-          logger.info(`✅ ${packageName} installed successfully`);
-        } catch (packageError) {
-          logger.warn(`⚠️  Failed to install ${packageName}:`, packageError.message);
-          // For seaborn, this is not critical - it can be installed later via API
-          if (packageName === 'seaborn') {
-            logger.info(
-              'ℹ️  Seaborn will be available for on-demand installation via /api/install-package'
-            );
-          }
-        }
-      }
-      logger.info(`Installed via micropip: ${installedPackages.join(', ')}`);
+      await this._loadMicropipPkgs();
       logger.info('Setting up Python environment...');
       // Set up Python environment with error handling
       await this.pyodide.runPythonAsync(`
 import sys
 import io
-from io import StringIO
 print(f"Python version: {sys.version}")
 print("Setting up Pyodide environment...")
 # Import available packages and make them globally accessible
 try:
     import numpy as np
-    print("✅ NumPy available")
+    print("[x] NumPy available")
     globals()['np'] = np
 except ImportError:
-    print("⚠️  NumPy not available")
+    print("[ ] NumPy not available")
 try:
     import pandas as pd
-    print("✅ Pandas available")
+    print("[x] Pandas available")
     globals()['pd'] = pd
 except ImportError:
-    print("⚠️  Pandas not available")
+    print("[ ] Pandas not available")
 try:
     import matplotlib.pyplot as plt
     import matplotlib
     # Set non-interactive backend for server environment
     matplotlib.use('Agg')
-    print("✅ Matplotlib available")
+    print("[x] Matplotlib available")
     globals()['plt'] = plt
 except ImportError:
-    print("⚠️  Matplotlib not available")
+    print("[ ] Matplotlib not available")
 try:
     import requests
-    print("✅ Requests available")
+    print("[x] Requests available")
     globals()['requests'] = requests
 except ImportError:
-    print("⚠️  Requests not available")
+    print("[ ] Requests not available")
 try:
     import seaborn as sns
-    print("✅ Seaborn available")
+    print("[x] Seaborn available")
     globals()['sns'] = sns
 except ImportError:
-    print("⚠️  Seaborn not available")
+    print("[ ] Seaborn not available")
 try:
     import httpx
-    print("✅ HTTPX available")
+    print("[x] HTTPX available")
     globals()['httpx'] = httpx
 except ImportError:
-    print("⚠️  HTTPX not available")
+    print("[ ]  HTTPX not available")
+try:
+    import sklearn
+    print("[x] SciKit-Learn available")
+    globals()['sklearn'] = sklearn
+except ImportError:
+    print("[ ] Scikit-Learn not available")
+try:
+    import statsmodels.api as sm
+    print("[x] Statsmodel available")
+    globals()['sm'] = sm
+except ImportError:
+    print("[ ]  StatsModel not available")
 try:
     import micropip
-    print("✅ Micropip available")
+    print("[x] Micropip available")
     # Make micropip available globally
     globals()['micropip'] = micropip
 except ImportError:
-    print("⚠️  Micropip not available")
-# Create output capture system
-class OutputCapture:
-    def __init__(self):
-        self.stdout = StringIO()
-        self.stderr = StringIO()
-        self.original_stdout = sys.stdout
-        self.original_stderr = sys.stderr
-    def start_capture(self):
-        self.stdout = StringIO()
-        self.stderr = StringIO()
-        sys.stdout = self.stdout
-        sys.stderr = self.stderr
-    def stop_capture(self):
-        sys.stdout = self.original_stdout
-        sys.stderr = self.original_stderr
-        return {
-            'stdout': self.stdout.getvalue(),
-            'stderr': self.stderr.getvalue()
-        }
-    def reset(self):
-        sys.stdout = self.original_stdout
-        sys.stderr = self.original_stderr
-# Global output capturer
-output_capture = OutputCapture()
-# Helper function for JSON serialization
-def make_json_safe(obj):
-    import numpy as np
-    if obj is None:
-        return None
-    elif isinstance(obj, (bool, int, float, str)):
-        return obj
-    elif isinstance(obj, np.integer):  # numpy integer types
-        return int(obj)
-    elif isinstance(obj, np.floating):  # numpy float types
-        return float(obj)
-    elif isinstance(obj, np.bool_):  # numpy boolean type
-        return bool(obj)
-    elif isinstance(obj, (list, tuple)):
-        return [make_json_safe(item) for item in obj]
-    elif isinstance(obj, dict):
-        return {str(k): make_json_safe(v) for k, v in obj.items()}
-    elif hasattr(obj, 'to_dict'):  # pandas objects
-        return obj.to_dict()
-    elif hasattr(obj, 'tolist'):  # numpy arrays
-        return obj.tolist()
-    else:
-        return str(obj)
-print("🎉 Pyodide environment ready!")
+    print("[ ]  Micropip not available")
+print("Pyodide environment ready!")
       `);
-      // Setup filesystem mounting for plot saving
-      logger.info('Setting up filesystem mounting for plots...');
-      try {
-        const path = require('path');
-        const plotsDir = path.resolve(__dirname, '../../plots');
-        // Ensure the real plots directory exists
-        const fs = require('fs');
-        if (!fs.existsSync(plotsDir)) {
-          fs.mkdirSync(plotsDir, { recursive: true });
-          logger.info(`Created plots directory: ${plotsDir}`);
-        }
-        // Create subdirectories for different plot types
-        const plotSubdirs = ['matplotlib', 'seaborn'];
-        for (const subdir of plotSubdirs) {
-          const subdirPath = path.join(plotsDir, subdir);
-          if (!fs.existsSync(subdirPath)) {
-            fs.mkdirSync(subdirPath, { recursive: true });
-          }
-        }
-        // Mount the real plots directory to /plots in Pyodide filesystem
-        logger.info(`Attempting to mount ${plotsDir} to /plots in Pyodide...`);
-        logger.info(`Host path exists: ${fs.existsSync(plotsDir)}`);
-        logger.info(`Host path absolute: ${path.isAbsolute(plotsDir)}`);
-        try {
-          // mountNodeFS(emscriptenPath, hostPath)
-          // emscriptenPath: The absolute path in Emscripten FS to mount to
-          // hostPath: The host path to mount (must exist)
-          this.pyodide.mountNodeFS('/plots', plotsDir);
-          logger.info('✅ Mount successful');
-        } catch (mountError) {
-          logger.error('❌ Mount failed:', mountError.message);
-          logger.info('Falling back to virtual filesystem approach');
-          // Fallback: Create virtual directories in Pyodide filesystem for plot saving
-          await this.pyodide.runPythonAsync(`
-import os
-# Create plot directories in virtual filesystem as fallback
-plot_dirs = ['/plots', '/plots/matplotlib', '/plots/seaborn']
-for plot_dir in plot_dirs:
-    os.makedirs(plot_dir, exist_ok=True)
-    print(f"Created virtual directory: {plot_dir}")
-`);
-        }
-        
-        // Create essential directories in Pyodide virtual filesystem
-        logger.info('Creating essential directories in Pyodide filesystem...');
-        await this.pyodide.runPythonAsync(`
-import os
-# Create essential directories that will be used by the application
-essential_dirs = ['/uploads', '/tmp']
-for essential_dir in essential_dirs:
-    os.makedirs(essential_dir, exist_ok=True)
-    print(f"Created essential directory: {essential_dir}")
-`);
-        logger.info('✅ Essential directories created');
-        
-        // Verify the mount worked
-        await this.pyodide.runPythonAsync(`
-import os
-# Check if mounted directories are accessible
-mount_test_result = {
-    "plots_exists": os.path.exists("/plots"),
-    "matplotlib_exists": os.path.exists("/plots/matplotlib"),
-    "seaborn_exists": os.path.exists("/plots/seaborn"),
-    "plots_contents": os.listdir("/plots") if os.path.exists("/plots") else [],
-}
-print(f"Mount verification: {mount_test_result}")
-`);
-        logger.info('✅ Filesystem mounting setup successfully');
-      } catch (setupError) {
-        logger.warn('⚠️  Failed to setup plot directories:', setupError.message);
-        // Continue initialization even if setup fails
-      }
+      // Setup filesystem mounting for plots
+      await this._mountFolders();
       this.isReady = true;
       logger.info('🎉 Pyodide initialization completed successfully!');
       return true;
@@ -380,6 +233,116 @@ print(f"Mount verification: {mount_test_result}")
       throw new Error(`Pyodide initialization failed: ${error.message}`);
     }
   }
+
+/**
+ * Mounts essential host directories into the Pyodide virtual filesystem for persistent file access.
+ *
+ * This method ensures that required directories (plots, uploads, etc.) exist on the host filesystem,
+ * creates subdirectories for different plot types, and attempts to mount them into the Pyodide
+ * WebAssembly environment using NodeFS. If mounting fails, it falls back to creating virtual directories
+ * within Pyodide's in-memory filesystem. This enables Python code running in Pyodide to read/write files
+ * as if they were on the host, supporting workflows like saving plots and handling uploads.
+ *
+ * Side Effects:
+ * - Creates host directories if missing
+ * - Mounts host directories to Pyodide virtual paths (/plots, /uploads)
+ * - Creates subdirectories for plot types (matplotlib, seaborn)
+ * - Logs all operations and errors
+ * - Verifies mount success and prints directory contents
+ *
+ * Error Handling:
+ * - If mounting fails, falls back to virtual directory creation in Pyodide
+ * - Logs warnings but does not throw, allowing initialization to continue
+ *
+ * @returns {Promise<void>} Resolves when all directories are mounted or created
+ * @throws Only in catastrophic setup errors (rare)
+ */
+async _mountFolders() {
+
+
+    const { rootReal, basesReal } = await layout.initLayout(config.pyodideDataDir, config.pyodideBases);  
+    this.basesReal = basesReal; // Store for later use
+    this.rootReal = rootReal; // Store for later use
+    // Setup filesystem mounting for plot saving
+    logger.info('Setting up filesystem mounting for plots...');
+    try {
+      const path = require('path');
+      const fs = require('fs');
+      const plotsDir = basesReal.plots.dirReal;
+      // Mount the real plots directory to /plots in Pyodide filesystem
+      logger.info(`Attempting to mount ${plotsDir} to /plots in Pyodide...`);
+      logger.info(`Host path exists: ${fs.existsSync(plotsDir)}`);
+      logger.info(`Host path absolute: ${path.isAbsolute(plotsDir)}`);
+      try {
+        // mountNodeFS(emscriptenPath, hostPath)
+        // emscriptenPath: The absolute path in Emscripten FS to mount to
+        // hostPath: The host path to mount (must exist)
+        this.pyodide.mountNodeFS('/home/pyodide/plots', plotsDir);
+        logger.info('✅ Mount successful');
+      } catch (mountError) {
+        logger.error('❌ Mount failed:', mountError.message);
+      }
+
+      // Setup filesystem mounting for Pyodide 'In' mailbox
+      const pyodideIn = basesReal.in.dirReal;
+      // Mount the real uploads directory to /uploads in Pyodide filesystem
+      logger.info(`Attempting to mount ${pyodideIn} to /home/pyodide/in in Pyodide...`);
+      logger.info(`Host path exists: ${fs.existsSync(pyodideIn)}`);
+      logger.info(`Host path absolute: ${path.isAbsolute(pyodideIn)}`);
+      // Mount /pyodide_in
+      try {
+        // mountNodeFS(emscriptenPath, hostPath)
+        // emscriptenPath: The absolute path in Emscripten FS to mount to
+        // hostPath: The host path to mount (must exist)
+        this.pyodide.mountNodeFS('/home/pyodide/in', pyodideIn);
+        logger.info('✅ Mount successful');
+      } catch (mountError) {
+        logger.error('❌ Mount failed:', mountError.message);
+      }
+      
+      // Setup filesystem mounting for uploads
+      const uploads = basesReal.uploads.dirReal;
+      // Mount the real uploads directory to /uploads in Pyodide filesystem
+      logger.info(`Attempting to mount ${uploads} to /home/pyodide/uploads in Pyodide...`);
+      logger.info(`Host path exists: ${fs.existsSync(uploads)}`);
+      logger.info(`Host path absolute: ${path.isAbsolute(uploads)}`);
+      // Mount /uploads
+      try {
+        // mountNodeFS(emscriptenPath, hostPath)
+        // emscriptenPath: The absolute path in Emscripten FS to mount to
+        // hostPath: The host path to mount (must exist)
+        this.pyodide.mountNodeFS('/home/pyodide/uploads', uploads);
+        logger.info('✅ Mount successful');
+      } catch (mountError) {
+        logger.error('❌ Mount failed:', mountError.message);
+      }                      
+
+      // Create essential directories in Pyodide virtual filesystem
+      logger.info('Creating essential directories in Pyodide filesystem...');
+      await this.pyodide.runPythonAsync(`
+import os
+# Create essential directories that will be used by the application
+essential_dirs = ['./tmp']
+for essential_dir in essential_dirs:
+  os.makedirs(essential_dir, exist_ok=True)
+  print(f"Created essential directory: {essential_dir}")
+`);
+      logger.info('✅ Essential directories created');
+      
+      // Verify the mount worked
+      await this.pyodide.runPythonAsync(`
+# Check if mounted directories are accessible
+from pathlib import Path
+home = Path.cwd()
+print(f"Mount verification: {list(home.iterdir())}")
+`);
+      logger.info('✅ Filesystem mounting setup successfully');
+    } catch (setupError) {
+      logger.warn('⚠️  Failed to setup directories:', setupError.message);
+      // Continue initialization even if setup fails
+    }
+  }
+
   /**
    * Execute Python code with optional context variables
    * @param {string} code - Python code to execute
@@ -426,93 +389,67 @@ print(f"Mount verification: {mount_test_result}")
       }
     }
     try {
-      // **SIMPLE USER ISOLATION**
-      // Create isolated namespace by copying globals FIRST - exactly as per Pyodide FAQ
-      const namespace = this.pyodide.runPython(`
-        import types
-        # Create a new namespace as a copy of the main global namespace
-        # This ensures we get all the module aliases like np, pd, plt, etc.
-        namespace = dict(globals())
-        namespace
-      `);
-      // Ensure essential items are present
+      // Create a fresh isolated namespace dict
+      const namespace = this.pyodide.runPython('d = {}; d');
+      // Seed essential builtins
       namespace.set('__builtins__', this.pyodide.globals.get('__builtins__'));
-      // Set up context variables in the isolated namespace (not main globals)
+      // Seed commonly used aliases that were pre-imported in global scope if available
+      const allowedAliases = ['np','pd','plt','requests','sns','httpx','sklearn','sm','micropip'];
+      for (const name of allowedAliases) {
+        let val;
+        try {
+          val = this.pyodide.globals.get(name);
+          if (val !== undefined) {
+            namespace.set(name, val);
+          }
+        } catch (e) {
+          logger.warn(`Failed to seed alias '${name}' into namespace`, { error: e?.message });
+        } finally {
+          try { if (val && typeof val.destroy === 'function') val.destroy(); } catch (e) { logger.warn('Failed to destroy alias proxy', { alias: name, error: e?.message }); }
+        }
+      }
+      // Add user-provided context variables
       for (const [key, value] of Object.entries(context)) {
         namespace.set(key, value);
       }
-      // Execute the execution wrapper in the isolated namespace
-      const wrappedCode = `
-import json
-import traceback
-import uuid
-# Generate unique execution ID for this request
-_exec_id = str(uuid.uuid4())
-# Start output capture
-output_capture.start_capture()
+
+      // Capture stdout/stderr in JS
+      let capturedStdout = '';
+      let capturedStderr = '';
+      let restoreStdout;
+      let restoreStderr;
+      try {
+        restoreStdout = this.pyodide.setStdout({ batched: (s) => { capturedStdout += s; } });
+        restoreStderr = this.pyodide.setStderr({ batched: (s) => { capturedStderr += s; } });
+      } catch (e) {
+        logger.error('Failed to set stdout/stderr capture', { error: e?.message });
+        throw e;
+      }
+
+      // Provide the user code into namespace to avoid large string interpolation
+      namespace.set('_user_code', code);
+
+      // Minimal compile/eval/exec helper executed within isolated namespace
+      const pythonExecHelper = `
+import traceback, ast
 _exec_success = True
 _exec_error = None
 _exec_result = None
 try:
-    # **SECURE EXECUTION**: Code is passed via JSON.stringify, executed in isolated namespace
-    _user_code = ${JSON.stringify(code)}
-    # Execute in the current isolated namespace (not global namespace)
-    if '\\n' in _user_code:
-        # Multi-line code: execute all lines, try to capture result of last line if it's an expression
-        lines = [line.rstrip() for line in _user_code.split('\\n')]
-        # Remove empty lines from the end
-        while lines and not lines[-1]:
-            lines.pop()
-        if len(lines) > 1:
-            # Execute all lines except the last in isolated namespace
-            setup_code = '\\n'.join(lines[:-1])
-            exec(setup_code)
-            # Try to evaluate the last line as an expression in isolated namespace
-            last_line = lines[-1].strip()
-            if last_line and not last_line.startswith(('import ', 'from ', 'def ', 'class ', 'if ', 'for ', 'while ', 'with ', 'try:', 'except:', 'finally:', 'else:', '#')):
-                try:
-                    _exec_result = eval(last_line)
-                except SyntaxError:
-                    # If it's not an expression, execute as statement in isolated namespace
-                    exec(last_line)
-                    _exec_result = None
-            else:
-                # Execute as statement for def, class, etc. in isolated namespace
-                exec(last_line)
-                _exec_result = None
+    try:
+        _code = compile(_user_code, '<user>', 'eval')
+        _exec_result = eval(_code)
+    except SyntaxError:
+        # Handle multi-line blocks; capture last expression result if present
+        _mod = ast.parse(_user_code, mode='exec')
+        if _mod.body and isinstance(_mod.body[-1], ast.Expr):
+            last = _mod.body.pop()
+            _mod.body.append(ast.Assign(targets=[ast.Name(id='_last_result', ctx=ast.Store())], value=last.value))
         else:
-            # Single line - try as expression first, then as statement in isolated namespace
-            try:
-                _exec_result = eval(_user_code)
-            except SyntaxError:
-                exec(_user_code)
-                _exec_result = None
-    elif ';' in _user_code:
-        # Semicolon-separated code like "x = 42; x" in isolated namespace
-        parts = [p.strip() for p in _user_code.split(';') if p.strip()]
-        if len(parts) > 1:
-            # Execute all parts except the last as statements in isolated namespace
-            for part in parts[:-1]:
-                exec(part)
-            # Try to evaluate the last part as expression in isolated namespace
-            last_part = parts[-1]
-            try:
-                _exec_result = eval(last_part)
-            except SyntaxError:
-                # If last part is not an expression, execute as statement in isolated namespace
-                exec(last_part)
-                _exec_result = None
-        else:
-            # Single statement in isolated namespace
-            exec(_user_code)
-            _exec_result = None
-    else:
-        # Single line code - try as expression first, then as statement in isolated namespace
-        try:
-            _exec_result = eval(_user_code)
-        except SyntaxError:
-            exec(_user_code)
-            _exec_result = None
+            _mod.body.append(ast.Assign(targets=[ast.Name(id='_last_result', ctx=ast.Store())], value=ast.Constant(None)))
+        _code = compile(_mod, '<user>', 'exec')
+        exec(_code)
+        _exec_result = globals().get('_last_result', None)
 except SystemExit as e:
     _exec_success = False
     _exec_error = f"SystemExit blocked: exit() and sys.exit() are not allowed (code: {e.code})"
@@ -520,47 +457,69 @@ except Exception as e:
     _exec_success = False
     _exec_error = str(e)
     traceback.print_exc()
-# Stop capture and get output
-_output = output_capture.stop_capture()
-output_capture.reset()
-# Create result dictionary and convert everything to JSON-safe format
-_final_result = {
-    'success': _exec_success,
-    'stdout': _output['stdout'],
-    'stderr': _output['stderr'],
-    'timestamp': '${new Date().toISOString()}',
-    'execution_id': _exec_id
-}
-if _exec_success:
-    if _exec_result is not None:
-        _final_result['result'] = make_json_safe(_exec_result)
-    else:
-        _final_result['result'] = None
-    _final_result['error'] = None
-else:
-    _final_result['result'] = None
-    _final_result['error'] = _exec_error
-# Return as JSON string
-json.dumps(_final_result)
+(_exec_success, _exec_result, _exec_error)
 `;
-      // Execute the wrapped code with timeout protection using isolated namespace
+
+      // Timeout handling (does not interrupt Python, only rejects the promise)
+      let timeoutHandle;
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(`Execution timeout after ${timeout}ms`)), timeout);
+        timeoutHandle = setTimeout(() => reject(new Error(`Execution timeout after ${timeout}ms`)), timeout);
       });
-      // Execute in the isolated namespace - simple user isolation
-      const executionPromise = this.pyodide.runPythonAsync(wrappedCode, { globals: namespace });
-      const jsonResult = await Promise.race([executionPromise, timeoutPromise]);
-      // Parse the JSON result
-      const result = JSON.parse(jsonResult);
-      // Clean up the namespace
-      namespace.destroy();
+
+      const execPromise = this.pyodide.runPythonAsync(pythonExecHelper, { globals: namespace });
+      let tuple;
+      try {
+        // Race timeout and execution
+        tuple = await Promise.race([execPromise, timeoutPromise]);
+      } finally {
+        // Always restore stdio and release namespace proxy
+        try { restoreStdout(); } catch (e) { logger.error('Failed to restore stdout', { error: e?.message }); }
+        try { restoreStderr(); } catch (e) { logger.error('Failed to restore stderr', { error: e?.message }); }
+        try { namespace.destroy(); } catch (e) { logger.warn('Failed to destroy namespace proxy', { error: e?.message }); }
+      }
+
+      // If execPromise won, clear timeout if we set it
+      if (timeoutHandle) { clearTimeout(timeoutHandle); }
+
+      // tuple can be JS primitive or PyProxy of a tuple
+      let success, pyResult, pyError;
+      if (tuple && typeof tuple.get === 'function') {
+        // PyProxy (tuple)
+        success = tuple.get(0);
+        pyResult = tuple.get(1);
+        pyError = tuple.get(2);
+        try { if (typeof tuple.destroy === 'function') tuple.destroy(); } catch (e) { logger.warn('Failed to destroy result tuple proxy', { error: e?.message }); }
+      } else if (Array.isArray(tuple)) {
+        [success, pyResult, pyError] = tuple;
+      } else {
+        // Unexpected shape
+        success = false;
+        pyResult = null;
+        pyError = 'Unexpected execution result shape';
+      }
+
+      // Convert Python result to JS if needed
+      let jsResult = null;
+      try {
+        if (pyResult && typeof pyResult.toJs === 'function') {
+          jsResult = pyResult.toJs({ create_proxies: false, dict_converter: 'object' });
+        } else {
+          jsResult = pyResult ?? null;
+        }
+      } catch (convErr) {
+        logger.warn('Failed to convert Python result to JS', { error: convErr?.message });
+        jsResult = null;
+      } finally {
+        try { if (pyResult && typeof pyResult.destroy === 'function') pyResult.destroy(); } catch (e) { logger.warn('Failed to destroy result proxy', { error: e?.message }); }
+      }
+
       return {
-        success: result.success,
-        result: result.result,
-        error: result.error,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        timestamp: result.timestamp,
+        success: !!success,
+        result: jsResult,
+        error: success ? null : (pyError || 'Execution error'),
+        stdout: capturedStdout,
+        stderr: capturedStderr,
+        timestamp: new Date().toISOString(),
       };
     } catch (error) {
       // Handle specific Pyodide errors
@@ -574,12 +533,9 @@ json.dumps(_final_result)
           timestamp: new Date().toISOString(),
         };
       }
-      // Ensure cleanup
-      try {
-        await this.pyodide.runPythonAsync('output_capture.reset()');
-      } catch {
-        // Ignore cleanup errors
-      }
+      // Ensure stdout/stderr are restored by resetting to default
+      try { this.pyodide.setStdout(); } catch (e) { logger.error('setStdout() reset failed', { error: e?.message }); }
+      try { this.pyodide.setStderr(); } catch (e) { logger.error('setStderr() reset failed', { error: e?.message }); }
       return {
         success: false,
         result: null,
@@ -940,18 +896,13 @@ json.dumps(result)
 # Clear user-defined variables but keep system ones AND core module aliases
 user_vars = [var for var in globals().keys()
              if not var.startswith('_')
-             and var not in ['sys', 'io', 'StringIO', 'output_capture', 'make_json_safe',
+             and var not in ['sys', 'io',
                             'np', 'pd', 'plt', 'sns', 'requests', 'micropip', 'httpx']]
 for var in user_vars:
     try:
         del globals()[var]
     except:
         pass
-# Reset output capture
-try:
-    output_capture.reset()
-except:
-    pass
 print("Environment reset completed")
       `);
       logger.info('Pyodide environment reset successfully');

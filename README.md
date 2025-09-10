@@ -2,21 +2,13 @@
 
 A Node.js Express service that exposes a REST API for executing Python code via [Pyodide](https://pyodide.org/). Features comprehensive data science capabilities including matplotlib, seaborn, scikit-learn, and pandas with extensive testing coverage and **enhanced security logging**.
 
-## 🔥 Latest Features
+## Table of Contents
 
-### 🔐 Enhanced Security Logging System
-- **SHA-256 code hashing** for security tracking and audit trails
-- **Real-time statistics dashboard** with Chart.js visualizations
-- **Dual logging** (server.log + security.log) for comprehensive monitoring
-- **IP tracking, User-Agent monitoring, error categorization**
-- **Interactive dashboard** at `/api/dashboard/stats/dashboard`
-- **Backward-compatible APIs** maintaining existing functionality
-
-### 📊 Statistics Dashboard
-- **Professional UI** with responsive design and gradient styling
-- **Real-time metrics**: execution counts, success rates, timing analysis
-- **Hourly trend analysis** with interactive charts
-- **REST endpoints** for programmatic access to statistics
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Direct Filesystem Access](#direct-filesystem-access)
+- [Enhanced Features](#enhanced-features)
+- [API Response Contract](#api-response-contract)
 
 ## Features
 
@@ -32,21 +24,6 @@ A Node.js Express service that exposes a REST API for executing Python code via 
 - **Robust Testing** - Extensive test suite covering API, security, performance, and data science
 - **Modular Architecture** - Clean, extensible design for adding new routes and features
 - **Direct Filesystem Mounting** - Files created in Python appear directly in local filesystem (no API calls needed!)
-
-## 📁 Direct Filesystem Access
-
-**NEW!** The server implements true filesystem mounting per [Pyodide documentation](https://pyodide.org/en/stable/usage/accessing-files.html). When Python code creates files in mounted directories, they appear **directly** in your local filesystem automatically!
-
-```python
-# This Python code creates files directly on your local machine:
-import matplotlib.pyplot as plt
-
-plt.plot([1, 2, 3], [1, 4, 2])
-plt.savefig('/plots/matplotlib/my_chart.png')  # Appears instantly in local plots/ folder!
-```
-
-**📖 Complete Guide:** See [`docs/FILESYSTEM_MOUNTING_GUIDE.md`](docs/FILESYSTEM_MOUNTING_GUIDE.md) for comprehensive documentation  
-**🚀 Quick Reference:** See [`docs/QUICK_REFERENCE_FILESYSTEM.md`](docs/QUICK_REFERENCE_FILESYSTEM.md) for examples
 
 ## Quick Start
 
@@ -66,6 +43,57 @@ mkdir -p logs uploads plots/matplotlib plots/seaborn
 npm start
 ```
 
+### 🌐 Web Interface
+
+Once the server is running, open your browser and go to:
+
+**http://localhost:3000**
+
+The main UI provides:
+- **Interactive Python Code Editor** with syntax highlighting and resizable text area
+- **Real-time Python Code Execution** - run data science code directly in your browser
+- **Package Management** - install Python packages on-demand
+- **File Upload & Analysis** - upload CSV files and analyze them with pandas
+- **Environment Controls** - reset Python environment when needed
+
+This is the fastest way to start experimenting with Python data science in your browser!
+
+#### 🐍 Python Code Execution: Implicit Return Values
+
+**Important:** When you execute Python code via the Pyodide API, the server will automatically return the value of the last variable or expression that appears alone on a line (outside of a function or class definition). This acts as an implicit return statement, similar to how interactive Python shells work.
+
+For example, the following code will return the value of `result`:
+
+```python
+x = 2
+result = x * 5
+result  # This value will be returned in the API response
+```
+
+You can also return values from functions by calling them as the last line:
+
+```python
+def add(a, b):
+    return a + b
+add(3, 4)  # Returns 7
+```
+
+**Note:** You do not need to use an explicit `return` statement at the top level. The last standalone variable or function call will be returned automatically in the API response under the `data.result` field.
+
+#### 📊 Statistics Dashboard
+
+The server includes a comprehensive monitoring dashboard accessible at:
+
+**http://localhost:3000/api/dashboard/stats/dashboard**
+
+Features:
+- **Professional UI** with responsive design and gradient styling
+- **Real-time metrics**: execution counts, success rates, timing analysis
+- **Hourly trend analysis** with interactive charts
+- **REST endpoints** for programmatic access to statistics
+
+### 📝 Sample Clients
+
 With the server running, try the sample clients:
 ```bash
 node examples/basic-client.js           # Simple execution example
@@ -83,6 +111,31 @@ curl -LsSf https://astral.sh/uv/install.sh | sh  # macOS/Linux
 # Install Python dependencies using uv (creates virtual environment automatically)
 uv sync
 ```
+
+## 📁 Direct Filesystem Access
+
+**NEW!** The server implements true filesystem mounting per [Pyodide documentation](https://pyodide.org/en/stable/usage/accessing-files.html). When Python code creates files in mounted directories, they appear **directly** in your local filesystem automatically!
+
+```python
+# This Python code creates files directly on your local machine:
+import matplotlib.pyplot as plt
+
+plt.plot([1, 2, 3], [1, 4, 2])
+plt.savefig('/plots/matplotlib/my_chart.png')  # Appears instantly in local plots/ folder!
+```
+
+**📖 Complete Guide:** See [`docs/FILESYSTEM_MOUNTING_GUIDE.md`](docs/FILESYSTEM_MOUNTING_GUIDE.md) for comprehensive documentation  
+**🚀 Quick Reference:** See [`docs/QUICK_REFERENCE_FILESYSTEM.md`](docs/QUICK_REFERENCE_FILESYSTEM.md) for examples
+
+## Enhanced Features
+
+### 🔐 Enhanced Security Logging System
+- **SHA-256 code hashing** for security tracking and audit trails
+- **Real-time statistics dashboard** with Chart.js visualizations
+- **Dual logging** (server.log + security.log) for comprehensive monitoring
+- **IP tracking, User-Agent monitoring, error categorization**
+- **Interactive dashboard** at `/api/dashboard/stats/dashboard`
+- **Backward-compatible APIs** maintaining existing functionality
 
 ## Project Structure
 
@@ -159,7 +212,7 @@ MAX_FILE_SIZE=10485760
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
 | POST | `/api/execute` | Execute Python code and return the output |
-| POST | `/api/execute-raw` | Execute Python code with raw text body (no JSON wrapping) |
+| POST | `/api/execute-raw` | Execute Python code with raw text body (no JSON wrapping) |   <--- RECOMMENDED
 | POST | `/api/execute-stream` | Execute code and stream results |
 | POST | `/api/install-package` | Install a Python package via `micropip` |
 | GET  | `/api/packages` | List installed packages |
@@ -190,6 +243,45 @@ MAX_FILE_SIZE=10485760
 | GET | `/api/pyodide-files` | List files in Pyodide virtual filesystem |
 | DELETE | `/api/pyodide-files/:filename` | Delete file from Pyodide filesystem |
 | POST | `/api/extract-plots` | Extract plots from Pyodide filesystem |
+
+## API Response Contract
+
+All API endpoints return responses in a standardized format for consistency and ease of integration. The contract is as follows:
+
+```json
+{
+  "success": true | false,           // Indicates if the operation was successful
+  "data": <object|null>,             // Main result data (object or null if error)
+  "error": <string|null>,            // Error message (string or null if success)
+  "meta": { "timestamp": <string> } // Metadata, always includes ISO timestamp
+}
+```
+
+- On success, `success` is `true`, `data` contains the result, and `error` is `null`.
+- On error, `success` is `false`, `data` is `null`, and `error` contains a descriptive message.
+- `meta.timestamp` is always present and uses ISO 8601 format.
+
+**Example: Successful Response**
+```json
+{
+  "success": true,
+  "data": { "result": "Package installed successfully" },
+  "error": null,
+  "meta": { "timestamp": "2025-08-21T19:30:42.972Z" }
+}
+```
+
+**Example: Error Response**
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "Can't fetch metadata for 'nonexistent-package-xyz123'. Please make sure you have entered a correct package name and correctly specified index_urls (if you changed them).",
+  "meta": { "timestamp": "2025-08-21T19:30:42.972Z" }
+}
+```
+
+All endpoints (including `/api/execute`, `/api/install-package`, `/api/packages`, etc.) follow this contract.
 
 ## Development Workflow
 

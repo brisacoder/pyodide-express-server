@@ -80,6 +80,34 @@ class SeabornTestCase(unittest.TestCase):
                     except OSError as e:
                         print(f"Warning: Could not remove {filename}: {e}")
 
+    @classmethod
+    def _cleanup_pyodide_plots(cls):
+        """Clean up any existing plots in Pyodide virtual filesystem."""
+        cleanup_code = '''
+import os
+plot_dir = '/plots/seaborn'
+if os.path.exists(plot_dir):
+    for file in os.listdir(plot_dir):
+        if file.endswith('.png'):
+            try:
+                os.remove(os.path.join(plot_dir, file))
+                print(f"Removed Pyodide file: {file}")
+            except:
+                pass
+"Pyodide filesystem cleaned"
+'''
+        try:
+            r = requests.post(
+                f"{BASE_URL}/api/execute-raw",
+                data=cleanup_code,
+                headers={"Content-Type": "text/plain"},
+                timeout=30,
+            )
+            if r.status_code == 200:
+                print("✅ Pyodide filesystem cleaned successfully")
+        except Exception as e:
+            print(f"Warning: Could not clean Pyodide filesystem: {e}")
+
     def _save_plot_from_base64(self, base64_data, filename):
         """Save a base64 encoded plot to the local filesystem."""
         try:
@@ -136,7 +164,7 @@ plt.close()
 
 {"plot_base64": plot_b64, "plot_type": "regression", "n_points": n, "correlation": float(df.corr().iloc[0,1])}
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -213,7 +241,7 @@ plt.close()
 
 {"plot_base64": plot_b64, "plot_type": "distribution", "data_means": {col: float(df[col].mean()) for col in df.columns}}
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -290,7 +318,7 @@ result = {
 }
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -373,7 +401,7 @@ result = {
 }
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -431,7 +459,9 @@ plt.text(0.05, 0.95, f'Correlation: {correlation:.3f}',
          bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
 # Save directly to the virtual filesystem
-output_path = '/plots/seaborn/direct_save_regression.png'
+import time
+timestamp = int(time.time() * 1000)  # Generate unique timestamp
+output_path = f'/plots/seaborn/direct_save_regression_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -444,11 +474,12 @@ result = {
     "file_size": file_size,
     "plot_type": "direct_save_regression",
     "correlation": float(correlation),
-    "n_points": n
+    "n_points": n,
+    "filename": output_path
 }
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -460,6 +491,10 @@ result
         self.assertEqual(result.get("plot_type"), "direct_save_regression")
         self.assertGreater(result.get("correlation"), 0.8, "Correlation should be strong positive")
         self.assertEqual(result.get("n_points"), 200)
+
+        # Extract the actual filename from the result
+        filename = result.get("filename", "").split("/")[-1]  # Get filename from path
+        self.assertTrue(filename, "No filename returned in result")        
         
         # Extract virtual files to real filesystem
         extract_response = requests.post(f"{BASE_URL}/api/extract-plots", timeout=30)
@@ -467,8 +502,8 @@ result
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
         
-        # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_regression.png")
+        # Verify the file exists in the local filesystem using the actual filename
+        local_filepath = os.path.join(self.plots_dir, filename)
         self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
         self.assertGreater(os.path.getsize(local_filepath), 0, "Local regression file has zero size")
 
@@ -555,7 +590,10 @@ plt.title('Sample Counts by Group and Category')
 plt.tight_layout()
 
 # Save directly to the virtual filesystem
-output_path = '/plots/seaborn/direct_save_dashboard.png'
+import time
+os.makedirs('/plots/seaborn', exist_ok=True)
+timestamp = int(time.time() * 1000)  # Generate unique timestamp
+output_path = f'/plots/seaborn/direct_save_dashboard_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -573,11 +611,18 @@ result = {
     "n_samples": n_samples,
     "n_groups": len(df['group'].unique()),
     "n_categories": len(df['category'].unique()),
-    "group_means": group_stats['mean']
+    "group_means": group_stats['mean'],
+    "filename": output_path
 }
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+
+        r = requests.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=code,
+            headers={"Content-Type": "text/plain"},
+            timeout=30,
+        )
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -591,17 +636,21 @@ result
         self.assertEqual(result.get("n_groups"), 3)
         self.assertEqual(result.get("n_categories"), 2)
         self.assertIn("A", result.get("group_means", {}))
-        
+
+        # Extract the actual filename from the result
+        filename = result.get("filename", "").split("/")[-1]  # Get filename from path
+        self.assertTrue(filename, "No filename returned in result")
+
         # Extract virtual files to real filesystem
         extract_response = requests.post(f"{BASE_URL}/api/extract-plots", timeout=30)
         self.assertEqual(extract_response.status_code, 200)
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
         
-        # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_dashboard.png")
+        # Verify the file exists in the local filesystem using the actual filename
+        local_filepath = os.path.join(self.plots_dir, filename)
         self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
-        self.assertGreater(os.path.getsize(local_filepath), 0, "Local dashboard file has zero size")
+        self.assertGreater(os.path.getsize(local_filepath), 0, "Local regression file has zero size")
 
 
 if __name__ == "__main__":

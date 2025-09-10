@@ -3,10 +3,31 @@ import subprocess
 import tempfile
 import time
 import unittest
+from pathlib import Path
 
 import requests
 
 BASE_URL = "http://localhost:3000"
+
+
+# Return API contract for Upload
+# success: true,
+# data: {
+# file: {
+#     originalName: req.file.originalname,
+#     sanitizedOriginal: req.file.safeOriginalName,
+#     storedFilename: req.file.filename,
+#     size: req.file.size,
+#     mimetype: req.file.mimetype,
+#     filesystemPath: urlPath, // absolute server path
+#     urlPath,                // "/uploads/<file>"
+#     absoluteUrl,           // "http(s)://host/uploads/<file>"
+#     userAgent: req.get('User-Agent'),
+#     fileSize: req.file.size,
+#     mimeType: req.file.mimetype,
+#     timestamp: new Date().toISOString(),
+# }
+# }
 
 
 def wait_for_server(url: str, timeout: int = 120):
@@ -37,7 +58,11 @@ class APITestCase(unittest.TestCase):
             cls.server = None  # No server to manage
         except RuntimeError:
             # If no server is running, start one
-            cls.server = subprocess.Popen(["node", "src/server.js"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            cls.server = subprocess.Popen(
+                ["node", "src/server.js"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             wait_for_server(f"{BASE_URL}/health")
 
     @classmethod
@@ -58,7 +83,9 @@ class APITestCase(unittest.TestCase):
     def test_02_status(self):
         r = requests.get(f"{BASE_URL}/api/status", timeout=10)
         self.assertEqual(r.status_code, 200)
-        self.assertIn("isReady", r.json())
+        payload = r.json()
+        self.assertIn("data", payload)
+        self.assertIn("isReady", payload["data"])
 
     def test_03_pyodide_health(self):
         r = requests.get(f"{BASE_URL}/api/health", timeout=10)
@@ -83,18 +110,18 @@ class APITestCase(unittest.TestCase):
         r = requests.get(f"{BASE_URL}/api/packages", timeout=10)
         self.assertEqual(r.status_code, 200)
         payload = r.json()
-        self.assertIn("result", payload)
-        
-        # Validate that result contains actual package data
-        result = payload["result"]
+        self.assertIn("data", payload)
+        result = payload["data"]
+        if isinstance(result, dict) and "result" in result:
+            result = result["result"]
         self.assertIsNotNone(result, "Packages result should not be null")
         self.assertIsInstance(result, dict, "Packages result should be a dictionary")
-        
-        # Check for required fields
         self.assertIn("installed_packages", result)
         self.assertIn("total_packages", result)
         self.assertIsInstance(result["installed_packages"], list)
-        self.assertGreater(result["total_packages"], 0, "Should have packages installed")
+        self.assertGreater(
+            result["total_packages"], 0, "Should have packages installed"
+        )
 
     def test_07_execute(self):
         exec_code = '''"""
@@ -103,7 +130,9 @@ basic demonstration
 name = "World"
 f"Hello {name}"
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": exec_code}, timeout=30)
+        r = requests.post(
+            f"{BASE_URL}/api/execute", json={"code": exec_code}, timeout=30
+        )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json().get("result"), "Hello World")
 
@@ -137,35 +166,46 @@ f"{x + 3}"
         self.assertEqual(r.status_code, 200)
         upload_data = r.json()
         self.assertTrue(upload_data.get("success"))
-        self.__class__.pyodide_name = upload_data["file"]["pyodideFilename"]
-        self.__class__.server_filename = os.path.basename(upload_data["file"]["tempPath"])
+        self.assertIn("data", upload_data)
+        self.assertIn("file", upload_data.get("data", {}))
+        file = upload_data["data"]["file"]
+        self.__class__.pyodide_name = file["sanitizedOriginal"]
+        self.__class__.server_filename = Path(file["vfsPath"]).as_posix()
 
     def test_10_list_uploaded_files(self):
         r = requests.get(f"{BASE_URL}/api/uploaded-files", timeout=10)
         self.assertEqual(r.status_code, 200)
-        uploaded_names = [f["filename"] for f in r.json().get("files", [])]
-        self.assertIn(self.__class__.server_filename, uploaded_names)
+        upload_files = r.json()
+        self.assertTrue(upload_files.get("success"))
+        self.assertIn("data", upload_files)
+        self.assertIn("files", upload_files.get("data", {}))
+        files = upload_files["data"]["files"]
+        uploaded_names = [f["filename"] for f in files]
+        self.assertIn(self.__class__.pyodide_name, uploaded_names)
 
     def test_11_file_info(self):
-        r = requests.get(f"{BASE_URL}/api/file-info/{self.__class__.pyodide_name}", timeout=10)
+        r = requests.get(
+            f"{BASE_URL}/api/file-info/{self.__class__.pyodide_name}", timeout=10
+        )
         self.assertEqual(r.status_code, 200)
         info = r.json()
         # For the pyodide filename, only the pyodide file should exist
-        self.assertFalse(info["uploadedFile"]["exists"])  # Upload uses different name
-        self.assertTrue(info["pyodideFile"]["exists"])
+        self.assertTrue(info["data"]["exists"])  # Upload uses different name
+        self.assertTrue(info['data']["pyodideFile"]["exists"])
+        self.assertEqual(info['data']["filename"], self.__class__.pyodide_name)
 
     def test_12_execute_with_uploaded_file(self):
         code = f'''"""
 read csv and compute sum using pandas
 """
 import pandas as pd
-df = pd.read_csv("{self.__class__.pyodide_name}")
+df = pd.read_csv("{Path(self.__class__.server_filename).as_posix()}") # type: ignore
 total = df["value"].sum()
 # Verify we have multiple columns by checking column names
 columns = list(df.columns)
 f"sum={{total}}, columns={{columns}}"
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=30)
         self.assertEqual(r.status_code, 200)
         result = r.json().get("result")
         self.assertIn("sum=6", result)
@@ -178,12 +218,17 @@ f"sum={{total}}, columns={{columns}}"
         self.assertIn(self.__class__.pyodide_name, py_files)
 
     def test_14_delete_pyodide_file(self):
-        r = requests.delete(f"{BASE_URL}/api/pyodide-files/{self.__class__.pyodide_name}", timeout=10)
+        r = requests.delete(
+            f"{BASE_URL}/api/pyodide-files/{self.__class__.pyodide_name}", timeout=10
+        )
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json().get("success"))
 
     def test_15_delete_uploaded_file(self):
-        r = requests.delete(f"{BASE_URL}/api/uploaded-files/{self.__class__.server_filename}", timeout=10)
+        r = requests.delete(
+            f"{BASE_URL}/api/uploaded-files/{self.__class__.server_filename}",
+            timeout=10,
+        )
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.json().get("success"))
 

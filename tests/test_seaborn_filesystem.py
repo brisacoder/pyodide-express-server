@@ -112,8 +112,13 @@ if os.path.exists(plot_dir):
 "Pyodide filesystem cleaned"
 '''
         try:
-            response = requests.post(f"{BASE_URL}/api/execute", json={"code": cleanup_code}, timeout=30)
-            if response.status_code == 200:
+            r = requests.post(
+                f"{BASE_URL}/api/execute-raw",
+                data=cleanup_code,
+                headers={"Content-Type": "text/plain"},
+                timeout=30,
+            )
+            if r.status_code == 200:
                 print("✅ Pyodide filesystem cleaned successfully")
         except Exception as e:
             print(f"Warning: Could not clean Pyodide filesystem: {e}")
@@ -183,7 +188,7 @@ result = {
 }
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))

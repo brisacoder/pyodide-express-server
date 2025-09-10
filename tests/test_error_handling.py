@@ -171,9 +171,15 @@ class ErrorHandlingTestCase(unittest.TestCase):
     def test_install_nonexistent_package(self):
         """Test installing package that doesn't exist"""
         r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "nonexistent-package-xyz123"}, timeout=10)
-        self.assertEqual(r.status_code, 200)  # Should return 200 but with error in result
         response = r.json()
+        # Must return 400 for non-existent package
+        self.assertEqual(r.status_code, 400, f"Expected status code 400, got {r.status_code}")
         self.assertFalse(response.get("success"))
+        self.assertIsNone(response.get("data"))
+        self.assertIsInstance(response.get("error"), str)
+        self.assertIn("Can't fetch metadata for 'nonexistent-package-xyz123'", response.get("error", ""))
+        self.assertIn("meta", response)
+        self.assertIsInstance(response["meta"], dict)
 
     # ===== File Operations Error Tests =====
     

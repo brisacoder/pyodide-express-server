@@ -99,8 +99,8 @@
         /* Make textarea expand to fill available space */
         textarea { 
             width: 100%; 
-            flex-grow: 1;
-            min-height: 300px;
+            height: 300px; /* Use fixed height instead of min-height */
+            max-height: 80vh; /* Prevent it from growing too large */
             font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace;
             border: 2px solid #e1e5e9;
             border-radius: 6px;
@@ -109,6 +109,7 @@
             line-height: 1.5;
             resize: vertical;
             transition: border-color 0.3s;
+            box-sizing: border-box;
         }
         
         textarea:focus {
@@ -120,19 +121,22 @@
         /* Responsive textarea height */
         @media (min-width: 768px) {
             textarea {
-                min-height: 400px;
+                height: 400px; /* Use fixed height instead of min-height */
+                resize: vertical; /* Ensure resize is maintained */
             }
         }
         
         @media (min-width: 1400px) {
             textarea {
-                min-height: 500px;
+                height: 500px; /* Use fixed height instead of min-height */
+                resize: vertical; /* Ensure resize is maintained */
             }
         }
         
         @media (min-width: 2000px) {
             textarea {
-                min-height: 600px;
+                height: 600px; /* Use fixed height instead of min-height */
+                resize: vertical; /* Ensure resize is maintained */
             }
         }
         
@@ -272,6 +276,7 @@
             
             textarea {
                 font-size: 15px;
+                resize: vertical; /* Ensure resize is maintained */
             }
             
             .result {
@@ -402,7 +407,7 @@ result
                 const status = await response.json();
                 const statusDiv = document.getElementById('status');
                 
-                if (status.isReady) {
+                if (status.success && status.data && status.data.isReady) {
                     statusDiv.className = 'status ready';
                     statusDiv.textContent = '✅ Pyodide is ready! Complex Python syntax fully supported.';
                 } else {
@@ -503,7 +508,7 @@ result
             }
             
             const formData = new FormData();
-            formData.append('csvFile', file);
+            formData.append('file', file);
             
             resultDiv.innerHTML = '<div>Uploading file...</div>';
             
@@ -512,55 +517,21 @@ result
                     method: 'POST',
                     body: formData
                 });
-                
+                resultDiv.innerHTML = '<div class="success">' + '1' + '</div>';
+
                 const result = await response.json();
                 
+                resultDiv.innerHTML = '<div class="success">' + '2' + '</div>';
+
                 if (result.success) {
-                    const analysis = result.analysis;
                     let output = "File uploaded successfully!\n\n";
                     output += "Original name: " + result.file.originalName + "\n";
                     output += "Size: " + (result.file.size / 1024).toFixed(1) + " KB\n";
-                    output += "Available as: " + result.file.pyodideFilename + "\n";
-                    output += "Temp path: " + result.file.tempPath + "\n\n";
-                    
-                    if (analysis === null || analysis === undefined) {
-                        output += "⚠️  Analysis failed - file uploaded but not analyzed\n";
-                        output += "You can still use the file in Python code as '" + result.file.pyodideFilename + "'\n\n";
-                        output += "To debug, run this Python code:\n";
-                        output += "import pandas as pd\n";
-                        output += "df = pd.read_csv('" + result.file.pyodideFilename + "')\n";
-                        output += "print(f'Shape: {df.shape}')\n";
-                        output += "print(f'Columns: {list(df.columns)}')\n";
-                    } else if (analysis.success === false) {
-                        output += "❌ Analysis failed: " + (analysis.error || 'Unknown error') + "\n";
-                        if (analysis.python_error) {
-                            output += "Python error: " + analysis.python_error + "\n";
-                        }
-                    } else {
-                        if (analysis.shape && analysis.shape.length === 2) {
-                            output += "Shape: " + analysis.shape[0] + " rows × " + analysis.shape[1] + " columns\n";
-                        }
-                        if (analysis.columns && analysis.columns.length > 0) {
-                            output += "Columns: " + analysis.columns.slice(0, 10).join(', ');
-                            if (analysis.columns.length > 10) {
-                                output += " (+" + (analysis.columns.length - 10) + " more)";
-                            }
-                            output += "\n";
-                        }
-                        if (analysis.memory_usage) {
-                            output += "Memory usage: " + (analysis.memory_usage / 1024).toFixed(1) + " KB\n";
-                        }
-                        if (analysis.has_data !== undefined) {
-                            output += "Has data: " + (analysis.has_data ? "Yes" : "No") + "\n";
-                        }
-                    }
-                    
-                    if (result.debug) {
-                        output += "\nDebug info:\n";
-                        Object.keys(result.debug).forEach(key => {
-                            output += "- " + key + ": " + result.debug[key] + "\n";
-                        });
-                    }
+                    output += "Available as: " + result.file.safeOriginalName + "\n";
+                    output += "Safe original name: " + result.file.safeOriginalName + "\n";
+                    output += "File path: " + result.file.filePath + "\n";
+                    output += "MIME type: " + result.file.mimetype + "\n";
+                    output += "Timestamp: " + result.file.timestamp + "\n";                   
                     
                     resultDiv.innerHTML = '<div class="success">' + output + '</div>';
                 } else {
@@ -658,8 +629,8 @@ result
                 const response = await fetch('/api/packages');
                 const result = await response.json();
                 
-                if (result.success && result.result) {
-                    const packages = result.result.installed_packages || [];
+                if (result.success && result.data) {
+                    const packages = result.data.result.installed_packages || [];
                     let output = 'Installed Packages (' + packages.length + '):\n\n';
                     output += packages.join('\n');
                     resultDiv.innerHTML = `<div class="success">${output}</div>`;

@@ -78,7 +78,11 @@ class BasicErrorHandlingTestCase(unittest.TestCase):
         """Test getting info for nonexistent file"""
         r = requests.get(f"{BASE_URL}/api/file-info/nonexistent.csv", timeout=10)
         # Server returns 404 for nonexistent files, which is correct behavior
-        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.status_code, 200)
+        response = r.json()
+        self.assertEqual(response.get("success"), True)
+        self.assertIn("uploadedFile", response)
+        self.assertEqual(response["uploadedFile"].get("exists"), False)
 
     def test_invalid_endpoint(self):
         """Test requesting non-existent endpoint"""

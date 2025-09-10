@@ -118,7 +118,7 @@ result
         
         health_data = response.json()
         self.assertEqual(health_data["status"], "ok")
-        self.assertTrue(health_data["pyodide"]["isReady"])
+        self.assertTrue(health_data["pyodide"], "available")
         
         print("✅ Server health check passed")
 

@@ -1,5 +1,5 @@
 import base64
-import os
+from pathlib import Path, PurePath
 import time
 import unittest
 
@@ -19,6 +19,15 @@ def wait_for_server(url: str, timeout: int = 180):
             pass
         time.sleep(1)
     raise RuntimeError(f"Server at {url} did not start in time")
+
+
+def get_project_root() -> Path:
+    """Find project root by walking upwards from current file until marker found."""
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError("Project root not found")
 
 
 class MatplotlibTestCase(unittest.TestCase):
@@ -55,9 +64,11 @@ class MatplotlibTestCase(unittest.TestCase):
             cls.has_matplotlib = bool(payload.get("success"))
 
         # Create plots directory if it doesn't exist
-        cls.plots_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plots", "matplotlib")
-        os.makedirs(cls.plots_dir, exist_ok=True)
-        
+        cls.project_root = get_project_root()
+        relative_path = Path(__file__).resolve().relative_to(cls.project_root)
+        cls.plots_dir = relative_path.parent.parent / "plots" / "matplotlib"
+        cls.plots_dir.mkdir(parents=True, exist_ok=True)
+
         # Clean up any existing plots before running tests
         cls._cleanup_existing_plots()
 
@@ -69,22 +80,22 @@ class MatplotlibTestCase(unittest.TestCase):
     @classmethod
     def _cleanup_existing_plots(cls):
         """Remove any existing plot files before running tests."""
-        if hasattr(cls, 'plots_dir') and os.path.exists(cls.plots_dir):
-            for filename in os.listdir(cls.plots_dir):
-                if filename.endswith('.png'):
-                    file_path = os.path.join(cls.plots_dir, filename)
+        if hasattr(cls, 'plots_dir') and Path.exists(cls.plots_dir):
+            for filename in Path.iterdir(cls.plots_dir):
+                if filename.suffix == '.png':
+                    file_path = Path.joinpath(cls.plots_dir, filename.name)
                     try:
-                        os.remove(file_path)
+                        Path.unlink(file_path)
                         print(f"Removed existing plot: {filename}")
                     except OSError as e:
                         print(f"Warning: Could not remove {filename}: {e}")
 
-    def _save_plot_from_base64(self, base64_data, filename):
+    def _save_plot_from_base64(self, base64_data, filename) -> Path:
         """Save a base64 encoded plot to the local filesystem."""
         try:
             # Decode base64 data
             image_data = base64.b64decode(base64_data)
-            filepath = os.path.join(self.plots_dir, filename)
+            filepath = Path.joinpath(self.plots_dir, filename)
             
             with open(filepath, 'wb') as f:
                 f.write(image_data)
@@ -140,7 +151,7 @@ plt.close()
         
         # Save the plot to local filesystem
         filepath = self._save_plot_from_base64(result["plot_base64"], "basic_line_plot.png")
-        self.assertTrue(os.path.exists(filepath))
+        self.assertTrue(Path.exists(filepath))
 
     def test_scatter_plot_with_colors(self):
         """Create a scatter plot with colors using matplotlib and save to filesystem."""
@@ -193,7 +204,7 @@ plt.close()
         
         # Save the plot to local filesystem
         filepath = self._save_plot_from_base64(result["plot_base64"], "scatter_plot_colors.png")
-        self.assertTrue(os.path.exists(filepath))
+        self.assertTrue(Path.exists(filepath))
 
     def test_histogram_plot(self):
         """Create a histogram plot using matplotlib and save to filesystem."""
@@ -261,7 +272,7 @@ result
         
         # Save the plot to local filesystem
         filepath = self._save_plot_from_base64(result["plot_base64"], "histogram_plot.png")
-        self.assertTrue(os.path.exists(filepath))
+        self.assertTrue(Path.exists(filepath))
 
     def test_subplot_complex_plot(self):
         """Create a complex subplot layout using matplotlib and save to filesystem."""
@@ -331,15 +342,21 @@ plt.close()
         
         # Save the plot to local filesystem
         filepath = self._save_plot_from_base64(result["plot_base64"], "subplot_complex.png")
-        self.assertTrue(os.path.exists(filepath))
+        self.assertTrue(Path.exists(filepath))
 
     def test_direct_file_save_basic_plot(self):
         """Create and save a plot directly to filesystem from within Pyodide."""
         if not getattr(self.__class__, "has_matplotlib", False):
             self.skipTest("matplotlib not available in this Pyodide environment")
-        
+
+        # Use unique timestamp-based filename to avoid conflicts
+        import time
+        timestamp = int(time.time() * 1000)
+        file_name = f"direct_save_basic_{timestamp}.png"
+        pyodide_output_path = Path("/").joinpath(self.plots_dir, file_name)
+
         # Create and save a plot directly to the mounted filesystem
-        code = r'''
+        code_1 = fr'''
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
@@ -362,18 +379,21 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 
 # Save directly to the virtual filesystem
-output_path = '/plots/matplotlib/direct_save_basic.png'
+output_path = "{pyodide_output_path.as_posix()}"
+''' 
+        code_2 = r'''
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
-# Verify the file was created
+# Verify the file was created using os module
 file_exists = os.path.exists(output_path)
 file_size = os.path.getsize(output_path) if file_exists else 0
 
-result = {"file_saved": file_exists, "file_size": file_size, "plot_type": "direct_save_basic"}
+result = {"file_saved": file_exists, "file_size": file_size, "plot_type": "direct_save_basic", "filename": output_path}
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code_1 + code_2, headers={"Content-Type": "text/plain"}, timeout=10)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -389,19 +409,29 @@ result
         self.assertEqual(extract_response.status_code, 200)
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
+
+        # Extract the actual filename from the result
+        filename = Path(result.get("filename", "")).name  # Get filename from path
+        self.assertTrue(filename, "No filename returned in result")
+        local_filepath = Path.joinpath(self.project_root, self.plots_dir, Path(filename))      
         
         # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_basic.png")
-        self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
-        self.assertGreater(os.path.getsize(local_filepath), 0, "Local file has zero size")
+        self.assertTrue(Path.exists(local_filepath), f"File not found at {local_filepath}")
+        self.assertGreater(local_filepath.stat().st_size, 0, "Local file has zero size")
 
     def test_direct_file_save_complex_plot(self):
         """Create and save a complex multi-subplot plot directly to filesystem from within Pyodide."""
         if not getattr(self.__class__, "has_matplotlib", False):
             self.skipTest("matplotlib not available in this Pyodide environment")
+
+        # Use unique timestamp-based filename to avoid conflicts
+        import time
+        timestamp = int(time.time() * 1000)
+        file_name = f"direct_save_complex_{timestamp}.png"
+        pyodide_output_path = Path("/").joinpath(self.plots_dir, file_name)            
         
         # Create a complex visualization and save directly
-        code = r'''
+        code_1 = fr'''
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend for headless operation
 import matplotlib.pyplot as plt
@@ -454,7 +484,9 @@ ax4.set_ylabel('Values')
 plt.tight_layout()
 
 # Save directly to the virtual filesystem
-output_path = '/plots/matplotlib/direct_save_complex.png'
+output_path = "{pyodide_output_path.as_posix()}"
+'''
+        code_2 = r'''
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
 plt.close()
 
@@ -467,11 +499,12 @@ result = {
     "file_size": file_size,
     "plot_type": "direct_save_complex",
     "data_points": n_points,
-    "subplot_count": 4
+    "subplot_count": 4,
+    "filename": output_path
 }
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=120)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code_1 + code_2, headers={"Content-Type": "text/plain"}, timeout=120)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -489,11 +522,16 @@ result
         self.assertEqual(extract_response.status_code, 200)
         extract_data = extract_response.json()
         self.assertTrue(extract_data.get("success"), "Failed to extract plot files")
+
+        # Extract the actual filename from the result
+        filename = Path(result.get("filename", "")).name  # Get filename from path
+        self.assertTrue(filename, "No filename returned in result")
+        local_filepath = Path.joinpath(self.project_root, self.plots_dir, Path(filename))        
         
         # Verify the file exists in the local filesystem
-        local_filepath = os.path.join(self.plots_dir, "direct_save_complex.png")
-        self.assertTrue(os.path.exists(local_filepath), f"File not found at {local_filepath}")
-        self.assertGreater(os.path.getsize(local_filepath), 0, "Local complex file has zero size")
+        self.assertTrue(Path.exists(local_filepath), f"File not found at {local_filepath}")
+        self.assertGreater(local_filepath.stat().st_size, 0, "Local file has zero size")
+
 
 
 if __name__ == "__main__":

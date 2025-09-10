@@ -53,6 +53,7 @@ const SECURITY = {
   HASH_ALGORITHM: 'sha256', // SHA-256 for code hashing
   STATS_RETENTION_TIME: TIME.DAY, // 24 hours in milliseconds
   MAX_REQUEST_SIZE: FILE_SIZE.UPLOAD_SIZE_10MB, // 10MB max request size
+  allowedExts: new Set(['.csv', '.txt', '.py', '.png', '.json']), // adjust as needed
 };
 /**
  * Python code execution constants
@@ -85,10 +86,18 @@ const NETWORK = {
  * Pyodide-specific constants
  */
 const PYODIDE = {
-  CDN_VERSION: '0.28.0', // Pyodide CDN version
-  INDEX_URL: 'https://cdn.jsdelivr.net/pyodide/v0.28.0/full/',
+  CDN_VERSION: '0.28.2', // Pyodide CDN version
+  INDEX_URL: 'https://cdn.jsdelivr.net/pyodide/v0.28.2/full/',
   INIT_TIMEOUT: 60000, // 60 seconds for initialization
   ISOLATION_NAMESPACE: '__user_code__', // Namespace for user code isolation
+  // Default bases (name = host folder under pyodide-data, urlBase = relative path for URLs)
+  DEFAULT_PYODIDE_DATA_DIR: 'pyodide_data',
+  DEFAULT_BASES : {
+    uploads: { urlBase: 'uploads', subfolders: [] },
+    plots:   { urlBase: 'plots',   subfolders: [] },
+    in:      { urlBase: 'in',      subfolders: [] },
+    admin:   { urlBase: 'admin',   subfolders: [] },
+  }
 };
 /**
  * Performance and monitoring constants
@@ -144,6 +153,7 @@ const DASHBOARD = {
     MAX_RECENT_ITEMS: 50, // Max items in recent executions
   },
 };
+
 module.exports = {
   TIME,
   FILE_SIZE,

@@ -161,17 +161,13 @@ gs.fit(X, y)
         data = r.json()
         self.assertTrue(data.get("success"), f"Packages endpoint failed: {data}")
         
-        result = data.get("result")
-        self.assertIsNotNone(result, "Packages result should not be null")
-        
+        packages_info = data.get("data")
+        self.assertIsNotNone(packages_info, "Packages result should not be null")
+        result = packages_info.get("result", {})
         installed_packages = result.get("installed_packages", [])
-        self.assertIn("scikit-learn", installed_packages, 
-                     f"scikit-learn not found in installed packages: {installed_packages}")
-        
-        # Also check that it has a reasonable number of total packages
+        self.assertIn("scikit-learn", installed_packages, f"scikit-learn not found in installed packages: {installed_packages}")
         total_packages = result.get("total_packages", 0)
-        self.assertGreater(total_packages, 10, 
-                          f"Expected more packages, got {total_packages}")
+        self.assertGreater(total_packages, 10, f"Expected more packages, got {total_packages}")
 
 
 if __name__ == "__main__":

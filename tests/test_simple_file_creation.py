@@ -1,5 +1,6 @@
 import time
 import unittest
+from pathlib import Path
 
 import requests
 
@@ -18,6 +19,13 @@ def wait_for_server(url: str, timeout: int = 180):
         time.sleep(1)
     raise RuntimeError(f"Server at {url} did not start in time")
 
+def get_project_root() -> Path:
+    """Find project root by walking upwards from current file until marker found."""
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError("Project root not found")
 
 class SimpleFileCreationTestCase(unittest.TestCase):
     """Test simple file creation in Pyodide virtual filesystem to understand directory structure."""
@@ -37,6 +45,10 @@ class SimpleFileCreationTestCase(unittest.TestCase):
             print("✅ Pyodide environment reset successfully")
         else:
             print(f"⚠️ Warning: Could not reset Pyodide environment: {reset_response.status_code}")
+
+        # Create plots directory if it doesn't exist
+        cls.project_root = get_project_root()
+        relative_path = Path(__file__).resolve().relative_to(cls.project_root)
 
     @classmethod
     def tearDownClass(cls):
@@ -79,7 +91,7 @@ except Exception as e:
 
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=60)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=10)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -130,7 +142,7 @@ except Exception as e:
 
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=60)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=10)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -202,7 +214,7 @@ except Exception as e:
 
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=60)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=10)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))
@@ -306,7 +318,7 @@ for path in test_paths:
 
 result
 '''
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=60)
+        r = requests.post(f"{BASE_URL}/api/execute-raw", data=code, headers={"Content-Type": "text/plain"}, timeout=10)
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(data.get("success"), msg=str(data))

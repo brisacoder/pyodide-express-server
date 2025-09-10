@@ -163,16 +163,28 @@ router.post('/install-package', validatePackage, async (req, res) => {
     const result = await pyodideService.installPackage(packageName);
     if (result.success) {
       logger.info('Package installed successfully:', packageName);
+      res.json({
+        success: true,
+        data: result,
+        error: null,
+        meta: { timestamp: new Date().toISOString() }
+      });
     } else {
       logger.warn('Package installation failed:', packageName, result.error);
+      res.status(400).json({
+        success: false,
+        data: null,
+        error: result.error,
+        meta: { timestamp: new Date().toISOString() }
+      });
     }
-    res.json(result);
   } catch (error) {
     logger.error('Package installation endpoint error:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: { timestamp: new Date().toISOString() }
     });
   }
 });
@@ -228,13 +240,19 @@ router.get('/packages', async (req, res) => {
   try {
     // Query the Pyodide runtime for modules that are already loaded.
     const result = await pyodideService.getInstalledPackages();
-    res.json(result);
+    res.json({
+      success: true,
+      data: result,
+      error: null,
+      meta: { timestamp: new Date().toISOString() }
+    });
   } catch (error) {
     logger.error('Package list endpoint error:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: { timestamp: new Date().toISOString() }
     });
   }
 });
@@ -281,15 +299,17 @@ router.post('/reset', async (req, res) => {
     logger.info('Pyodide environment reset successfully');
     res.json({
       success: true,
-      message: 'Pyodide environment reset successfully',
-      timestamp: new Date().toISOString(),
+      data: { message: 'Pyodide environment reset successfully' },
+      error: null,
+      meta: { timestamp: new Date().toISOString() }
     });
   } catch (error) {
     logger.error('Reset endpoint error:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: { timestamp: new Date().toISOString() }
     });
   }
 });
@@ -331,12 +351,19 @@ router.get('/status', (req, res) => {
   try {
     // Query the in-memory service for its readiness and version information.
     const status = pyodideService.getStatus();
-    res.json(status);
+    res.json({
+      success: true,
+      data: status,
+      error: null,
+      meta: { timestamp: new Date().toISOString() }
+    });
   } catch (error) {
     logger.error('Status check failed:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
+      meta: { timestamp: new Date().toISOString() }
     });
   }
 });
@@ -413,9 +440,9 @@ router.get('/health', async (req, res) => {
     if (!status.isReady) {
       return res.status(503).json({
         success: false,
-        status: 'not_ready',
-        message: 'Pyodide is still initializing',
-        pyodide: status,
+        data: null,
+        error: 'Pyodide is still initializing',
+        meta: { status: 'not_ready', timestamp: new Date().toISOString() }
       });
     }
     // Test basic Python execution to verify the runtime actually works.
@@ -423,26 +450,30 @@ router.get('/health', async (req, res) => {
     if (testResult.success && testResult.result === 4) {
       res.json({
         success: true,
-        status: 'healthy',
-        message: 'Python execution is working correctly',
-        pyodide: status,
-        testResult: testResult,
+        data: {
+          status: 'healthy',
+          message: 'Python execution is working correctly',
+          pyodide: status,
+          testResult: testResult
+        },
+        error: null,
+        meta: { timestamp: new Date().toISOString() }
       });
     } else {
       res.status(500).json({
         success: false,
-        status: 'unhealthy',
-        message: 'Python execution test failed',
-        pyodide: status,
-        testResult: testResult,
+        data: null,
+        error: 'Python execution test failed',
+        meta: { status: 'unhealthy', timestamp: new Date().toISOString(), pyodide: status, testResult: testResult }
       });
     }
   } catch (error) {
     logger.error('Python health check failed:', error);
     res.status(500).json({
       success: false,
-      status: 'error',
+      data: null,
       error: error.message,
+      meta: { status: 'error', timestamp: new Date().toISOString() }
     });
   }
 });
