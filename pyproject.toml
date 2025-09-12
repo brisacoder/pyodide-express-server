@@ -6,13 +6,38 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "ipykernel>=6.30.1",
-    "matplotlib>=3.10.5",
-    "numpy>=2.3.2",
-    "pandas>=2.3.1",
-    "requests>=2.32.4",
+    "matplotlib>=3.10.6",
+    "numpy>=2.3.3",
+    "pandas>=2.3.2",
+    "pytest>=8.4.2",
+    "pytest-mock>=3.15.0",
+    "requests>=2.32.5",
 ]
 
 [dependency-groups]
 dev = [
     "flake8>=7.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--strict-config"
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "api: marks tests as API tests",
+    "security: marks tests as security tests"
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning"
 ]
