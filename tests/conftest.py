@@ -136,14 +136,15 @@ def execute_python_code(
     """
     return session.post(
         f"{base_url}/api/execute-raw",
-        json={"code": code, "timeout": timeout},
-        timeout=timeout // 1000 + 10  # Convert to seconds + buffer
+        data=code,  # Send code as raw text, not JSON
+        timeout=timeout // 1000 + 10,  # Convert to seconds + buffer
+        headers={"Content-Type": "text/plain"}
     )
 
 
 def list_files_via_python(
     session: requests.Session,
-    directory: str = "/uploads",
+    directory: str = "/home/pyodide/uploads",
     base_url: str = BASE_URL
 ) -> requests.Response:
     """List files in a directory using Python code execution.
@@ -152,13 +153,13 @@ def list_files_via_python(
     
     Args:
         session: Requests session for making API calls
-        directory: Directory path to list (default: /uploads)
+        directory: Directory path to list (default: /home/pyodide/uploads)
         base_url: Base URL for the API
         
     Returns:
         Response object containing file list
     """
-    code = f"""
+    code = f'''
 import json
 from pathlib import Path
 
@@ -181,7 +182,7 @@ try:
 except Exception as e:
     result = {{'success': False, 'error': str(e)}}
     print(json.dumps(result))
-"""
+'''
     
     return execute_python_code(session, code, base_url=base_url)
 
@@ -189,7 +190,7 @@ except Exception as e:
 def delete_file_via_python(
     session: requests.Session,
     filename: str,
-    directory: str = "/uploads",
+    directory: str = "/home/pyodide/uploads",
     base_url: str = BASE_URL
 ) -> requests.Response:
     """Delete a file using Python code execution.
@@ -199,13 +200,13 @@ def delete_file_via_python(
     Args:
         session: Requests session for making API calls
         filename: Name of the file to delete
-        directory: Directory containing the file (default: /uploads)
+        directory: Directory containing the file (default: /home/pyodide/uploads)
         base_url: Base URL for the API
         
     Returns:
         Response object containing deletion result
     """
-    code = f"""
+    code = f'''
 import json
 from pathlib import Path
 
@@ -221,7 +222,7 @@ try:
 except Exception as e:
     result = {{'success': False, 'error': str(e)}}
     print(json.dumps(result))
-"""
+'''
     
     return execute_python_code(session, code, base_url=base_url)
 

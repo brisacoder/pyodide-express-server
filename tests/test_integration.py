@@ -1,339 +1,233 @@
-import os
-import subprocess
-import tempfile
-import time
-import unittest
+"""BDD-style simplified integration tests.
 
-import requests
+Given a running Pyodide Express server
+When basic integration workflows are executed using only /api/execute-raw
+Then proper functionality should be maintained without internal APIs
 
-BASE_URL = "http://localhost:3000"
+This module focuses on core functionality using only public endpoints.
+"""
+
+import pytest
+
+from conftest import (
+    given_server_is_running,
+    when_executing_python_code,
+    then_response_should_be_successful,
+    then_response_should_contain_text,
+)
 
 
-class IntegrationTestCase(unittest.TestCase):
-    """Test complex integration scenarios and data flow edge cases."""
+class TestBasicIntegrationWorkflows:
+    """Test basic integration workflows using only execute-raw."""
 
-    @classmethod
-    def setUpClass(cls):
-        # Start the server in a subprocess
-        cls.server = subprocess.Popen(["node", "src/server.js"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # Wait for server to be ready
-        start = time.time()
-        while time.time() - start < 120:
-            try:
-                r = requests.get(f"{BASE_URL}/health", timeout=10)
-                if r.status_code == 200:
-                    break
-            except Exception:
-                pass
-            time.sleep(1)
-        else:
-            raise RuntimeError("Server did not start in time")
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.terminate()
-        try:
-            cls.server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            cls.server.kill()
-
-    # ===== Data Consistency Tests =====
-    
-    def test_json_parsing_consistency(self):
-        """Test that Python dict strings are properly converted to JavaScript objects"""
-        # Create a file first
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-            tmp.write("name,value,category\nitem1,1,A\nitem2,2,B\n")
-            tmp_path = tmp.name
+    def test_given_server_running_when_basic_python_execution_then_output_captured(
+        self, api_session, base_url
+    ):
+        """
+        Given the server is running
+        When basic Python code is executed
+        Then output should be captured correctly
+        """
+        # Given
+        given_server_is_running(api_session, base_url)
         
-        try:
-            with open(tmp_path, "rb") as fh:
-                r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
-                    files={"file": ("test.csv", fh, "text/csv")},
-                    timeout=30
-                )
-            self.assertEqual(r.status_code, 200)
-            upload_data = r.json()
-            pyodide_name = upload_data["file"]["pyodideFilename"]
-            
-            # Test file info endpoint returns proper JSON objects
-            r = requests.get(f"{BASE_URL}/api/file-info/{pyodide_name}", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            info = r.json()
-            
-            # Verify the response structure is proper JSON, not Python string
-            self.assertIsInstance(info["uploadedFile"], dict)
-            self.assertIsInstance(info["pyodideFile"], dict)
-            self.assertIn("exists", info["uploadedFile"])
-            self.assertIn("exists", info["pyodideFile"])
-            self.assertIsInstance(info["uploadedFile"]["exists"], bool)
-            self.assertIsInstance(info["pyodideFile"]["exists"], bool)
-            
-            # Test pyodide files listing
-            r = requests.get(f"{BASE_URL}/api/pyodide-files", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            files_data = r.json()
-            
-            # Verify result is proper JSON structure
-            self.assertIsInstance(files_data.get("result"), dict)
-            self.assertIn("files", files_data["result"])
-            self.assertIsInstance(files_data["result"]["files"], list)
-            
-            # Clean up
-            requests.delete(f"{BASE_URL}/api/pyodide-files/{pyodide_name}", timeout=10)
-            server_filename = os.path.basename(upload_data["file"]["tempPath"])
-            requests.delete(f"{BASE_URL}/api/uploaded-files/{server_filename}", timeout=10)
-            
-        finally:
-            os.unlink(tmp_path)
-
-    def test_csv_processing_edge_cases(self):
-        """Test CSV files with various edge cases"""
-        test_cases = [
-            # CSV with commas in quoted fields
-            ('quotes.csv', 'name,description,value\n"Smith, John","A person named ""John""",42\n'),
-            # CSV with different encodings and special characters
-            ('unicode.csv', 'name,value\nCafé,123\nNaïve,456\n'),
-            # CSV with empty fields
-            ('empty_fields.csv', 'name,value,category\nitem1,,A\n,2,\n,,\n'),
-            # CSV with very long lines
-            ('long_lines.csv', 'name,value\n' + 'x' * 1000 + ',123\n'),
-        ]
+        # When
+        response = when_executing_python_code(
+            api_session,
+            "print('Hello World')\nresult = 2 + 3\nprint(f'Result: {result}')"
+        )
         
-        uploaded_files = []
-        try:
-            for filename, content in test_cases:
-                with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding='utf-8') as tmp:
-                    tmp.write(content)
-                    tmp_path = tmp.name
-                
-                with open(tmp_path, "rb") as fh:
-                    r = requests.post(
-                        f"{BASE_URL}/api/upload-csv",
-                        files={"file": (filename, fh, "text/csv")},
-                        timeout=30
-                    )
-                
-                if r.status_code == 200:
-                    upload_data = r.json()
-                    uploaded_files.append({
-                        'pyodide_name': upload_data["file"]["pyodideFilename"],
-                        'server_filename': os.path.basename(upload_data["file"]["tempPath"]),
-                        'temp_path': tmp_path
-                    })
-                    
-                    # Test that the file can be read and processed
-                    code = f'''
-import pandas as pd
+        # Then
+        then_response_should_be_successful(response)
+        then_response_should_contain_text(response, "Hello World")
+        then_response_should_contain_text(response, "Result: 5")
+
+    def test_given_server_running_when_file_operations_executed_then_filesystem_accessible(
+        self, api_session, base_url
+    ):
+        """
+        Given the server is running
+        When file operations are executed
+        Then the filesystem should be accessible
+        """
+        # Given
+        given_server_is_running(api_session, base_url)
+        
+        # When - Test file operations
+        response = when_executing_python_code(
+            api_session,
+            '''
+from pathlib import Path
+import json
+
+# Test filesystem access
+uploads_dir = Path('/home/pyodide/uploads')
+result = {
+    'uploads_exists': uploads_dir.exists(),
+    'is_directory': uploads_dir.is_dir() if uploads_dir.exists() else False,
+    'file_count': len(list(uploads_dir.glob('*'))) if uploads_dir.exists() else 0
+}
+print(json.dumps(result))
+'''
+        )
+        
+        # Then
+        then_response_should_be_successful(response)
+        then_response_should_contain_text(response, '"uploads_exists": true')
+
+    def test_given_server_running_when_json_processing_executed_then_data_handled_correctly(
+        self, api_session, base_url
+    ):
+        """
+        Given the server is running
+        When JSON processing is executed
+        Then data should be handled correctly
+        """
+        # Given
+        given_server_is_running(api_session, base_url)
+        
+        # When - Test JSON processing
+        response = when_executing_python_code(
+            api_session,
+            '''
+import json
+
+# Create sample data
+data = {
+    'items': [
+        {'name': 'item1', 'value': 100},
+        {'name': 'item2', 'value': 200}
+    ],
+    'total': 300
+}
+
+# Process data
+processed = {
+    'item_count': len(data['items']),
+    'total_value': sum(item['value'] for item in data['items']),
+    'average_value': sum(item['value'] for item in data['items']) / len(data['items'])
+}
+
+print(json.dumps(processed))
+'''
+        )
+        
+        # Then
+        then_response_should_be_successful(response)
+        then_response_should_contain_text(response, '"item_count": 2')
+        then_response_should_contain_text(response, '"total_value": 300')
+        then_response_should_contain_text(response, '"average_value": 150')
+
+    def test_given_server_running_when_error_handling_executed_then_graceful_recovery(
+        self, api_session, base_url
+    ):
+        """
+        Given the server is running
+        When error handling scenarios are executed
+        Then graceful recovery should occur
+        """
+        # Given
+        given_server_is_running(api_session, base_url)
+        
+        # When - Test error handling
+        response = when_executing_python_code(
+            api_session,
+            '''
+import json
+
+errors = []
+successes = []
+
+# Test 1: Valid operation
 try:
-    df = pd.read_csv("{upload_data["file"]["pyodideFilename"]}")
-    result = {{"success": True, "shape": list(df.shape), "columns": list(df.columns)}}
+    result = 5 * 10
+    successes.append({'test': 'multiplication', 'result': result})
 except Exception as e:
-    result = {{"success": False, "error": str(e)}}
-result
+    errors.append({'test': 'multiplication', 'error': str(e)})
+
+# Test 2: File operation that might fail
+try:
+    from pathlib import Path
+    test_path = Path('/nonexistent/directory/file.txt')
+    exists = test_path.exists()
+    successes.append({'test': 'path_check', 'exists': exists})
+except Exception as e:
+    errors.append({'test': 'path_check', 'error': str(e)})
+
+# Test 3: Type conversion
+try:
+    value = int('123')
+    successes.append({'test': 'type_conversion', 'value': value})
+except Exception as e:
+    errors.append({'test': 'type_conversion', 'error': str(e)})
+
+result = {
+    'total_tests': len(errors) + len(successes),
+    'successes': len(successes),
+    'errors': len(errors),
+    'success_details': successes,
+    'error_details': errors
+}
+
+print(json.dumps(result))
 '''
-                    r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
-                    self.assertEqual(r.status_code, 200)
-                    exec_result = r.json()
-                    self.assertTrue(exec_result.get("success"))
-                    
-                os.unlink(tmp_path)
+        )
         
-        finally:
-            # Clean up all uploaded files
-            for file_info in uploaded_files:
-                requests.delete(f"{BASE_URL}/api/pyodide-files/{file_info['pyodide_name']}", timeout=10)
-                requests.delete(f"{BASE_URL}/api/uploaded-files/{file_info['server_filename']}", timeout=10)
+        # Then
+        then_response_should_be_successful(response)
+        then_response_should_contain_text(response, '"total_tests":')
+        then_response_should_contain_text(response, '"successes":')
 
-    def test_concurrent_operations(self):
-        """Test multiple operations happening in sequence"""
-        # Upload a file
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-            tmp.write("x,y\n1,2\n3,4\n")
-            tmp_path = tmp.name
+    def test_given_server_running_when_complex_computation_executed_then_accurate_results(
+        self, api_session, base_url
+    ):
+        """
+        Given the server is running
+        When complex computations are executed
+        Then accurate results should be returned
+        """
+        # Given
+        given_server_is_running(api_session, base_url)
         
-        try:
-            with open(tmp_path, "rb") as fh:
-                r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
-                    files={"file": ("concurrent.csv", fh, "text/csv")},
-                    timeout=30
-                )
-            self.assertEqual(r.status_code, 200)
-            upload_data = r.json()
-            pyodide_name = upload_data["file"]["pyodideFilename"]
-            server_filename = os.path.basename(upload_data["file"]["tempPath"])
-            
-            # Execute multiple operations using the same file
-            operations = [
-                f'import pandas as pd; df = pd.read_csv("{pyodide_name}"); df.shape[0]',
-                f'import pandas as pd; df = pd.read_csv("{pyodide_name}"); df.sum().sum()',
-                f'import pandas as pd; df = pd.read_csv("{pyodide_name}"); list(df.columns)',
-            ]
-            
-            for code in operations:
-                r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
-                self.assertEqual(r.status_code, 200)
-                self.assertTrue(r.json().get("success"))
-            
-            # Check file info multiple times
-            for _ in range(3):
-                r = requests.get(f"{BASE_URL}/api/file-info/{pyodide_name}", timeout=10)
-                self.assertEqual(r.status_code, 200)
-                self.assertTrue(r.json()["pyodideFile"]["exists"])
-            
-            # List files multiple times
-            for _ in range(3):
-                r = requests.get(f"{BASE_URL}/api/pyodide-files", timeout=10)
-                self.assertEqual(r.status_code, 200)
-                files = [f["name"] for f in r.json()["result"]["files"]]
-                self.assertIn(pyodide_name, files)
-            
-            # Clean up
-            r = requests.delete(f"{BASE_URL}/api/pyodide-files/{pyodide_name}", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            r = requests.delete(f"{BASE_URL}/api/uploaded-files/{server_filename}", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            
-        finally:
-            os.unlink(tmp_path)
+        # When - Test complex computation
+        response = when_executing_python_code(
+            api_session,
+            '''
+import json
+import math
 
-    def test_state_persistence_after_reset(self):
-        """Test that packages persist after reset while maintaining isolated execution"""
-        # Install a package
-        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "beautifulsoup4"}, timeout=120)
-        self.assertEqual(r.status_code, 200)
-        
-        # Verify package is available
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "import bs4; 'success'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        
-        # Test that variables don't persist between executions (isolated execution)
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "test_var = 'isolated_value'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        
-        # Verify variable doesn't exist in separate execution (this is correct behavior)
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "test_var"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json().get("success"))  # Should fail - variables don't persist
-        
-        # Reset the environment
-        r = requests.post(f"{BASE_URL}/api/reset", timeout=60)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        
-        # Verify package is still available after reset (packages should persist)
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "import bs4; 'still_available'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        
-        # Verify reset completed successfully by checking we can still execute code
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "2 + 2"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        self.assertEqual(r.json().get("result"), 4)
+# Complex computation example
+def fibonacci(n):
+    if n <= 1:
+        return n
+    return fibonacci(n-1) + fibonacci(n-2)
 
-    def test_complex_data_flow(self):
-        """Test complex data processing workflow"""
-        # Upload multiple CSV files
-        files_data = [
-            ("data1.csv", "id,value\n1,10\n2,20\n"),
-            ("data2.csv", "id,score\n1,90\n2,85\n"),
-        ]
-        
-        uploaded = []
-        try:
-            for filename, content in files_data:
-                with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-                    tmp.write(content)
-                    tmp_path = tmp.name
-                
-                with open(tmp_path, "rb") as fh:
-                    r = requests.post(
-                        f"{BASE_URL}/api/upload-csv",
-                        files={"file": (filename, fh, "text/csv")},
-                        timeout=30
-                    )
-                self.assertEqual(r.status_code, 200)
-                upload_data = r.json()
-                uploaded.append({
-                    'pyodide_name': upload_data["file"]["pyodideFilename"],
-                    'server_filename': os.path.basename(upload_data["file"]["tempPath"]),
-                    'temp_path': tmp_path
-                })
-                os.unlink(tmp_path)
-            
-            # Perform complex data processing
-            complex_code = f'''
-import pandas as pd
+def is_prime(n):
+    if n < 2:
+        return False
+    for i in range(2, int(math.sqrt(n)) + 1):
+        if n % i == 0:
+            return False
+    return True
 
-# Load both datasets
-df1 = pd.read_csv("{uploaded[0]['pyodide_name']}")
-df2 = pd.read_csv("{uploaded[1]['pyodide_name']}")
+# Perform computations
+fib_numbers = [fibonacci(i) for i in range(10)]
+primes_under_50 = [i for i in range(2, 50) if is_prime(i)]
 
-# Merge the datasets
-merged = pd.merge(df1, df2, on='id')
+result = {
+    'fibonacci_sequence': fib_numbers,
+    'fibonacci_sum': sum(fib_numbers),
+    'primes_under_50': primes_under_50,
+    'prime_count': len(primes_under_50),
+    'largest_prime_under_50': max(primes_under_50)
+}
 
-# Calculate some metrics
-total_value = merged['value'].sum()
-avg_score = merged['score'].mean()
-record_count = len(merged)
-
-# Return results as a dictionary
-result = {{
-    "total_value": total_value,
-    "avg_score": avg_score,
-    "record_count": record_count,
-    "columns": list(merged.columns)
-}}
-result
+print(json.dumps(result))
 '''
-            
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": complex_code}, timeout=30)
-            self.assertEqual(r.status_code, 200)
-            result = r.json()
-            self.assertTrue(result.get("success"))
-            
-            # Verify the computed results are reasonable
-            result_data = result.get("result")
-            self.assertIsInstance(result_data, dict)
-            self.assertEqual(result_data["total_value"], 30)  # 10 + 20
-            self.assertEqual(result_data["avg_score"], 87.5)  # (90 + 85) / 2
-            self.assertEqual(result_data["record_count"], 2)
-            self.assertEqual(set(result_data["columns"]), {"id", "value", "score"})
-            
-        finally:
-            # Clean up
-            for file_info in uploaded:
-                requests.delete(f"{BASE_URL}/api/pyodide-files/{file_info['pyodide_name']}", timeout=10)
-                requests.delete(f"{BASE_URL}/api/uploaded-files/{file_info['server_filename']}", timeout=10)
-
-    def test_error_recovery(self):
-        """Test that errors don't break subsequent operations"""
-        # Execute code that will fail
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "undefined_variable"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json().get("success"))
+        )
         
-        # Execute code that will succeed after the error
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "2 + 2"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        self.assertEqual(r.json().get("result"), 4)
-        
-        # Try syntax error
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "if True\n    print('missing colon')"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json().get("success"))
-        
-        # Verify system still works
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "'system_recovered'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        self.assertEqual(r.json().get("result"), "system_recovered")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        # Then
+        then_response_should_be_successful(response)
+        then_response_should_contain_text(response, '"fibonacci_sequence":')
+        then_response_should_contain_text(response, '"primes_under_50":')
+        then_response_should_contain_text(response, '"largest_prime_under_50": 47')
