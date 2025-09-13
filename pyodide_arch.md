@@ -407,7 +407,7 @@ This allows JavaScript variables to be accessible in Python code:
 
 ```javascript
 // Lines 124-180: CSV upload endpoint
-app.post('/api/upload-csv', upload.single('csvFile'), async (req, res) => {
+app.post('/api/upload', upload.single('csvFile'), async (req, res) => {
   try {
     // Lines 128-132: File validation
     if (!req.file) {

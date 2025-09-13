@@ -215,7 +215,7 @@ class CrashReportingSystemTestCase(unittest.TestCase):
         test_cases = [
             {'endpoint': '/api/execute', 'data': {}, 'expected_status': [400, 422]},
             {'endpoint': '/api/install-package', 'data': {}, 'expected_status': [400, 422]},
-            {'endpoint': '/api/upload-csv', 'data': {}, 'expected_status': [400, 422]},
+            {'endpoint': '/api/upload', 'data': {}, 'expected_status': [400, 422]},
         ]
         
         for test_case in test_cases:

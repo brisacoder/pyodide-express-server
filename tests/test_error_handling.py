@@ -185,7 +185,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
     
     def test_upload_no_file(self):
         """Test upload without file"""
-        r = requests.post(f"{BASE_URL}/api/upload-csv", timeout=10)
+        r = requests.post(f"{BASE_URL}/api/upload", timeout=10)
         self.assertEqual(r.status_code, 400)
 
     def test_upload_invalid_file_type(self):
@@ -197,7 +197,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
         try:
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
+                    f"{BASE_URL}/api/upload",
                     files={"file": ("malware.exe", fh, "application/octet-stream")},
                 )
             self.assertEqual(r.status_code, 400)
@@ -215,7 +215,7 @@ class ErrorHandlingTestCase(unittest.TestCase):
         try:
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
+                    f"{BASE_URL}/api/upload",
                     files={"file": ("large.csv", fh, "text/csv")},
                 )
             # Should either be 400 (rejected by validation) or 413 (entity too large)

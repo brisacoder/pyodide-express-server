@@ -33,7 +33,7 @@ def test_file_upload():
         with open(temp_file, 'rb') as f:
             files = {'file': ('test_data.json', f, 'application/json')}
             print("Sending POST request...")
-            response = requests.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+            response = requests.post(f"{BASE_URL}/api/upload", files=files, timeout=30)
         
         print(f"Response status: {response.status_code}")
         print(f"Response headers: {dict(response.headers)}")

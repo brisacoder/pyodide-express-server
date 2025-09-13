@@ -220,7 +220,7 @@ POST /api/install-package
 }
 
 // File operations
-POST /api/upload-csv           # Upload CSV files
+POST /api/upload          # Upload CSV files
 GET /api/uploaded-files        # List uploaded files
 DELETE /api/uploaded-files/:filename
 GET /api/plots/extract         # Extract generated plots
@@ -439,7 +439,7 @@ class ApiTestCase(unittest.TestCase):
 | **POST** | `/api/execute` | Execute Python code (JSON response) | `{"code": "...", "timeout": 30000}` | `{"success": true, "result": {...}}` |
 | **POST** | `/api/execute-raw` | Execute Python code (text response) | `{"code": "...", "timeout": 30000}` | Plain text output |
 | **POST** | `/api/install-package` | Install Python package | `{"package": "scikit-learn"}` | `{"success": true, "message": "..."}` |
-| **POST** | `/api/upload-csv` | Upload CSV file | `multipart/form-data` | `{"success": true, "filename": "..."}` |
+| **POST** | `/api/upload` | Upload CSV file | `multipart/form-data` | `{"success": true, "filename": "..."}` |
 | **GET** | `/api/uploaded-files` | List uploaded files | None | `{"files": [...]}` |
 | **DELETE** | `/api/uploaded-files/:filename` | Delete uploaded file | None | `{"success": true}` |
 | **GET** | `/api/plots/extract` | Extract generated plots | None | `{"plots": {...}}` |

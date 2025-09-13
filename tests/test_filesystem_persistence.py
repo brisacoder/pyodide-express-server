@@ -240,7 +240,7 @@ result
         print("   - Don't rely on intermediate files persisting")
         
         print("\\n3. 💾 FOR LARGE DATASETS:")
-        print("   - Upload files via /api/upload-csv endpoint")
+        print("   - Upload files via /api/upload endpoint")
         print("   - Process and return results immediately")
         print("   - Consider external storage for persistence")
         

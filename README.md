@@ -236,7 +236,7 @@ MAX_FILE_SIZE=10485760
 ### File Management
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
-| POST | `/api/upload-csv` | Upload a data file |
+| POST | `/api/upload` | Upload a data file |
 | GET | `/api/uploaded-files` | List uploaded files |
 | GET | `/api/file-info/:filename` | Get file info for uploaded files |
 | DELETE | `/api/uploaded-files/:filename` | Delete uploaded file |

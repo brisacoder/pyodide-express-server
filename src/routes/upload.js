@@ -92,5 +92,5 @@ const upload = multer({
   },
 });
 
-router.post('/upload-csv', upload.single('file'), uploadFile);
+router.post('/upload', upload.single('file'), uploadFile);
 module.exports = router;

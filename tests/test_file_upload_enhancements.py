@@ -61,7 +61,7 @@ class FileUploadEnhancementsTestCase(unittest.TestCase):
         # Upload file
         with open(temp_file, 'rb') as f:
             files = {'file': ('test_data.json', f, 'application/json')}
-            response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+            response = self.session.post(f"{BASE_URL}/api/upload", files=files, timeout=30)
         
         self.assertEqual(response.status_code, 200)
         result = response.json()
@@ -93,7 +93,7 @@ class FileUploadEnhancementsTestCase(unittest.TestCase):
             # Upload file
             with open(temp_file, 'rb') as f:
                 files = {'file': ('identical_name.json', f, 'application/json')}
-                response = self.session.post(f"{BASE_URL}/api/upload-csv", files=files, timeout=30)
+                response = self.session.post(f"{BASE_URL}/api/upload", files=files, timeout=30)
             
             self.assertEqual(response.status_code, 200)
             result = response.json()

@@ -15,6 +15,7 @@ const uploadRoutes = require('./routes/upload');
 const statsRoutes = require('./routes/stats');
 const DashboardRoutes = require('./routes/dashboard');
 const crashReportsRoutes = require('./routes/crashReports');
+const pyodideInternalRoutes = require('./routes/pyodide-internal');
 const app = express();
 // **SECURITY HEADERS - Express Team Standard (Helmet)**
 // Used by major companies for production security
@@ -133,6 +134,7 @@ app.use('/api', executeRoutes);
 app.use('/api', fileRoutes);
 app.use('/api', executeRawRoutes);
 app.use('/api', uploadRoutes);
+app.use('/api', pyodideInternalRoutes);
 app.use('/dashboard', DashboardRoutes);
 app.use('/api/dashboard', statsRoutes);
 app.use('/api/debug', crashReportsRoutes);

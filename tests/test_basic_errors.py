@@ -91,7 +91,7 @@ class BasicErrorHandlingTestCase(unittest.TestCase):
 
     def test_upload_no_file(self):
         """Test upload without file"""
-        r = requests.post(f"{BASE_URL}/api/upload-csv", timeout=10)
+        r = requests.post(f"{BASE_URL}/api/upload", timeout=10)
         self.assertEqual(r.status_code, 400)
 
     def test_upload_invalid_file_type(self):
@@ -103,7 +103,7 @@ class BasicErrorHandlingTestCase(unittest.TestCase):
         try:
             with open(tmp_path, "rb") as fh:
                 r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
+                    f"{BASE_URL}/api/upload",
                     files={"file": ("test.txt", fh, "text/plain")},
                     timeout=10
                 )

@@ -35,7 +35,7 @@ Charlie Wilson,32,Boston,72000`;
     const fileBlob = new Blob([csvData], { type: 'text/csv' });
     formData.append('csvFile', fileBlob, 'sample_data.csv');
 
-    const uploadResponse = await fetch(`${baseUrl}/api/upload-csv`, {
+    const uploadResponse = await fetch(`${baseUrl}/api/upload`, {
       method: 'POST',
       body: formData,
     });

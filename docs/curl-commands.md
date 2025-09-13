@@ -110,17 +110,17 @@ Invoke-RestMethod -Uri "http://localhost:3000/api/execute-raw" `
   -Body $pythonCode
 ```
 
-## 5. Upload CSV (`/upload-csv`)
+## 5. Upload CSV (`/upload`)
 
 **Unix/Linux/macOS**
 ```bash
-curl -X POST http://localhost:3000/api/upload-csv \
+curl -X POST http://localhost:3000/api/upload \
   -F "csvFile=@sample.csv"
 ```
 
 **PowerShell (curl)**
 ```powershell
-curl -X POST "http://localhost:3000/api/upload-csv" `
+curl -X POST "http://localhost:3000/api/upload" `
   -F "csvFile=@sample.csv"
 ```
 
@@ -130,7 +130,7 @@ $form = @{
     csvFile = Get-Item "sample.csv"
 }
 
-Invoke-RestMethod -Uri "http://localhost:3000/api/upload-csv" `
+Invoke-RestMethod -Uri "http://localhost:3000/api/upload" `
   -Method POST -Form $form
 ```
 

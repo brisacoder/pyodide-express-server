@@ -51,6 +51,9 @@ const config = require('../config/index');
 const constants = require('../config/constants');
 const layout = require('./layout');
 
+const PYODIDE_UPLOAD_DIR = config.pyodideBases.uploads.urlBase;
+
+
 class PyodideService {
   constructor() {
     // Will hold the Pyodide instance once ``loadPyodide`` resolves. Until
@@ -416,14 +419,23 @@ print(f"Mount verification: {list(home.iterdir())}")
       // Capture stdout/stderr in JS
       let capturedStdout = '';
       let capturedStderr = '';
-      let restoreStdout;
-      let restoreStderr;
+      let restoreStdout = () => {};  // Default no-op function
+      let restoreStderr = () => {};  // Default no-op function
       try {
-        restoreStdout = this.pyodide.setStdout({ batched: (s) => { capturedStdout += s; } });
-        restoreStderr = this.pyodide.setStderr({ batched: (s) => { capturedStderr += s; } });
+        // Pyodide's setStdout/setStderr might return functions or void
+        const stdoutResult = this.pyodide.setStdout({ batched: (s) => { capturedStdout += s; } });
+        const stderrResult = this.pyodide.setStderr({ batched: (s) => { capturedStderr += s; } });
+        
+        // Only override if functions were returned
+        if (typeof stdoutResult === 'function') {
+          restoreStdout = stdoutResult;
+        }
+        if (typeof stderrResult === 'function') {
+          restoreStderr = stderrResult;
+        }
       } catch (e) {
         logger.error('Failed to set stdout/stderr capture', { error: e?.message });
-        throw e;
+        // Don't throw - continue without capture
       }
 
       // Provide the user code into namespace to avoid large string interpolation
@@ -444,9 +456,21 @@ try:
         _mod = ast.parse(_user_code, mode='exec')
         if _mod.body and isinstance(_mod.body[-1], ast.Expr):
             last = _mod.body.pop()
-            _mod.body.append(ast.Assign(targets=[ast.Name(id='_last_result', ctx=ast.Store())], value=last.value))
+            # Create assignment - use ast.fix_missing_locations instead of manual line numbers
+            assign_node = ast.Assign(
+                targets=[ast.Name(id='_last_result', ctx=ast.Store())],
+                value=last.value
+            )
+            _mod.body.append(assign_node)
         else:
-            _mod.body.append(ast.Assign(targets=[ast.Name(id='_last_result', ctx=ast.Store())], value=ast.Constant(None)))
+            # Create assignment without manual line numbers
+            assign_node = ast.Assign(
+                targets=[ast.Name(id='_last_result', ctx=ast.Store())],
+                value=ast.Constant(value=None)
+            )
+            _mod.body.append(assign_node)
+        # Fix all missing locations in the AST
+        ast.fix_missing_locations(_mod)
         _code = compile(_mod, '<user>', 'exec')
         exec(_code)
         _exec_result = globals().get('_last_result', None)
@@ -502,7 +526,20 @@ except Exception as e:
       let jsResult = null;
       try {
         if (pyResult && typeof pyResult.toJs === 'function') {
-          jsResult = pyResult.toJs({ create_proxies: false, dict_converter: 'object' });
+          // Try different conversion approaches based on Pyodide version
+          try {
+            // Newer Pyodide API
+            jsResult = pyResult.toJs({ create_proxies: false });
+          } catch {
+            try {
+              // Older Pyodide API
+              jsResult = pyResult.toJs();
+            } catch {
+              // Fallback: manually convert if it's a dict
+              logger.warn('Standard toJs conversion failed, attempting manual conversion');
+              jsResult = pyResult;
+            }
+          }
         } else {
           jsResult = pyResult ?? null;
         }
@@ -602,28 +639,31 @@ json.dumps(result)
       throw new Error('Pyodide is not ready');
     }
     try {
-      return await this.executeCode(`
-import sys
-import micropip
-try:
-    # Get list of packages installed via micropip
-    installed_packages = micropip.list()
-    # Also include currently loaded modules for reference
-    loaded_modules = list(sys.modules.keys())
-    result = {
-        'python_version': sys.version,
-        'installed_packages': sorted(list(installed_packages.keys())),
-        'loaded_modules': sorted([pkg for pkg in loaded_modules if not pkg.startswith('_')]),
-        'total_packages': len(installed_packages)
-    }
-except Exception as e:
-    result = {
-        'error': str(e),
-        'fallback_modules': sorted([pkg for pkg in sys.modules.keys() if not pkg.startswith('_')]),
-        'python_version': sys.version
-    }
-result
-      `);
+      // Use proper Python code without indentation issues
+      const code = [
+        'import sys',
+        'import micropip',
+        'try:',
+        '    # Get list of packages installed via micropip',
+        '    installed_packages = micropip.list()',
+        '    # Also include currently loaded modules for reference',
+        '    loaded_modules = list(sys.modules.keys())',
+        '    result = {',
+        '        "python_version": sys.version,',
+        '        "installed_packages": sorted(list(installed_packages.keys())),',
+        '        "loaded_modules": sorted([pkg for pkg in loaded_modules if not pkg.startswith("_")]),',
+        '        "total_packages": len(installed_packages)',
+        '    }',
+        'except Exception as e:',
+        '    result = {',
+        '        "error": str(e),',
+        '        "fallback_modules": sorted([pkg for pkg in sys.modules.keys() if not pkg.startswith("_")]),',
+        '        "python_version": sys.version',
+        '    }',
+        'result'
+      ].join('\n');
+      
+      return await this.executeCode(code);
     } catch (error) {
       throw new Error(`Failed to get package list: ${error.message}`);
     }
@@ -736,18 +776,41 @@ except Exception as e:
       throw new Error('Pyodide is not ready');
     }
     try {
+
       const result = await this.executeCode(`
-import os
+from pathlib import Path
+import json
+
 files = []
 try:
-    for item in os.listdir('.'):
-        if os.path.isfile(item):
-            stat_info = os.stat(item)
-            files.append(item + '|' + str(stat_info.st_size) + '|' + str(stat_info.st_mtime))
-    result = '|||'.join(files) if files else 'EMPTY'
+    # Check uploads directory using pathlib
+    uploads_dir = Path('/home/pyodide') / '${PYODIDE_UPLOAD_DIR}'
+    if uploads_dir.exists() and uploads_dir.is_dir():
+        for file_path in uploads_dir.iterdir():
+            if file_path.is_file():
+                stat_info = file_path.stat()
+                files.append({
+                    'name': file_path.name,
+                    'size': stat_info.st_size,
+                    'modified': stat_info.st_mtime,
+                    'full_path': str(file_path)
+                })
+    
+    result = {
+        'success': True,
+        'files': files,
+        'count': len(files),
+        'directory': str(uploads_dir)
+    }
 except Exception as e:
-    result = 'ERROR:' + str(e)
-result
+    result = {
+        'success': False,
+        'error': str(e),
+        'files': [],
+        'count': 0
+    }
+
+json.dumps(result)
       `);
       // Parse the result manually to avoid proxy issues
       if (result.success && result.result !== null) {
@@ -814,14 +877,37 @@ result
       throw new Error('Pyodide is not ready');
     }
     try {
+      // Get the upload base path from config
+      const uploadBase = config.pyodideBases.uploads.urlBase || 'uploads';
+      const pyodidePath = `/home/pyodide/${uploadBase}/${filename}`;
+      
       const result = await this.executeCode(`
-import os
+from pathlib import Path
 import json
-if os.path.exists('${filename}'):
-    os.remove('${filename}')
-    result = {"success": True, "message": f"File ${filename} deleted successfully"}
-else:
-    result = {"success": False, "error": f"File ${filename} not found"}
+
+try:
+    # Use pathlib with the full path
+    file_path = Path('${pyodidePath}')
+    
+    if file_path.exists():
+        file_path.unlink()  # pathlib equivalent of os.remove()
+        result = {
+            "success": True, 
+            "message": f"File ${filename} deleted successfully",
+            "full_path": str(file_path)
+        }
+    else:
+        result = {
+            "success": False, 
+            "error": f"File ${filename} not found",
+            "full_path": str(file_path)
+        }
+except Exception as e:
+    result = {
+        "success": False,
+        "error": f"Failed to delete ${filename}: {str(e)}"
+    }
+
 json.dumps(result)
       `);
       if (result.success && result.result) {
@@ -924,31 +1010,40 @@ print("Environment reset completed")
       throw new Error('Pyodide is not ready');
     }
     try {
-      const result = await this.executeCode(`
-import os
+    
+    const result = await this.executeCode(`
+from pathlib import Path
+import json
+
 try:
-    exists = os.path.exists('${filename}')
-    if exists:
-        stat_info = os.stat('${filename}')
-        {
+    # Use pathlib for file operations with configured path
+    file_path = Path('/home/pyodide') / '${PYODIDE_UPLOAD_DIR}' / '${filename}'
+    
+    if file_path.exists():
+        stat_info = file_path.stat()
+        result = {
             'exists': True,
             'filename': '${filename}',
+            'full_path': str(file_path),
             'size': stat_info.st_size,
             'modified': stat_info.st_mtime,
-            'is_file': os.path.isfile('${filename}')
+            'is_file': file_path.is_file()
         }
     else:
-        {
+        result = {
             'exists': False,
-            'filename': '${filename}'
+            'filename': '${filename}',
+            'full_path': str(file_path)
         }
 except Exception as e:
-    {
+    result = {
         'exists': False,
         'filename': '${filename}',
         'error': str(e)
     }
-      `);
+
+json.dumps(result)
+    `);
       return result;
     } catch (error) {
       throw new Error(`Failed to check file existence: ${error.message}`);

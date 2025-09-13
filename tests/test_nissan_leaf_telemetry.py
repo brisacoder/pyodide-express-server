@@ -50,7 +50,7 @@ class NissanLeafTelemetryTestCase(unittest.TestCase):
         """Upload the Nissan Leaf telemetry CSV file"""
         with open(self.test_csv_file, 'rb') as file:
             files = {'file': ('DEVRT-NISSAN-LEAF.csv', file, 'text/csv')}
-            response = self.session.post(f"{self.base_url}/api/upload-csv", files=files, timeout=30)
+            response = self.session.post(f"{self.base_url}/api/upload", files=files, timeout=30)
             
         if response.status_code != 200:
             print(f"Upload failed with status {response.status_code}")

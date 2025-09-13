@@ -513,7 +513,7 @@ result
             resultDiv.innerHTML = '<div>Uploading file...</div>';
             
             try {
-                const response = await fetch('/api/upload-csv', {
+                const response = await fetch('/api/upload', {
                     method: 'POST',
                     body: formData
                 });

@@ -25,7 +25,7 @@ const swaggerDefinition = {
     ## Getting Started
     1. Check if Pyodide is ready using \`/api/status\`
     2. Execute Python code using \`/api/execute\`
-    3. Upload CSV files using \`/api/upload-csv\`
+    3. Upload files using \`/api/upload\`
     4. Install packages using \`/api/install-package\`
     **Note**: All Python code executes in a sandboxed WebAssembly environment.
     `,
