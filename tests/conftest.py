@@ -6,7 +6,11 @@ import time
 import requests
 from pathlib import Path
 
+# Global Configuration
 BASE_URL = "http://localhost:3000"
+DEFAULT_TIMEOUT = 30
+SHORT_TIMEOUT = 10
+LONG_TIMEOUT = 120
 
 
 def wait_for_server(url: str, timeout: int = 120):
