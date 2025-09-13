@@ -35,7 +35,8 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "api: marks tests as API tests",
-    "security: marks tests as security tests"
+    "security: marks tests as security tests",
+    "performance: marks tests as performance tests"
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
