@@ -7,6 +7,7 @@ import requests
 from pathlib import Path
 
 BASE_URL = "http://localhost:3000"
+DEFAULT_TIMEOUT = 30  # Global timeout for all API requests
 
 
 def wait_for_server(url: str, timeout: int = 120):
@@ -58,6 +59,12 @@ def server():
 def base_url():
     """Provide the base URL for API requests."""
     return BASE_URL
+
+
+@pytest.fixture
+def timeout():
+    """Provide the default timeout for API requests."""
+    return DEFAULT_TIMEOUT
 
 
 @pytest.fixture(autouse=True)
