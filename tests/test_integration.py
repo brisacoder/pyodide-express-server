@@ -109,6 +109,34 @@ def uploaded_file(
 class TestDataConsistency:
     """Test data processing consistency and file handling."""
 
+    def test_basic_execute_raw_functionality(self, server_ready, execution_timeout):
+        """Given: The server is running
+        When: I execute simple Python code via execute-raw
+        Then: It should return the correct result
+        """
+        # Given - Simple Python calculation
+        python_code = '''
+# Basic calculation
+result = 2 + 2
+print(f"Calculation result: {result}")
+result
+        '''
+
+        # When
+        response = requests.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=python_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=execution_timeout,
+        )
+
+        # Then
+        assert response.status_code == 200
+        result = response.json()
+        assert result.get("success") is True, f"Basic execution failed: {result.get('error')}"
+        assert result.get("result") == 4
+        assert "Calculation result: 4" in result.get("stdout", "")
+
     def test_csv_processing_with_execute_raw(self, server_ready, uploaded_file, execution_timeout):
         """Given: A CSV file is uploaded to the server
         When: I process it using execute-raw endpoint
@@ -117,7 +145,25 @@ class TestDataConsistency:
         # Given
         filename, vfs_path = uploaded_file
 
-        # When - Execute Python code to read and process the CSV
+        # When - First install pandas, then execute Python code to read and process the CSV
+        install_code = '''
+import micropip
+await micropip.install("pandas")
+print("Pandas installed successfully")
+"pandas_installed"
+        '''
+        
+        # Install pandas first
+        install_response = requests.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=install_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=120,  # Package installation takes longer
+        )
+        assert install_response.status_code == 200
+        install_result = install_response.json()
+        assert install_result.get("success") is True, f"Failed to install pandas: {install_result.get('error')}"
+        
         python_code = f'''
 import pandas as pd
 from pathlib import Path
@@ -131,7 +177,7 @@ result = {{
     "shape": list(df.shape),
     "columns": list(df.columns),
     "first_row": df.iloc[0].to_dict() if len(df) > 0 else {{}},
-    "data_types": df.dtypes.to_dict()
+    "data_types": str(df.dtypes.to_dict())  # Convert to string for JSON serialization
 }}
 print(f"Processed CSV with shape: {{result['shape']}}")
 result
@@ -139,7 +185,8 @@ result
 
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": python_code},
+            data=python_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout,
         )
 
@@ -222,7 +269,8 @@ result
                     # When
                     response = requests.post(
                         f"{BASE_URL}/api/execute-raw",
-                        json={"code": python_code},
+                        data=python_code,
+                        headers={"Content-Type": "text/plain"},
                         timeout=execution_timeout
                     )
                     
@@ -307,7 +355,8 @@ result
             for i, code in enumerate(operations):
                 response = requests.post(
                     f"{BASE_URL}/api/execute-raw",
-                    json={"code": code},
+                    data=code,
+                    headers={"Content-Type": "text/plain"},
                     timeout=execution_timeout
                 )
                 assert response.status_code == 200
@@ -326,7 +375,8 @@ result
             
             response = requests.post(
                 f"{BASE_URL}/api/execute-raw",
-                json={"code": verification_code},
+                data=verification_code,
+                headers={"Content-Type": "text/plain"},
                 timeout=execution_timeout
             )
             assert response.status_code == 200
@@ -363,7 +413,8 @@ print(f"Defined variable: {test_var}")
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": define_code},
+            data=define_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout,
         )
         assert response.status_code == 200
@@ -385,7 +436,8 @@ result
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": check_code},
+            data=check_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout,
         )
         assert response.status_code == 200
@@ -411,7 +463,8 @@ print("Package installation completed")
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": install_code},
+            data=install_code,
+            headers={"Content-Type": "text/plain"},
             timeout=120,  # Package installation takes longer
         )
         assert response.status_code == 200
@@ -432,7 +485,8 @@ result
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": verify_code},
+            data=verify_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout,
         )
         assert response.status_code == 200
@@ -447,7 +501,8 @@ result
                 # Then - Verify package is still available after reset
                 response = requests.post(
                     f"{BASE_URL}/api/execute-raw",
-                    json={"code": verify_code},
+                    data=verify_code,
+                    headers={"Content-Type": "text/plain"},
                     timeout=execution_timeout,
                 )
                 assert response.status_code == 200
@@ -533,7 +588,8 @@ result
             
             response = requests.post(
                 f"{BASE_URL}/api/execute-raw",
-                json={"code": complex_code},
+                data=complex_code,
+                headers={"Content-Type": "text/plain"},
                 timeout=execution_timeout
             )
             
@@ -578,7 +634,8 @@ undefined_variable
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": error_code},
+            data=error_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout
         )
         assert response.status_code == 200
@@ -595,7 +652,8 @@ result
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": success_code},
+            data=success_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout
         )
         
@@ -614,7 +672,8 @@ if True
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": syntax_error_code},
+            data=syntax_error_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout
         )
         assert response.status_code == 200
@@ -631,7 +690,8 @@ result
         
         response = requests.post(
             f"{BASE_URL}/api/execute-raw",
-            json={"code": recovery_code},
+            data=recovery_code,
+            headers={"Content-Type": "text/plain"},
             timeout=execution_timeout
         )
         assert response.status_code == 200
