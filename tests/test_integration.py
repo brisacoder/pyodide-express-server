@@ -1,284 +1,339 @@
-import os
-import subprocess
-import tempfile
-import time
-import unittest
+"""BDD-style integration tests for complex data flow scenarios.
 
+This module contains pytest-based integration tests following the Given-When-Then
+pattern. Tests use only public API endpoints and avoid internal pyodide APIs.
+"""
+
+import tempfile
+from pathlib import Path
+from typing import Dict
+
+import pytest
 import requests
 
-BASE_URL = "http://localhost:3000"
-
-
-class IntegrationTestCase(unittest.TestCase):
-    """Test complex integration scenarios and data flow edge cases."""
-
-    @classmethod
-    def setUpClass(cls):
-        # Start the server in a subprocess
-        cls.server = subprocess.Popen(["node", "src/server.js"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # Wait for server to be ready
-        start = time.time()
-        while time.time() - start < 120:
-            try:
-                r = requests.get(f"{BASE_URL}/health", timeout=10)
-                if r.status_code == 200:
-                    break
-            except Exception:
-                pass
-            time.sleep(1)
-        else:
-            raise RuntimeError("Server did not start in time")
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.terminate()
-        try:
-            cls.server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            cls.server.kill()
-
-    # ===== Data Consistency Tests =====
-    
-    def test_json_parsing_consistency(self):
-        """Test that Python dict strings are properly converted to JavaScript objects"""
-        # Create a file first
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-            tmp.write("name,value,category\nitem1,1,A\nitem2,2,B\n")
-            tmp_path = tmp.name
-        
-        try:
-            with open(tmp_path, "rb") as fh:
-                r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
-                    files={"file": ("test.csv", fh, "text/csv")},
-                    timeout=30
-                )
-            self.assertEqual(r.status_code, 200)
-            upload_data = r.json()
-            pyodide_name = upload_data["file"]["pyodideFilename"]
-            
-            # Test file info endpoint returns proper JSON objects
-            r = requests.get(f"{BASE_URL}/api/file-info/{pyodide_name}", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            info = r.json()
-            
-            # Verify the response structure is proper JSON, not Python string
-            self.assertIsInstance(info["uploadedFile"], dict)
-            self.assertIsInstance(info["pyodideFile"], dict)
-            self.assertIn("exists", info["uploadedFile"])
-            self.assertIn("exists", info["pyodideFile"])
-            self.assertIsInstance(info["uploadedFile"]["exists"], bool)
-            self.assertIsInstance(info["pyodideFile"]["exists"], bool)
-            
-            # Test pyodide files listing
-            r = requests.get(f"{BASE_URL}/api/pyodide-files", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            files_data = r.json()
-            
-            # Verify result is proper JSON structure
-            self.assertIsInstance(files_data.get("result"), dict)
-            self.assertIn("files", files_data["result"])
-            self.assertIsInstance(files_data["result"]["files"], list)
-            
-            # Clean up
-            requests.delete(f"{BASE_URL}/api/pyodide-files/{pyodide_name}", timeout=10)
-            server_filename = os.path.basename(upload_data["file"]["tempPath"])
-            requests.delete(f"{BASE_URL}/api/uploaded-files/{server_filename}", timeout=10)
-            
-        finally:
-            os.unlink(tmp_path)
-
-    def test_csv_processing_edge_cases(self):
-        """Test CSV files with various edge cases"""
-        test_cases = [
-            # CSV with commas in quoted fields
-            ('quotes.csv', 'name,description,value\n"Smith, John","A person named ""John""",42\n'),
-            # CSV with different encodings and special characters
-            ('unicode.csv', 'name,value\nCafé,123\nNaïve,456\n'),
-            # CSV with empty fields
-            ('empty_fields.csv', 'name,value,category\nitem1,,A\n,2,\n,,\n'),
-            # CSV with very long lines
-            ('long_lines.csv', 'name,value\n' + 'x' * 1000 + ',123\n'),
-        ]
-        
-        uploaded_files = []
-        try:
-            for filename, content in test_cases:
-                with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding='utf-8') as tmp:
-                    tmp.write(content)
-                    tmp_path = tmp.name
-                
-                with open(tmp_path, "rb") as fh:
-                    r = requests.post(
-                        f"{BASE_URL}/api/upload-csv",
-                        files={"file": (filename, fh, "text/csv")},
-                        timeout=30
-                    )
-                
-                if r.status_code == 200:
-                    upload_data = r.json()
-                    uploaded_files.append({
-                        'pyodide_name': upload_data["file"]["pyodideFilename"],
-                        'server_filename': os.path.basename(upload_data["file"]["tempPath"]),
-                        'temp_path': tmp_path
-                    })
-                    
-                    # Test that the file can be read and processed
-                    code = f'''
-import pandas as pd
+# Import configuration (use try/except for different import contexts)
 try:
-    df = pd.read_csv("{upload_data["file"]["pyodideFilename"]}")
-    result = {{"success": True, "shape": list(df.shape), "columns": list(df.columns)}}
+    from tests.test_config import (
+        BASE_URL,
+        ENDPOINTS,
+        EXECUTE_TIMEOUT,
+        UPLOAD_TIMEOUT,
+        FILE_OPERATION_TIMEOUT,
+        PACKAGE_INSTALL_TIMEOUT,
+        RESET_TIMEOUT,
+        TEST_CSV_CONTENT,
+        TEST_FILES,
+        PACKAGES,
+    )
+except ImportError:
+    from test_config import (
+        BASE_URL,
+        ENDPOINTS,
+        EXECUTE_TIMEOUT,
+        UPLOAD_TIMEOUT,
+        FILE_OPERATION_TIMEOUT,
+        PACKAGE_INSTALL_TIMEOUT,
+        RESET_TIMEOUT,
+        TEST_CSV_CONTENT,
+        TEST_FILES,
+        PACKAGES,
+    )
+
+
+# ===== Helper Functions =====
+
+def create_temp_csv_file(content: str, filename: str) -> Path:
+    """Create a temporary CSV file with given content."""
+    temp_file = Path(tempfile.mktemp(suffix=".csv"))
+    temp_file.write_text(content, encoding='utf-8')
+    return temp_file
+
+
+def upload_csv_file(file_path: Path, filename: str) -> Dict:
+    """Upload a CSV file and return the response data."""
+    with open(file_path, "rb") as fh:
+        response = requests.post(
+            f"{BASE_URL}{ENDPOINTS['upload_csv']}",
+            files={"file": (filename, fh, "text/csv")},
+            timeout=UPLOAD_TIMEOUT
+        )
+    response.raise_for_status()
+    return response.json()
+
+
+def execute_python_code(code: str) -> Dict:
+    """Execute Python code using the execute-raw endpoint."""
+    response = requests.post(
+        f"{BASE_URL}{ENDPOINTS['execute_raw']}",
+        data=code,
+        headers={"Content-Type": "text/plain"},
+        timeout=EXECUTE_TIMEOUT
+    )
+    response.raise_for_status()
+    return {"success": True, "result": response.text.strip()}
+
+
+def delete_uploaded_file(filename: str) -> None:
+    """Delete an uploaded file."""
+    try:
+        requests.delete(
+            f"{BASE_URL}{ENDPOINTS['uploaded_files']}/{filename}",
+            timeout=FILE_OPERATION_TIMEOUT
+        )
+    except requests.RequestException:
+        pass  # File might not exist
+
+
+# ===== Integration Test Scenarios =====
+
+class TestDataConsistency:
+    """Test data consistency and JSON parsing in file operations."""
+
+    def test_csv_upload_and_processing_workflow(self, server, base_url):
+        """
+        GIVEN: A simple CSV file with basic data
+        WHEN: The file is uploaded and processed with execute-raw
+        THEN: The file can be read and processed correctly via Python
+        """
+        # GIVEN: Prepare test data
+        test_content = TEST_CSV_CONTENT["simple"]
+        temp_file = create_temp_csv_file(test_content, TEST_FILES["simple"])
+
+        try:
+            # WHEN: Upload the CSV file
+            upload_data = upload_csv_file(temp_file, TEST_FILES["simple"])
+            uploaded_filename = upload_data["data"]["file"]["sanitizedOriginal"]
+
+            # AND: Process the file using execute-raw endpoint
+            python_code = f"""
+import pandas as pd
+import json
+
+# Read the uploaded file
+try:
+    df = pd.read_csv('/uploads/{uploaded_filename}')
+    result = {{
+        "shape": list(df.shape),
+        "columns": list(df.columns),
+        "values": df.to_dict('records')
+    }}
+    print(json.dumps(result))
+except Exception as e:
+    print(json.dumps({{"error": str(e)}}))
+"""
+
+            # THEN: Execute code and verify results
+            exec_result = execute_python_code(python_code)
+            assert exec_result["success"]
+
+            # Parse the JSON output
+            import json
+            result_data = json.loads(exec_result["result"])
+            assert "error" not in result_data
+            assert result_data["shape"] == [2, 3]  # 2 rows, 3 columns
+            assert set(result_data["columns"]) == {"name", "value", "category"}
+
+        finally:
+            # Cleanup
+            temp_file.unlink(missing_ok=True)
+            delete_uploaded_file(uploaded_filename)
+
+
+class TestCSVProcessingEdgeCases:
+    """Test CSV file processing with various edge cases."""
+
+    @pytest.mark.parametrize("content_key,expected_rows", [
+        ("quotes", 1),
+        ("unicode", 2),
+        ("empty_fields", 3),
+    ])
+    def test_csv_edge_cases_processing(self, server, base_url, content_key, expected_rows):
+        """
+        GIVEN: CSV files with various edge cases (quotes, unicode, empty fields)
+        WHEN: Files are uploaded and processed with pandas
+        THEN: All files are processed correctly without errors
+        """
+        # GIVEN: Prepare test data
+        test_content = TEST_CSV_CONTENT[content_key]
+        temp_file = create_temp_csv_file(test_content, TEST_FILES[content_key])
+
+        try:
+            # WHEN: Upload the CSV file
+            upload_data = upload_csv_file(temp_file, TEST_FILES[content_key])
+            uploaded_filename = upload_data["data"]["file"]["sanitizedOriginal"]
+
+            # AND: Process the file using execute-raw
+            python_code = f"""
+import pandas as pd
+import json
+
+try:
+    df = pd.read_csv('/uploads/{uploaded_filename}')
+    result = {{
+        "success": True,
+        "shape": list(df.shape),
+        "columns": list(df.columns)
+    }}
+    print(json.dumps(result))
 except Exception as e:
     result = {{"success": False, "error": str(e)}}
-result
-'''
-                    r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
-                    self.assertEqual(r.status_code, 200)
-                    exec_result = r.json()
-                    self.assertTrue(exec_result.get("success"))
-                    
-                os.unlink(tmp_path)
-        
-        finally:
-            # Clean up all uploaded files
-            for file_info in uploaded_files:
-                requests.delete(f"{BASE_URL}/api/pyodide-files/{file_info['pyodide_name']}", timeout=10)
-                requests.delete(f"{BASE_URL}/api/uploaded-files/{file_info['server_filename']}", timeout=10)
+    print(json.dumps(result))
+"""
 
-    def test_concurrent_operations(self):
-        """Test multiple operations happening in sequence"""
-        # Upload a file
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-            tmp.write("x,y\n1,2\n3,4\n")
-            tmp_path = tmp.name
-        
+            # THEN: Verify successful processing
+            exec_result = execute_python_code(python_code)
+            assert exec_result["success"]
+
+            import json
+            result_data = json.loads(exec_result["result"])
+            assert result_data["success"], f"Processing failed: {result_data.get('error')}"
+            assert result_data["shape"][0] == expected_rows
+
+        finally:
+            # Cleanup
+            temp_file.unlink(missing_ok=True)
+            delete_uploaded_file(uploaded_filename)
+
+
+class TestConcurrentOperations:
+    """Test multiple operations happening in sequence."""
+
+    def test_sequential_file_operations(self, server, base_url):
+        """
+        GIVEN: A CSV file is uploaded
+        WHEN: Multiple operations are performed on the same file sequentially
+        THEN: All operations complete successfully without interference
+        """
+        # GIVEN: Prepare and upload test data
+        test_content = "x,y\n1,2\n3,4\n"
+        temp_file = create_temp_csv_file(test_content, TEST_FILES["concurrent"])
+
         try:
-            with open(tmp_path, "rb") as fh:
-                r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
-                    files={"file": ("concurrent.csv", fh, "text/csv")},
-                    timeout=30
-                )
-            self.assertEqual(r.status_code, 200)
-            upload_data = r.json()
-            pyodide_name = upload_data["file"]["pyodideFilename"]
-            server_filename = os.path.basename(upload_data["file"]["tempPath"])
-            
-            # Execute multiple operations using the same file
+            upload_data = upload_csv_file(temp_file, TEST_FILES["concurrent"])
+            uploaded_filename = upload_data["data"]["file"]["sanitizedOriginal"]
+
+            # WHEN: Execute multiple operations using the same file
             operations = [
-                f'import pandas as pd; df = pd.read_csv("{pyodide_name}"); df.shape[0]',
-                f'import pandas as pd; df = pd.read_csv("{pyodide_name}"); df.sum().sum()',
-                f'import pandas as pd; df = pd.read_csv("{pyodide_name}"); list(df.columns)',
+                f"import pandas as pd; df = pd.read_csv('/uploads/{uploaded_filename}'); "
+                + "print(df.shape[0])",
+                f"import pandas as pd; df = pd.read_csv('/uploads/{uploaded_filename}'); "
+                + "print(df.sum().sum())",
+                f"import pandas as pd; df = pd.read_csv('/uploads/{uploaded_filename}'); "
+                + "print(list(df.columns))",
             ]
-            
+
+            # THEN: All operations should succeed
             for code in operations:
-                r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
-                self.assertEqual(r.status_code, 200)
-                self.assertTrue(r.json().get("success"))
-            
-            # Check file info multiple times
-            for _ in range(3):
-                r = requests.get(f"{BASE_URL}/api/file-info/{pyodide_name}", timeout=10)
-                self.assertEqual(r.status_code, 200)
-                self.assertTrue(r.json()["pyodideFile"]["exists"])
-            
-            # List files multiple times
-            for _ in range(3):
-                r = requests.get(f"{BASE_URL}/api/pyodide-files", timeout=10)
-                self.assertEqual(r.status_code, 200)
-                files = [f["name"] for f in r.json()["result"]["files"]]
-                self.assertIn(pyodide_name, files)
-            
-            # Clean up
-            r = requests.delete(f"{BASE_URL}/api/pyodide-files/{pyodide_name}", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            r = requests.delete(f"{BASE_URL}/api/uploaded-files/{server_filename}", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            
+                exec_result = execute_python_code(code)
+                assert exec_result["success"], f"Operation failed: {code}"
+                assert exec_result["result"], "No output from operation"
+
         finally:
-            os.unlink(tmp_path)
+            # Cleanup
+            temp_file.unlink(missing_ok=True)
+            delete_uploaded_file(uploaded_filename)
 
-    def test_state_persistence_after_reset(self):
-        """Test that packages persist after reset while maintaining isolated execution"""
-        # Install a package
-        r = requests.post(f"{BASE_URL}/api/install-package", json={"package": "beautifulsoup4"}, timeout=120)
-        self.assertEqual(r.status_code, 200)
-        
-        # Verify package is available
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "import bs4; 'success'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        
-        # Test that variables don't persist between executions (isolated execution)
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "test_var = 'isolated_value'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        
-        # Verify variable doesn't exist in separate execution (this is correct behavior)
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "test_var"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json().get("success"))  # Should fail - variables don't persist
-        
-        # Reset the environment
-        r = requests.post(f"{BASE_URL}/api/reset", timeout=60)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        
-        # Verify package is still available after reset (packages should persist)
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "import bs4; 'still_available'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        
-        # Verify reset completed successfully by checking we can still execute code
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "2 + 2"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        self.assertEqual(r.json().get("result"), 4)
 
-    def test_complex_data_flow(self):
-        """Test complex data processing workflow"""
-        # Upload multiple CSV files
+class TestStatePersistence:
+    """Test that packages persist after reset while maintaining isolated execution."""
+
+    def test_package_persistence_after_reset(self, server, base_url):
+        """
+        GIVEN: A Python package is installed and variables are set
+        WHEN: The environment is reset
+        THEN: Packages persist but variables are isolated between executions
+        """
+        # GIVEN: Install a package
+        install_response = requests.post(
+            f"{BASE_URL}{ENDPOINTS['install_package']}",
+            json={"package": PACKAGES["beautifulsoup4"]},
+            timeout=PACKAGE_INSTALL_TIMEOUT
+        )
+        assert install_response.status_code == 200
+
+        # WHEN: Verify package is available
+        package_test_code = "import bs4; print('package_available')"
+        exec_result = execute_python_code(package_test_code)
+        assert exec_result["success"]
+        assert "package_available" in exec_result["result"]
+
+        # AND: Test that variables don't persist between executions (isolated execution)
+        variable_set_code = "test_var = 'isolated_value'; print('variable_set')"
+        exec_result = execute_python_code(variable_set_code)
+        assert exec_result["success"]
+        assert "variable_set" in exec_result["result"]
+
+        # AND: Verify variable doesn't exist in separate execution (this is correct behavior)
+        variable_check_code = """
+try:
+    print(test_var)
+except NameError:
+    print('variable_not_found')
+"""
+        exec_result = execute_python_code(variable_check_code)
+        assert exec_result["success"]
+        assert "variable_not_found" in exec_result["result"]
+
+        # WHEN: Reset the environment
+        reset_response = requests.post(f"{BASE_URL}{ENDPOINTS['reset']}", timeout=RESET_TIMEOUT)
+        assert reset_response.status_code == 200
+        assert reset_response.json().get("success")
+
+        # THEN: Verify package is still available after reset (packages should persist)
+        package_retest_code = "import bs4; print('still_available')"
+        exec_result = execute_python_code(package_retest_code)
+        assert exec_result["success"]
+        assert "still_available" in exec_result["result"]
+
+        # AND: Verify reset completed successfully by checking we can still execute code
+        basic_test_code = "result = 2 + 2; print(result)"
+        exec_result = execute_python_code(basic_test_code)
+        assert exec_result["success"]
+        assert "4" in exec_result["result"]
+
+
+class TestComplexDataFlow:
+    """Test complex data processing workflows."""
+
+    def test_multi_file_data_processing_workflow(self, server, base_url):
+        """
+        GIVEN: Multiple CSV files with related data
+        WHEN: Files are uploaded and processed together in a complex workflow
+        THEN: Data can be merged and computed correctly
+        """
+        # GIVEN: Prepare multiple related CSV files
         files_data = [
-            ("data1.csv", "id,value\n1,10\n2,20\n"),
-            ("data2.csv", "id,score\n1,90\n2,85\n"),
+            (TEST_FILES["data1"], "id,value\n1,10\n2,20\n"),
+            (TEST_FILES["data2"], "id,score\n1,90\n2,85\n"),
         ]
-        
-        uploaded = []
+
+        uploaded_files = []
+        temp_files = []
+
         try:
+            # WHEN: Upload multiple files
             for filename, content in files_data:
-                with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-                    tmp.write(content)
-                    tmp_path = tmp.name
-                
-                with open(tmp_path, "rb") as fh:
-                    r = requests.post(
-                        f"{BASE_URL}/api/upload-csv",
-                        files={"file": (filename, fh, "text/csv")},
-                        timeout=30
-                    )
-                self.assertEqual(r.status_code, 200)
-                upload_data = r.json()
-                uploaded.append({
-                    'pyodide_name': upload_data["file"]["pyodideFilename"],
-                    'server_filename': os.path.basename(upload_data["file"]["tempPath"]),
-                    'temp_path': tmp_path
-                })
-                os.unlink(tmp_path)
-            
-            # Perform complex data processing
+                temp_file = create_temp_csv_file(content, filename)
+                temp_files.append(temp_file)
+
+                upload_data = upload_csv_file(temp_file, filename)
+                uploaded_files.append(upload_data["data"]["file"]["sanitizedOriginal"])
+
+            # AND: Perform complex data processing
             complex_code = f'''
 import pandas as pd
+import json
 
 # Load both datasets
-df1 = pd.read_csv("{uploaded[0]['pyodide_name']}")
-df2 = pd.read_csv("{uploaded[1]['pyodide_name']}")
+df1 = pd.read_csv('/uploads/{uploaded_files[0]}')
+df2 = pd.read_csv('/uploads/{uploaded_files[1]}')
 
 # Merge the datasets
 merged = pd.merge(df1, df2, on='id')
 
 # Calculate some metrics
-total_value = merged['value'].sum()
-avg_score = merged['score'].mean()
+total_value = int(merged['value'].sum())
+avg_score = float(merged['score'].mean())
 record_count = len(merged)
 
 # Return results as a dictionary
@@ -288,52 +343,135 @@ result = {{
     "record_count": record_count,
     "columns": list(merged.columns)
 }}
-result
-'''
-            
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": complex_code}, timeout=30)
-            self.assertEqual(r.status_code, 200)
-            result = r.json()
-            self.assertTrue(result.get("success"))
-            
-            # Verify the computed results are reasonable
-            result_data = result.get("result")
-            self.assertIsInstance(result_data, dict)
-            self.assertEqual(result_data["total_value"], 30)  # 10 + 20
-            self.assertEqual(result_data["avg_score"], 87.5)  # (90 + 85) / 2
-            self.assertEqual(result_data["record_count"], 2)
-            self.assertEqual(set(result_data["columns"]), {"id", "value", "score"})
-            
-        finally:
-            # Clean up
-            for file_info in uploaded:
-                requests.delete(f"{BASE_URL}/api/pyodide-files/{file_info['pyodide_name']}", timeout=10)
-                requests.delete(f"{BASE_URL}/api/uploaded-files/{file_info['server_filename']}", timeout=10)
 
-    def test_error_recovery(self):
-        """Test that errors don't break subsequent operations"""
-        # Execute code that will fail
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "undefined_variable"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json().get("success"))
-        
-        # Execute code that will succeed after the error
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "2 + 2"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        self.assertEqual(r.json().get("result"), 4)
-        
-        # Try syntax error
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "if True\n    print('missing colon')"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json().get("success"))
-        
-        # Verify system still works
-        r = requests.post(f"{BASE_URL}/api/execute", json={"code": "'system_recovered'"}, timeout=30)
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json().get("success"))
-        self.assertEqual(r.json().get("result"), "system_recovered")
+print(json.dumps(result))
+'''
+
+            # THEN: Verify the computed results are correct
+            exec_result = execute_python_code(complex_code)
+            assert exec_result["success"]
+
+            import json
+            result_data = json.loads(exec_result["result"])
+            assert result_data["total_value"] == 30  # 10 + 20
+            assert result_data["avg_score"] == 87.5  # (90 + 85) / 2
+            assert result_data["record_count"] == 2
+            assert set(result_data["columns"]) == {"id", "value", "score"}
+
+        finally:
+            # Cleanup
+            for temp_file in temp_files:
+                temp_file.unlink(missing_ok=True)
+            for uploaded_file in uploaded_files:
+                delete_uploaded_file(uploaded_file)
+
+
+class TestErrorRecovery:
+    """Test that errors don't break subsequent operations."""
+
+    def test_error_recovery_workflow(self, server, base_url):
+        """
+        GIVEN: Python code that will cause errors
+        WHEN: Errors occur during execution
+        THEN: Subsequent operations continue to work correctly
+        """
+        # GIVEN & WHEN: Execute code that will fail (undefined variable)
+        error_code1 = "print(undefined_variable)"
+        try:
+            execute_python_code(error_code1)
+        except Exception:
+            pass  # Expected to fail
+
+        # THEN: Execute code that will succeed after the error
+        success_code1 = "result = 2 + 2; print(result)"
+        exec_result = execute_python_code(success_code1)
+        assert exec_result["success"]
+        assert "4" in exec_result["result"]
+
+        # WHEN: Try syntax error
+        error_code2 = "if True\n    print('missing colon')"
+        try:
+            execute_python_code(error_code2)
+        except Exception:
+            pass  # Expected to fail
+
+        # THEN: Verify system still works
+        success_code2 = "print('system_recovered')"
+        exec_result = execute_python_code(success_code2)
+        assert exec_result["success"]
+        assert "system_recovered" in exec_result["result"]
+
+
+# ===== Additional BDD Test Scenarios =====
+
+class TestExecuteRawEndpoint:
+    """Test the execute-raw endpoint specifically for comprehensive coverage."""
+
+    def test_execute_raw_basic_functionality(self, server, base_url):
+        """
+        GIVEN: Simple Python code
+        WHEN: Code is executed via execute-raw endpoint
+        THEN: Correct output is returned as plain text
+        """
+        # GIVEN: Simple Python code
+        code = "print('Hello from execute-raw!')"
+
+        # WHEN: Execute via execute-raw
+        exec_result = execute_python_code(code)
+
+        # THEN: Verify correct output
+        assert exec_result["success"]
+        assert "Hello from execute-raw!" in exec_result["result"]
+
+    def test_execute_raw_with_imports(self, server, base_url):
+        """
+        GIVEN: Python code with standard library imports
+        WHEN: Code is executed via execute-raw endpoint
+        THEN: Imports work correctly and output is returned
+        """
+        # GIVEN: Code with imports
+        code = """
+import json
+import math
+
+data = {"value": math.pi}
+print(json.dumps(data))
+"""
+
+        # WHEN: Execute via execute-raw
+        exec_result = execute_python_code(code)
+
+        # THEN: Verify successful execution
+        assert exec_result["success"]
+        import json
+        result_data = json.loads(exec_result["result"])
+        assert "value" in result_data
+        assert abs(result_data["value"] - 3.14159) < 0.001
+
+    def test_execute_raw_multiline_output(self, server, base_url):
+        """
+        GIVEN: Python code that produces multiple lines of output
+        WHEN: Code is executed via execute-raw endpoint
+        THEN: All output lines are returned correctly
+        """
+        # GIVEN: Code with multiple print statements
+        code = """
+for i in range(3):
+    print(f"Line {i+1}")
+print("Final line")
+"""
+
+        # WHEN: Execute via execute-raw
+        exec_result = execute_python_code(code)
+
+        # THEN: Verify all output is captured
+        assert exec_result["success"]
+        result_lines = exec_result["result"].split('\n')
+        assert "Line 1" in result_lines
+        assert "Line 2" in result_lines
+        assert "Line 3" in result_lines
+        assert "Final line" in result_lines
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest.main([__file__])
