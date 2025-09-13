@@ -7,6 +7,9 @@ import requests
 from pathlib import Path
 
 BASE_URL = "http://localhost:3000"
+DEFAULT_TIMEOUT = 30
+MAX_CODE_LENGTH = 50000
+MAX_FILE_SIZE_MB = 10
 
 
 def wait_for_server(url: str, timeout: int = 120):
@@ -58,6 +61,24 @@ def server():
 def base_url():
     """Provide the base URL for API requests."""
     return BASE_URL
+
+
+@pytest.fixture
+def api_timeout():
+    """Provide default API timeout for requests."""
+    return DEFAULT_TIMEOUT
+
+
+@pytest.fixture
+def max_code_length():
+    """Provide maximum allowed code length."""
+    return MAX_CODE_LENGTH
+
+
+@pytest.fixture
+def max_file_size_mb():
+    """Provide maximum allowed file size in MB."""
+    return MAX_FILE_SIZE_MB
 
 
 @pytest.fixture(autouse=True)
