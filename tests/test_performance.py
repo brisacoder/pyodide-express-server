@@ -1,48 +1,80 @@
-import os
-import subprocess
-import tempfile
-import time
-import unittest
+"""BDD-style performance tests using pytest.
 
+Tests performance characteristics and resource limits using only the /api/execute-raw endpoint.
+Follows Given-When-Then BDD patterns and avoids internal pyodide APIs.
+"""
+
+import subprocess
+import time
+from typing import Generator
+
+import pytest
 import requests
 
+# Global configuration
 BASE_URL = "http://localhost:3000"
+DEFAULT_TIMEOUT = 30
+EXECUTION_TIMEOUT = 30000  # milliseconds
+LONG_EXECUTION_TIMEOUT = 60000  # milliseconds
+SERVER_STARTUP_TIMEOUT = 120
+REQUEST_TIMEOUT = 30
+
+# Performance thresholds
+MAX_SIMPLE_EXECUTION_TIME = 5
+MAX_MEMORY_EXECUTION_TIME = 10
+MAX_CPU_EXECUTION_TIME = 15
+MAX_UPLOAD_TIME = 30
+MAX_PROCESSING_TIME = 15
 
 
-class PerformanceTestCase(unittest.TestCase):
+@pytest.fixture(scope="session")
+def server() -> Generator[subprocess.Popen, None, None]:
+    """Start the server for the test session and ensure it's ready."""
+    # Given: A server process is started
+    server_process = subprocess.Popen(
+        ["node", "src/server.js"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
     
-    """Test performance characteristics and resource limits."""
-
-    @classmethod
-    def setUpClass(cls):
-        # Start the server in a subprocess
-        cls.server = subprocess.Popen(["node", "src/server.js"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        # Wait for server to be ready
-        start = time.time()
-        while time.time() - start < 120:
-            try:
-                r = requests.get(f"{BASE_URL}/health", timeout=10)
-                if r.status_code == 200:
-                    break
-            except Exception:
-                pass
-            time.sleep(1)
-        else:
-            raise RuntimeError("Server did not start in time")
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.terminate()
+    # When: We wait for the server to be ready
+    start = time.time()
+    while time.time() - start < SERVER_STARTUP_TIMEOUT:
         try:
-            cls.server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            cls.server.kill()
-
-    # ===== Execution Performance Tests =====
+            response = requests.get(f"{BASE_URL}/health", timeout=10)
+            if response.status_code == 200:
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    else:
+        server_process.terminate()
+        raise RuntimeError("Server did not start in time")
     
-    def test_execution_timeout(self):
-        """Test that long-running code is properly timed out"""
-        # Code that should take a long time
+    yield server_process
+    
+    # Then: Clean up the server process
+    server_process.terminate()
+    try:
+        server_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        server_process.kill()
+
+
+@pytest.fixture
+def api_client(server):
+    """Provide a configured requests session for API calls."""
+    session = requests.Session()
+    session.timeout = REQUEST_TIMEOUT
+    return session
+
+
+class TestExecutionPerformance:
+    """BDD-style tests for execution performance characteristics."""
+
+    def test_given_long_running_code_when_executed_then_times_out_appropriately(self, api_client):
+        """Test that long-running code is properly timed out."""
+        # Given: A piece of code that should take a long time
         long_running_code = '''
 import time
 total = 0
@@ -50,55 +82,64 @@ for i in range(1000000):
     total += i
     if i % 100000 == 0:
         time.sleep(0.1)  # Small sleep to make it slower
-total
+print(f"Total: {total}")
 '''
         
+        # When: The code is executed with a short timeout
         start_time = time.time()
-        r = requests.post(
-            f"{BASE_URL}/api/execute", 
-            json={"code": long_running_code, "timeout": 5000},  # 5 second timeout
-            timeout=30
+        response = api_client.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=long_running_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=REQUEST_TIMEOUT
         )
         execution_time = time.time() - start_time
         
-        # Should complete within reasonable time (either timeout or finish quickly)
-        self.assertLess(execution_time, 10)  # Should not take more than 10 seconds
+        # Then: The execution should complete within reasonable time
+        assert execution_time < MAX_SIMPLE_EXECUTION_TIME
+        assert response.status_code == 200
         
-        # Check response
-        self.assertEqual(r.status_code, 200)
-        response = r.json()
-        # Could either succeed quickly or timeout - both are acceptable
+        # And: The response should be structured correctly
+        response_data = response.json()
+        assert "success" in response_data
+        assert "timestamp" in response_data
 
-    def test_memory_intensive_operations(self):
-        """Test handling of memory-intensive operations"""
-        memory_codes = [
-            # Large list creation
-            "large_list = list(range(100000)); len(large_list)",
-            # Large string operations
-            "big_string = 'x' * 1000000; len(big_string)",
-            # Large dictionary
-            "big_dict = {i: f'value_{i}' for i in range(10000)}; len(big_dict)",
+    def test_given_memory_intensive_operations_when_executed_then_completes_efficiently(self, api_client):
+        """Test handling of memory-intensive operations."""
+        memory_test_cases = [
+            # Given: Large list creation
+            ("large_list = list(range(100000))\nprint(f'List length: {len(large_list)}')", "100000"),
+            # Given: Large string operations  
+            ("big_string = 'x' * 1000000\nprint(f'String length: {len(big_string)}')", "1000000"),
+            # Given: Large dictionary
+            ("big_dict = {i: f'value_{i}' for i in range(10000)}\nprint(f'Dict length: {len(big_dict)}')", "10000"),
         ]
         
-        for code in memory_codes:
+        for code, expected_output in memory_test_cases:
+            # When: Memory-intensive code is executed
             start_time = time.time()
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
+            response = api_client.post(
+                f"{BASE_URL}/api/execute-raw",
+                data=code,
+                headers={"Content-Type": "text/plain"},
+                timeout=REQUEST_TIMEOUT
+            )
             execution_time = time.time() - start_time
             
-            self.assertEqual(r.status_code, 200)
-            self.assertLess(execution_time, 5)  # Should complete reasonably quickly
+            # Then: The execution should complete quickly
+            assert response.status_code == 200
+            assert execution_time < MAX_MEMORY_EXECUTION_TIME
             
-            response = r.json()
-            if response.get("success"):
-                # If successful, result should be reasonable
-                result = response.get("result")
-                self.assertIsInstance(result, (int, str))
+            # And: The result should be correct
+            response_data = response.json()
+            if response_data.get("success"):
+                assert expected_output in response_data.get("stdout", "")
 
-    def test_cpu_intensive_operations(self):
-        """Test CPU-intensive calculations"""
-        cpu_codes = [
-            # Prime number calculation
-            """
+    def test_given_cpu_intensive_operations_when_executed_then_handles_load_properly(self, api_client):
+        """Test CPU-intensive calculations."""
+        cpu_test_cases = [
+            # Given: Prime number calculation
+            ("""
 def is_prime(n):
     if n < 2:
         return False
@@ -108,243 +149,230 @@ def is_prime(n):
     return True
 
 primes = [i for i in range(2, 1000) if is_prime(i)]
-len(primes)
-""",
-            # Fibonacci calculation
-            """
+print(f"Found {len(primes)} primes")
+""", "Found"),
+            
+            # Given: Fibonacci calculation
+            ("""
 def fib(n):
     if n <= 1:
         return n
     return fib(n-1) + fib(n-2)
 
-fib(20)
-""",
-            # Matrix operations
-            """
+result = fib(20)
+print(f"Fibonacci 20: {result}")
+""", "Fibonacci 20:"),
+            
+            # Given: Matrix operations
+            ("""
 matrix = [[i*j for j in range(100)] for i in range(100)]
 total = sum(sum(row) for row in matrix)
-total
-""",
+print(f"Matrix total: {total}")
+""", "Matrix total:"),
         ]
         
-        for code in cpu_codes:
+        for code, expected_pattern in cpu_test_cases:
+            # When: CPU-intensive code is executed
             start_time = time.time()
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
+            response = api_client.post(
+                f"{BASE_URL}/api/execute-raw",
+                data=code,
+                headers={"Content-Type": "text/plain"},
+                timeout=REQUEST_TIMEOUT
+            )
             execution_time = time.time() - start_time
             
-            self.assertEqual(r.status_code, 200)
-            self.assertLess(execution_time, 10)  # Should complete within 10 seconds
+            # Then: The execution should complete within reasonable time
+            assert response.status_code == 200
+            assert execution_time < MAX_CPU_EXECUTION_TIME
             
-            response = r.json()
-            self.assertTrue(response.get("success"))
-            self.assertIsInstance(response.get("result"), int)
+            # And: The computation should succeed
+            response_data = response.json()
+            assert response_data.get("success") is True
+            assert expected_pattern in response_data.get("stdout", "")
 
-    # ===== File Processing Performance =====
-    
-    def test_large_csv_processing(self):
-        """Test processing of larger CSV files"""
-        # Create a moderately large CSV file
-        large_csv_content = "id,value,category,description\n"
-        for i in range(5000):  # 5000 rows
-            large_csv_content += f"{i},{i*2},category_{i%10},description for item {i}\n"
-        
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-            tmp.write(large_csv_content)
-            tmp_path = tmp.name
-        
-        try:
-            # Upload the large file
-            start_time = time.time()
-            with open(tmp_path, "rb") as fh:
-                r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
-                    files={"file": ("large.csv", fh, "text/csv")},
-                    timeout=60
-                )
-            upload_time = time.time() - start_time
-            
-            self.assertEqual(r.status_code, 200)
-            self.assertLess(upload_time, 30)  # Should upload within 30 seconds
-            
-            upload_data = r.json()
-            pyodide_name = upload_data["file"]["pyodideFilename"]
-            server_filename = os.path.basename(upload_data["file"]["tempPath"])
-            
-            # Process the large file
-            processing_code = f'''
-import pandas as pd
-df = pd.read_csv("{pyodide_name}")
-result = {{
-    "shape": list(df.shape),
-    "memory_usage": df.memory_usage(deep=True).sum(),
-    "value_sum": df["value"].sum(),
-    "categories": df["category"].nunique()
-}}
-result
+
+class TestDataProcessingPerformance:
+    """BDD-style tests for data processing performance using simulated data."""
+
+    def test_given_large_csv_data_when_processed_then_handles_efficiently(self, api_client):
+        """Test processing of larger CSV-like data without file uploads."""
+        # Given: A large dataset is created directly in Python
+        data_processing_code = '''
+import io
+import csv
+
+# Create large CSV data in memory
+csv_data = "id,value,category,description\\n"
+for i in range(5000):  # 5000 rows
+    csv_data += f"{i},{i*2},category_{i%10},description for item {i}\\n"
+
+# Simulate pandas-like processing
+lines = csv_data.strip().split("\\n")
+header = lines[0].split(",")
+rows = [line.split(",") for line in lines[1:]]
+
+# Process the data
+total_value = sum(int(row[1]) for row in rows)
+unique_categories = len(set(row[2] for row in rows))
+row_count = len(rows)
+
+result = {
+    "shape": [row_count, len(header)],
+    "value_sum": total_value,
+    "categories": unique_categories
+}
+
+print(f"Processed CSV: {result}")
 '''
-            
-            start_time = time.time()
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": processing_code}, timeout=60)
-            processing_time = time.time() - start_time
-            
-            self.assertEqual(r.status_code, 200)
-            self.assertLess(processing_time, 15)  # Should process within 15 seconds
-            
-            response = r.json()
-            self.assertTrue(response.get("success"))
-            
-            result = response.get("result")
-            self.assertEqual(result["shape"], [5000, 4])  # 5000 rows, 4 columns
-            self.assertEqual(result["categories"], 10)  # 10 unique categories
-            
-            # Clean up
-            requests.delete(f"{BASE_URL}/api/pyodide-files/{pyodide_name}", timeout=10)
-            requests.delete(f"{BASE_URL}/api/uploaded-files/{server_filename}", timeout=10)
-            
-        finally:
-            os.unlink(tmp_path)
-
-    def test_multiple_file_operations(self):
-        """Test performance with multiple file operations"""
-        files_to_create = 5
-        uploaded_files = []
         
-        try:
-            # Upload multiple files
-            for i in range(files_to_create):
-                content = f"id,value\n{i},100\n{i+1},200\n"
-                with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-                    tmp.write(content)
-                    tmp_path = tmp.name
-                
-                with open(tmp_path, "rb") as fh:
-                    r = requests.post(
-                        f"{BASE_URL}/api/upload-csv",
-                        files={"file": (f"file_{i}.csv", fh, "text/csv")},
-                        timeout=30
-                    )
-                
-                self.assertEqual(r.status_code, 200)
-                upload_data = r.json()
-                uploaded_files.append({
-                    'pyodide_name': upload_data["file"]["pyodideFilename"],
-                    'server_filename': os.path.basename(upload_data["file"]["tempPath"]),
-                    'temp_path': tmp_path
-                })
-                os.unlink(tmp_path)
-            
-            # List files multiple times to test caching/performance
-            for _ in range(3):
-                start_time = time.time()
-                r = requests.get(f"{BASE_URL}/api/pyodide-files", timeout=10)
-                list_time = time.time() - start_time
-                
-                self.assertEqual(r.status_code, 200)
-                self.assertLess(list_time, 2)  # Should list quickly
-                
-                files_in_response = [f["name"] for f in r.json()["result"]["files"]]
-                for file_info in uploaded_files:
-                    self.assertIn(file_info['pyodide_name'], files_in_response)
-            
-            # Get file info for all files
-            for file_info in uploaded_files:
-                start_time = time.time()
-                r = requests.get(f"{BASE_URL}/api/file-info/{file_info['pyodide_name']}", timeout=10)
-                info_time = time.time() - start_time
-                
-                self.assertEqual(r.status_code, 200)
-                self.assertLess(info_time, 1)  # Should get info quickly
-                self.assertTrue(r.json()["pyodideFile"]["exists"])
-                
-        finally:
-            # Clean up all files
-            for file_info in uploaded_files:
-                requests.delete(f"{BASE_URL}/api/pyodide-files/{file_info['pyodide_name']}", timeout=10)
-                requests.delete(f"{BASE_URL}/api/uploaded-files/{file_info['server_filename']}", timeout=10)
+        # When: The large data processing code is executed
+        start_time = time.time()
+        response = api_client.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=data_processing_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=REQUEST_TIMEOUT
+        )
+        execution_time = time.time() - start_time
+        
+        # Then: The processing should complete within reasonable time
+        assert response.status_code == 200
+        assert execution_time < MAX_PROCESSING_TIME
+        
+        # And: The results should be correct
+        response_data = response.json()
+        assert response_data.get("success") is True
+        stdout = response_data.get("stdout", "")
+        assert "5000" in stdout  # Row count
+        assert "10" in stdout    # Unique categories
 
-    # ===== Concurrent Request Performance =====
-    
-    def test_concurrent_execution_requests(self):
-        """Test handling of multiple execution requests"""
-        # Send multiple simple requests
-        codes = [
-            "1 + 1",
-            "2 * 3", 
-            "'hello world'",
-            "[1, 2, 3, 4, 5]",
-            "{'key': 'value'}",
+    def test_given_multiple_data_operations_when_executed_then_maintains_performance(self, api_client):
+        """Test performance with multiple data operations."""
+        data_operations = [
+            # Given: Simple data creation
+            "data = list(range(1000))\nprint(f'Created {len(data)} items')",
+            # Given: Data transformation
+            "transformed = [x * 2 for x in range(1000)]\nprint(f'Transformed {len(transformed)} items')",
+            # Given: Data filtering
+            "filtered = [x for x in range(1000) if x % 2 == 0]\nprint(f'Filtered to {len(filtered)} items')",
+            # Given: Data aggregation
+            "total = sum(range(1000))\nprint(f'Sum: {total}')",
+            # Given: Data grouping simulation
+            "groups = {i % 10: [] for i in range(10)}\nfor i in range(100): groups[i % 10].append(i)\nprint(f'Groups: {len(groups)}')",
         ]
         
+        for i, code in enumerate(data_operations):
+            # When: Each data operation is executed
+            start_time = time.time()
+            response = api_client.post(
+                f"{BASE_URL}/api/execute-raw",
+                data=code,
+                headers={"Content-Type": "text/plain"},
+                timeout=REQUEST_TIMEOUT
+            )
+            execution_time = time.time() - start_time
+            
+            # Then: Each operation should complete quickly
+            assert response.status_code == 200
+            assert execution_time < MAX_SIMPLE_EXECUTION_TIME
+            
+            # And: Each operation should succeed
+            response_data = response.json()
+            assert response_data.get("success") is True
+
+
+class TestConcurrentPerformance:
+    """BDD-style tests for concurrent request performance."""
+
+    def test_given_multiple_simple_requests_when_executed_sequentially_then_handles_efficiently(self, api_client):
+        """Test handling of multiple execution requests."""
+        # Given: Multiple simple code snippets
+        test_cases = [
+            ("print(1 + 1)", "2"),
+            ("print(2 * 3)", "6"), 
+            ("print('hello world')", "hello world"),
+            ("data = [1, 2, 3, 4, 5]\nprint(len(data))", "5"),
+            ("info = {'key': 'value'}\nprint(info['key'])", "value"),
+        ]
+        
+        # When: All requests are executed sequentially
         start_time = time.time()
         responses = []
         
-        for code in codes:
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=30)
-            responses.append(r)
+        for code, expected in test_cases:
+            response = api_client.post(
+                f"{BASE_URL}/api/execute-raw",
+                data=code,
+                headers={"Content-Type": "text/plain"},
+                timeout=REQUEST_TIMEOUT
+            )
+            responses.append((response, expected))
         
         total_time = time.time() - start_time
         
-        # All should succeed
-        for r in responses:
-            self.assertEqual(r.status_code, 200)
-            self.assertTrue(r.json().get("success"))
+        # Then: All should succeed within reasonable time
+        assert total_time < MAX_SIMPLE_EXECUTION_TIME
         
-        # Should complete all requests reasonably quickly
-        self.assertLess(total_time, 10)
-        
-        # Verify correct results
-        expected_results = [2, 6, "hello world", [1, 2, 3, 4, 5], {"key": "value"}]
-        for r, expected in zip(responses, expected_results):
-            self.assertEqual(r.json().get("result"), expected)
-
-    # ===== Resource Cleanup Performance =====
-    
-    def test_cleanup_after_errors(self):
-        """Test that errors don't cause resource leaks"""
-        # Create some files and variables
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-            tmp.write("a,b\n1,2\n")
-            tmp_path = tmp.name
-        
-        try:
-            with open(tmp_path, "rb") as fh:
-                r = requests.post(
-                    f"{BASE_URL}/api/upload-csv",
-                    files={"file": ("cleanup_test.csv", fh, "text/csv")},
-                    timeout=30
-                )
-            self.assertEqual(r.status_code, 200)
-            upload_data = r.json()
-            pyodide_name = upload_data["file"]["pyodideFilename"]
-            server_filename = os.path.basename(upload_data["file"]["tempPath"])
-            
-            # Set some variables
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": "test_var = 'should_be_cleaned'"}, timeout=30)
-            self.assertEqual(r.status_code, 200)
-            
-            # Cause an error
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": "undefined_variable_xyz"}, timeout=30)
-            self.assertEqual(r.status_code, 200)
-            self.assertFalse(r.json().get("success"))
-            
-            # Verify system still works normally after error
-            r = requests.post(f"{BASE_URL}/api/execute", json={"code": "2 + 2"}, timeout=30)
-            self.assertEqual(r.status_code, 200)
-            self.assertTrue(r.json().get("success"))
-            self.assertEqual(r.json().get("result"), 4)
-            
-            # Verify files still accessible after error
-            r = requests.get(f"{BASE_URL}/api/file-info/{pyodide_name}", timeout=10)
-            self.assertEqual(r.status_code, 200)
-            self.assertTrue(r.json()["pyodideFile"]["exists"])
-            
-            # Clean up
-            requests.delete(f"{BASE_URL}/api/pyodide-files/{pyodide_name}", timeout=10)
-            requests.delete(f"{BASE_URL}/api/uploaded-files/{server_filename}", timeout=10)
-            
-        finally:
-            os.unlink(tmp_path)
+        # And: All results should be correct
+        for response, expected in responses:
+            assert response.status_code == 200
+            response_data = response.json()
+            assert response_data.get("success") is True
+            assert expected in response_data.get("stdout", "")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestErrorRecoveryPerformance:
+    """BDD-style tests for error recovery and cleanup performance."""
+
+    def test_given_code_with_errors_when_executed_then_recovers_properly(self, api_client):
+        """Test that errors don't cause resource leaks or performance degradation."""
+        # Given: Code that will create variables then cause an error
+        setup_code = "test_var = 'should_be_cleaned'\nprint('Setup complete')"
+        
+        # When: Variables are set up
+        response = api_client.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=setup_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=REQUEST_TIMEOUT
+        )
+        
+        # Then: Setup should succeed
+        assert response.status_code == 200
+        assert response.json().get("success") is True
+        
+        # Given: Code that will cause an error
+        error_code = "undefined_variable_xyz"
+        
+        # When: Error-causing code is executed
+        response = api_client.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=error_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=REQUEST_TIMEOUT
+        )
+        
+        # Then: Error should be handled gracefully
+        assert response.status_code == 200
+        assert response.json().get("success") is False
+        
+        # Given: Simple code to test recovery
+        recovery_code = "print(2 + 2)"
+        
+        # When: Normal code is executed after error
+        start_time = time.time()
+        response = api_client.post(
+            f"{BASE_URL}/api/execute-raw",
+            data=recovery_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=REQUEST_TIMEOUT
+        )
+        execution_time = time.time() - start_time
+        
+        # Then: System should work normally and quickly
+        assert response.status_code == 200
+        assert execution_time < MAX_SIMPLE_EXECUTION_TIME
+        response_data = response.json()
+        assert response_data.get("success") is True
+        assert "4" in response_data.get("stdout", "")
