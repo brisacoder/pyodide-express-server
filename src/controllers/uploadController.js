@@ -41,7 +41,11 @@ async function uploadFile(req, res) {
     if (!req.file) {
       return res.status(400).json({
         success: false,
+        data: null,
         error: 'No file uploaded',
+        meta: {
+          timestamp: new Date().toISOString()
+        }
       });
     }
 
@@ -58,7 +62,7 @@ async function uploadFile(req, res) {
       storedFilename: req.file.filename,
       size: req.file.size,
       mimetype: req.file.mimetype,
-      vfsPath : vfsPath , // Pyodide virtual filesystem path. External Python programs will us it 
+      vfsPath : vfsPath, // Pyodide virtual filesystem path. External Python programs will us it
       urlPath,                // "/uploads/<file>"
       absoluteUrl,           // "http(s)://host/uploads/<file>"
       userAgent: req.get('User-Agent'),
@@ -99,6 +103,10 @@ async function uploadFile(req, res) {
           mimeType: req.file.mimetype,
           timestamp: new Date().toISOString(),
         }
+      },
+      error: null,
+      meta: {
+        timestamp: new Date().toISOString()
       }
     });
     logger.info('=== FILE UPLOAD DEBUG END ===');
@@ -108,9 +116,12 @@ async function uploadFile(req, res) {
     logger.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString(),
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
     });
   }
 }

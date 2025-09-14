@@ -9,7 +9,6 @@ const path = require('path');
 const pyodideService = require('../services/pyodide-service');
 const logger = require('../utils/logger');
 const config = require('../config');
-const { meta } = require('@eslint/js');
 const router = express.Router();
 // Get upload directory from environment or default
 const UPLOAD_DIR = path.resolve(path.join(config.pyodideDataDir, config.pyodideBases.uploads.urlBase));
@@ -71,6 +70,10 @@ router.get('/uploaded-files', (req, res) => {
           count: 0,
           uploadDir: UPLOAD_DIR,
           message: 'Upload directory does not exist',
+        },
+        error: null,
+        meta: {
+          timestamp: new Date().toISOString()
         }
       });
     }
@@ -106,6 +109,7 @@ router.get('/uploaded-files', (req, res) => {
     logger.error('Error listing uploaded files:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
       meta: {
         timestamp: new Date().toISOString(),
@@ -173,24 +177,25 @@ router.get('/uploaded-files', (req, res) => {
 router.delete('/uploaded-files/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
-    
+
     // Security check - prevent path traversal
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       logger.warn(`Attempted path traversal in file deletion: ${filename}`);
       return res.status(400).json({
         success: false,
+        data: null,
         error: 'Invalid filename',
         meta: {
           timestamp: new Date().toISOString(),
         },
       });
     }
-    
+
     logger.info(`Attempting to delete file from Pyodide: ${filename}`);
-    
+
     // Delete the file from within Pyodide's virtual filesystem
     const result = await pyodideService.deletePyodideFile(filename);
-    
+
     if (result.success) {
       logger.info(`Deleted file from Pyodide: ${filename}`);
       res.json({
@@ -198,6 +203,7 @@ router.delete('/uploaded-files/:filename', async (req, res) => {
         data: {
           message: result.message || `File ${filename} deleted successfully`,
         },
+        error: null,
         meta: {
           timestamp: new Date().toISOString(),
         },
@@ -207,16 +213,18 @@ router.delete('/uploaded-files/:filename', async (req, res) => {
       if (result.error && result.error.includes('not found')) {
         return res.status(404).json({
           success: false,
+          data: null,
           error: 'File not found',
           meta: {
             timestamp: new Date().toISOString(),
           },
         });
       }
-      
+
       // Other errors
       return res.status(500).json({
         success: false,
+        data: null,
         error: result.error || 'Failed to delete file',
         meta: {
           timestamp: new Date().toISOString(),
@@ -227,6 +235,7 @@ router.delete('/uploaded-files/:filename', async (req, res) => {
     logger.error('Error deleting uploaded file:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
       meta: {
         timestamp: new Date().toISOString(),
@@ -313,7 +322,7 @@ router.get('/file-info/:filename', async (req, res) => {
         data: {
           exists: false,
           filename: filename,
-          pyodideFile: null,        
+          pyodideFile: null,
           size: null,
           uploaded: null,
           modified: null,
@@ -321,7 +330,7 @@ router.get('/file-info/:filename', async (req, res) => {
         },
       meta: {
         timestamp: new Date().toISOString(),
-      }     
+      }
     };
     // Check uploaded file on the Node.js filesystem
     const vfsPath  = path.posix.join(config.pyodideBases.uploads.urlBase, filename);
@@ -336,7 +345,7 @@ router.get('/file-info/:filename', async (req, res) => {
         modified: stats.mtime,
         vfsPath: vfsPath,
       };
-    } 
+    }
     // Check whether the file also exists inside Pyodide's in-memory FS
     try {
       const pyodideResult = await pyodideService.executeCode(`

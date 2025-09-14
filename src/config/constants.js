@@ -59,11 +59,14 @@ const SECURITY = {
  * Python code execution constants
  */
 const EXECUTION = {
-  DEFAULT_TIMEOUT: 30000, // 30 seconds default timeout
-  MAX_TIMEOUT: 300000, // 5 minutes maximum timeout
+  DEFAULT_TIMEOUT: 10000, // 10 seconds default timeout (further reduced for stability)
+  MAX_TIMEOUT: 30000, // 30 seconds maximum timeout (further reduced)
   MIN_TIMEOUT: 1000, // 1 second minimum timeout
   MAX_CODE_LENGTH: FILE_SIZE.CODE_SIZE_1MB, // 1MB maximum code size
-  MEMORY_LIMIT: 512 * FILE_SIZE.MB, // 512MB memory limit
+  MEMORY_LIMIT: 128 * FILE_SIZE.MB, // 128MB memory limit (further reduced)
+  MAX_ITERATIONS: 50000, // Maximum loop iterations before timeout (reduced)
+  MAX_RECURSION_DEPTH: 50, // Maximum recursion depth (reduced)
+  HEARTBEAT_INTERVAL: 5000, // Check runtime health every 5 seconds
 };
 /**
  * Server configuration constants
@@ -98,6 +101,19 @@ const PYODIDE = {
     in:      { urlBase: 'in',      subfolders: [] },
     admin:   { urlBase: 'admin',   subfolders: [] },
   }
+};
+
+/**
+ * Process Pool configuration constants
+ */
+const PROCESS_POOL = {
+  DEFAULT_POOL_SIZE: 2,              // Number of persistent Pyodide processes
+  MIN_POOL_SIZE: 1,                  // Minimum pool size
+  MAX_POOL_SIZE: 8,                  // Maximum pool size (reasonable for most systems)
+  MAX_EXECUTIONS_PER_PROCESS: 50,   // Recycle process after this many executions
+  PROCESS_INIT_TIMEOUT: 90000,       // 90 seconds for Pyodide initialization
+  PROCESS_IDLE_TIMEOUT: 300000,      // 5 minutes idle timeout before process cleanup
+  POOL_HEALTH_CHECK_INTERVAL: 30000, // Check pool health every 30 seconds
 };
 /**
  * Performance and monitoring constants
@@ -163,6 +179,7 @@ module.exports = {
   SERVER,
   NETWORK,
   PYODIDE,
+  PROCESS_POOL,
   PERFORMANCE,
   DASHBOARD,
 };

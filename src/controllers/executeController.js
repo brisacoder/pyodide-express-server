@@ -20,16 +20,26 @@ const crypto = require('crypto');
  * // Success response:
  * // {
  * //   "success": true,
- * //   "output": "1.24.3\n",
- * //   "executionTime": 150,
- * //   "timestamp": "2025-08-20T10:30:00Z"
+ * //   "data": {
+ * //     "result": null,
+ * //     "stdout": "1.24.3\n",
+ * //     "stderr": "",
+ * //     "executionTime": 150
+ * //   },
+ * //   "error": null,
+ * //   "meta": {
+ * //     "timestamp": "2025-08-20T10:30:00Z"
+ * //   }
  * // }
  *
  * // Error response:
  * // {
  * //   "success": false,
+ * //   "data": null,
  * //   "error": "SyntaxError: invalid syntax",
- * //   "timestamp": "2025-08-20T10:30:00Z"
+ * //   "meta": {
+ * //     "timestamp": "2025-08-20T10:30:00Z"
+ * //   }
  * // }
  *
  * @description
@@ -56,8 +66,11 @@ async function executeRaw(req, res) {
     if (!code || typeof code !== 'string' || !code.trim()) {
       return res.status(400).json({
         success: false,
+        data: null,
         error: 'No Python code provided in request body',
-        timestamp: new Date().toISOString(),
+        meta: {
+          timestamp: new Date().toISOString()
+        }
       });
     }
     // Generate code hash for tracking and security
@@ -94,7 +107,21 @@ async function executeRaw(req, res) {
         codeHash: codeHash.substring(0, 16),
       });
     }
-    res.json(result);
+    // Format response according to API contract
+    res.json({
+      success: result.success,
+      data: result.success ? {
+        result: {
+          stdout: result.stdout || result.result || '',
+          stderr: result.stderr || '',
+          executionTime: executionTime
+        }
+      } : null,
+      error: result.success ? null : result.error,
+      meta: {
+        timestamp: result.timestamp || new Date().toISOString()
+      }
+    });
   } catch (error) {
     const executionTime = Date.now() - startTime;
     logger.error('Raw execution endpoint error:', {
@@ -111,8 +138,11 @@ async function executeRaw(req, res) {
     });
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString()
+      }
     });
   }
 }
@@ -142,10 +172,16 @@ async function executeRaw(req, res) {
  * // Success response:
  * // {
  * //   "success": true,
- * //   "output": "",
- * //   "plots": ["/plots/matplotlib/chart.png"],
- * //   "executionTime": 890,
- * //   "timestamp": "2025-08-20T10:30:00Z"
+ * //   "data": {
+ * //     "result": null,
+ * //     "stdout": "",
+ * //     "stderr": "",
+ * //     "executionTime": 890
+ * //   },
+ * //   "error": null,
+ * //   "meta": {
+ * //     "timestamp": "2025-08-20T10:30:00Z"
+ * //   }
  * // }
  *
  * // Complex execution with data analysis:
@@ -217,7 +253,20 @@ async function executeCode(req, res) {
         codeHash: codeHash.substring(0, 16),
       });
     }
-    res.json(result);
+    // Format response according to API contract
+    res.json({
+      success: result.success,
+      data: result.success ? {
+        result: result.result,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        executionTime: executionTime
+      } : null,
+      error: result.success ? null : result.error,
+      meta: {
+        timestamp: result.timestamp || new Date().toISOString()
+      }
+    });
   } catch (error) {
     const executionTime = Date.now() - startTime;
     logger.error('Execution endpoint error:', {
@@ -234,8 +283,11 @@ async function executeCode(req, res) {
     });
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString()
+      }
     });
   }
 }
@@ -253,14 +305,19 @@ async function executeCode(req, res) {
  * // Response:
  * // {
  * //   "success": true,
- * //   "files": {
- * //     "/uploads": ["data.csv", "users.xlsx"],
- * //     "/plots/matplotlib": ["chart1.png", "analysis.jpg"],
- * //     "/plots/seaborn": ["correlation.png"],
- * //     "/tmp": ["temp_data.json"]
+ * //   "data": {
+ * //     "files": {
+ * //       "/uploads": ["data.csv", "users.xlsx"],
+ * //       "/plots/matplotlib": ["chart1.png", "analysis.jpg"],
+ * //       "/plots/seaborn": ["correlation.png"],
+ * //       "/tmp": ["temp_data.json"]
+ * //     },
+ * //     "totalFiles": 6
  * //   },
- * //   "totalFiles": 6,
- * //   "timestamp": "2025-08-20T10:30:00Z"
+ * //   "error": null,
+ * //   "meta": {
+ * //     "timestamp": "2025-08-20T10:30:00Z"
+ * //   }
  * // }
  *
  * @description
@@ -284,13 +341,29 @@ async function executeCode(req, res) {
 async function listPyodideFiles(req, res) {
   try {
     const result = await pyodideService.listPyodideFiles();
-    res.json(result);
+    // If the service already returns in API contract format, use it directly
+    if (result.success !== undefined && result.data !== undefined && result.meta !== undefined) {
+      res.json(result);
+    } else {
+      // Otherwise, wrap it in the API contract format
+      res.json({
+        success: true,
+        data: result,
+        error: null,
+        meta: {
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
   } catch (error) {
     logger.error('Pyodide file list endpoint error:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString()
+      }
     });
   }
 }
@@ -354,17 +427,37 @@ async function deletePyodideFile(req, res) {
     const result = await pyodideService.deletePyodideFile(filename);
     // Check if file was not found and return 404
     if (!result.success && result.error && result.error.includes('not found')) {
-      return res.status(404).json(result);
+      return res.status(404).json({
+        success: result.success,
+        data: null,
+        error: result.error,
+        meta: {
+          timestamp: result.timestamp || new Date().toISOString()
+        }
+      });
     }
     // Return appropriate status based on success
     const statusCode = result.success ? 200 : 500;
-    res.status(statusCode).json(result);
+    res.status(statusCode).json({
+      success: result.success,
+      data: result.success ? {
+        message: result.message,
+        filename: result.filename
+      } : null,
+      error: result.success ? null : result.error,
+      meta: {
+        timestamp: result.timestamp || new Date().toISOString()
+      }
+    });
   } catch (error) {
     logger.error('Pyodide file deletion endpoint error:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString()
+      }
     });
   }
 }

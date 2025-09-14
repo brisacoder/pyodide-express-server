@@ -6,88 +6,14 @@
  * initializing Pyodide for every execution.
  * 
  * Key Features:
- * - Persistent process pool for performance
- * - True process isolation prevents server crashes
- * - Automatic process recycling after errors
- * - Support for concurrent executions
- * - Comprehensive error handling and logging
- */
-
-const PyodideProcessPool = require('./pyodide-process-pool');
-const logger = require('../utils/logger');
-const config = require('../config/index');
-
-class PyodideService {
-  constructor() {
-    this.processPool = new PyodideProcessPool({
-      poolSize: config.processPool.poolSize,
-      maxExecutions: config.processPool.maxExecutions,
-      processInitTimeout: config.processPool.processInitTimeout,
-      executionTimeout: config.constants?.EXECUTION?.DEFAULT_TIMEOUT || 30000
-    });
-    this.defaultTimeout = config.constants?.EXECUTION?.DEFAULT_TIMEOUT || 30000;
-    this.isReady = false;
-    this.initializationPromise = null;
-    
-    // Initialize service
-    this.initialize();
-  }
-
-  /**
-   * Initialize the Pyodide service
-   * @private
-   * @returns {Promise<void>} Initialization promise
+ * - Per  /**
+   * Get service readiness status
+   * @returns {boolean} Whether the service is ready
    */
-  async initialize() {
-    if (this.initializationPromise) {
-      return this.initializationPromise;
-    }
-
-    this.initializationPromise = this._doInitialize();
-    return this.initializationPromise;
+  isServiceReady() {
+    return this.isReady;
   }
 
-  /**
-   * Perform actual initialization
-   * @private
-   */
-  async _doInitialize() {
-    try {
-      logger.info('Initializing Pyodide service with process pool', {
-        component: 'pyodide-service',
-        action: 'initialize'
-      });
-
-      // Initialize the process pool
-      await this.processPool.initialize();
-
-      // Test that the pool is working
-      const testResult = await this.processPool.executeCode(
-        'print("Pyodide service initialized successfully")',
-        {},
-        20000 // 20 second timeout for initialization test
-      );
-
-      if (!testResult.success) {
-        throw new Error(`Initialization test failed: ${testResult.error}`);
-      }
-
-      this.isReady = true;
-      
-      logger.info('Pyodide service initialized successfully', {
-        component: 'pyodide-service',
-        processPool: true,
-        poolStats: this.processPool.getStats()
-      });
-
-    } catch (error) {
-      logger.error('Failed to initialize Pyodide service', {
-        component: 'pyodide-service',
-        error: error.message
-      });
-      throw error;
-    }
-  }
   /**
    * Delete a file from the Pyodide virtual filesystem
    * @param {string} filename - Name of the file to delete
@@ -217,6 +143,91 @@ print(f"MESSAGE: {message}")
         message: `Exception during file deletion: ${error.message}`,
         error: error.message
       };
+    }
+  }
+
+  /**
+   * Shutdown the service and cleanup resources
+   */cess pool for performance
+ * - True process isolation prevents server crashes
+ * - Automatic process recycling after errors
+ * - Support for concurrent executions
+ * - Comprehensive error handling and logging
+ */
+
+const PyodideProcessPool = require('./pyodide-process-pool');
+const logger = require('../utils/logger');
+const config = require('../config/index');
+
+class PyodideService {
+  constructor() {
+    this.processPool = new PyodideProcessPool({
+      poolSize: config.processPool.poolSize,
+      maxExecutions: config.processPool.maxExecutions,
+      processInitTimeout: config.processPool.processInitTimeout,
+      executionTimeout: config.constants?.EXECUTION?.DEFAULT_TIMEOUT || 30000
+    });
+    this.defaultTimeout = config.constants?.EXECUTION?.DEFAULT_TIMEOUT || 30000;
+    this.isReady = false;
+    this.initializationPromise = null;
+    
+    // Initialize service
+    this.initialize();
+  }
+
+  /**
+   * Initialize the Pyodide service
+   * @private
+   * @returns {Promise<void>} Initialization promise
+   */
+  async initialize() {
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = this._doInitialize();
+    return this.initializationPromise;
+  }
+
+  /**
+   * Perform actual initialization
+   * @private
+   */
+  async _doInitialize() {
+    try {
+      logger.info('Initializing Pyodide service with process pool', {
+        component: 'pyodide-service',
+        action: 'initialize'
+      });
+
+      // Initialize the process pool
+      await this.processPool.initialize();
+
+      // Test that the pool is working
+      const testResult = await this.processPool.executeCode(
+        'print("Pyodide service initialized successfully")',
+        {},
+        20000 // 20 second timeout for initialization test
+      );
+
+      if (!testResult.success) {
+        throw new Error(`Initialization test failed: ${testResult.error}`);
+      }
+
+      this.isReady = true;
+      
+      logger.info('Pyodide service initialized successfully', {
+        component: 'pyodide-service',
+        processPool: true,
+        poolStats: this.processPool.getStats()
+      });
+
+    } catch (error) {
+      logger.error('Failed to initialize Pyodide service', {
+        component: 'pyodide-service',
+        error: error.message
+      });
+      throw error;
     }
   }
 

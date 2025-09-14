@@ -6,7 +6,9 @@ const config = require('../config');
 const { uploadFile } = require('../controllers/uploadController');
 const { sanitizeFilenameSegment } = require('./safePath'); // from earlier code
 const router = express.Router();
-const pyodideService = require('../services/pyodide-service');
+
+// Use the pyodide_data uploads directory
+const UPLOAD_DIR = path.resolve(path.join(config.pyodideDataDir, config.pyodideBases.uploads.urlBase));
 
 /**
  * Guard against double-extension tricks (e.g., "data.csv.exe").
@@ -49,14 +51,14 @@ function uniqueFilenameSync(dir, base, ext) {
 
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, pyodideService.basesReal.uploads.dirReal), // Use the real uploads path
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR), // Use the pyodide_data uploads directory
 
   filename: (req, file, cb) => {
     try {
       const ext = path.extname(file.originalname).toLowerCase();
       const rawBase = path.basename(file.originalname, ext);
 
-      const uploadsDir = pyodideService.basesReal.uploads.dirReal;
+      const uploadsDir = UPLOAD_DIR;
       const safeBase = sanitizeFilenameSegment(rawBase) || 'unnamed';
       const finalName = uniqueFilenameSync(uploadsDir, safeBase, ext);
 

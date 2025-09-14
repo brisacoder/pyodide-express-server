@@ -22,6 +22,13 @@ const config = {
       return constants.PYODIDE.DEFAULT_BASES;
     }
   })(),
+  processPool: {
+    poolSize: parseInt(process.env.PYODIDE_POOL_SIZE, 10) || constants.PROCESS_POOL.DEFAULT_POOL_SIZE,
+    maxExecutions: parseInt(process.env.PYODIDE_MAX_EXECUTIONS, 10) || constants.PROCESS_POOL.MAX_EXECUTIONS_PER_PROCESS,
+    processInitTimeout: parseInt(process.env.PYODIDE_INIT_TIMEOUT, 10) || constants.PROCESS_POOL.PROCESS_INIT_TIMEOUT,
+    idleTimeout: parseInt(process.env.PYODIDE_IDLE_TIMEOUT, 10) || constants.PROCESS_POOL.PROCESS_IDLE_TIMEOUT,
+    healthCheckInterval: parseInt(process.env.PYODIDE_HEALTH_CHECK_INTERVAL, 10) || constants.PROCESS_POOL.POOL_HEALTH_CHECK_INTERVAL,
+  },
   dotenvLoaded,
 };
 module.exports = config;
