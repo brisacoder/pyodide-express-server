@@ -21,7 +21,7 @@ const crypto = require('crypto');
  * // {
  * //   "success": true,
  * //   "data": {
- * //     "result": null,
+ * //     "result": "1.24.3\n",
  * //     "stdout": "1.24.3\n",
  * //     "stderr": "",
  * //     "executionTime": 150
@@ -108,14 +108,14 @@ async function executeRaw(req, res) {
       });
     }
     // Format response according to API contract
+    // For execute-raw: data should contain result, stdout, stderr directly
     res.json({
       success: result.success,
       data: result.success ? {
-        result: {
-          stdout: result.stdout || result.result || '',
-          stderr: result.stderr || '',
-          executionTime: executionTime
-        }
+        result: result.result || result.stdout || '',
+        stdout: result.stdout || '',
+        stderr: result.stderr || '',
+        executionTime: executionTime
       } : null,
       error: result.success ? null : result.error,
       meta: {
