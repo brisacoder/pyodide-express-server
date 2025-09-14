@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 200
+extend-ignore = 
+    # F541: f-string without any placeholders (consistent with ruff)
+    F541,
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # W503: line break before binary operator (deprecated)
+    W503
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    .pytest_cache,
+    build,
+    dist,
+    *.egg-info
