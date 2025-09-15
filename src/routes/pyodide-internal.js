@@ -366,19 +366,27 @@ result
     });
     res.json({
       success: true,
-      message: 'All files cleared successfully',
-      cleared: {
-        uploaded_files: uploadedFilesCleared,
-        pyodide_files: pyodideFilesCleared,
+      data: {
+        message: 'All files cleared successfully',
+        cleared: {
+          uploaded_files: uploadedFilesCleared,
+          pyodide_files: pyodideFilesCleared,
+        }
       },
-      timestamp: new Date().toISOString(),
+      error: null,
+      meta: {
+        timestamp: new Date().toISOString(),
+      }
     });
   } catch (error) {
     logger.error('Error clearing files:', error);
     res.status(500).json({
       success: false,
+      data: null,
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString(),
+      }
     });
   }
 });

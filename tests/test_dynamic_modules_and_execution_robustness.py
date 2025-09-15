@@ -13,15 +13,17 @@ All tests follow BDD patterns and use /api/execute-raw with plain text.
 Server must return API contract: {success, data, error, meta}
 """
 
+import json
+from typing import Any, Dict, Optional
+
 import pytest
 import requests
-from typing import Dict, Any, Optional
-import json
 
 
 # Configuration Constants
 class TestConfig:
     """Test configuration constants - no hardcoded values"""
+
     BASE_URL = "http://localhost:3000"
     DEFAULT_TIMEOUT = 30
     EXECUTION_TIMEOUT = 30000  # Milliseconds for Pyodide execution
@@ -108,7 +110,9 @@ def api_contract_validator(response: requests.Response) -> Optional[Dict[str, An
         return None
 
 
-def execute_python_code(api_session: requests.Session, base_url: str, code: str) -> Dict[str, Any]:
+def execute_python_code(
+    api_session: requests.Session, base_url: str, code: str
+) -> Dict[str, Any]:
     """
     Execute Python code using /api/execute-raw endpoint.
 
@@ -127,13 +131,11 @@ def execute_python_code(api_session: requests.Session, base_url: str, code: str)
     """
     headers = {
         "Content-Type": "text/plain",
-        "timeout": str(TestConfig.EXECUTION_TIMEOUT)
+        "timeout": str(TestConfig.EXECUTION_TIMEOUT),
     }
 
     response = api_session.post(
-        f"{base_url}{TestConfig.API_ENDPOINT}",
-        data=code,
-        headers=headers
+        f"{base_url}{TestConfig.API_ENDPOINT}", data=code, headers=headers
     )
 
     return api_contract_validator(response)
@@ -142,7 +144,9 @@ def execute_python_code(api_session: requests.Session, base_url: str, code: str)
 class TestHealthAndBasicFunctionality:
     """Test basic server health and functionality"""
 
-    def test_given_server_running_when_health_check_then_returns_success(self, api_session, base_url):
+    def test_given_server_running_when_health_check_then_returns_success(
+        self, api_session, base_url
+    ):
         """
         Test server health endpoint returns expected format.
 
@@ -173,7 +177,9 @@ class TestHealthAndBasicFunctionality:
 class TestBasicPythonExecution:
     """Test basic Python code execution scenarios"""
 
-    def test_given_simple_code_when_execute_then_returns_output(self, api_session, base_url):
+    def test_given_simple_code_when_execute_then_returns_output(
+        self, api_session, base_url
+    ):
         """
         Test basic Python code execution with print statements.
 
@@ -201,7 +207,9 @@ class TestBasicPythonExecution:
         assert data["error"] is None
         assert "Hello, World!" in data["data"]["stdout"]
 
-    def test_given_numpy_operations_when_execute_then_returns_results(self, api_session, base_url):
+    def test_given_numpy_operations_when_execute_then_returns_results(
+        self, api_session, base_url
+    ):
         """
         Test NumPy operations and mathematical computations.
 
@@ -221,7 +229,7 @@ class TestBasicPythonExecution:
             Input: NumPy array [1,2,3,4,5] operations
             Output: {"success": true, "data": {"stdout": "NumPy version: x.x.x\n...", "result": "completed"}}
         """
-        code = '''
+        code = """
 import numpy as np
 print(f"NumPy version: {np.__version__}")
 
@@ -232,7 +240,7 @@ print(f"Sum: {arr.sum()}")
 print(f"Mean: {arr.mean()}")
 
 "NumPy operations completed successfully"
-'''
+"""
 
         data = execute_python_code(api_session, base_url, code)
         assert data is not None, "API contract validation failed"
@@ -244,7 +252,9 @@ print(f"Mean: {arr.mean()}")
         assert "NumPy version:" in data["data"]["stdout"]
         assert "Array: [1 2 3 4 5]" in data["data"]["stdout"]
 
-    def test_given_pathlib_operations_when_execute_then_handles_cross_platform(self, api_session, base_url):
+    def test_given_pathlib_operations_when_execute_then_handles_cross_platform(
+        self, api_session, base_url
+    ):
         """
         Test pathlib usage for cross-platform file operations.
 
@@ -264,7 +274,7 @@ print(f"Mean: {arr.mean()}")
             Input: Path('/tmp') / 'file.txt' operations
             Output: {"success": true, "data": {"result": "Path operations completed"}}
         """
-        code = '''
+        code = """
 from pathlib import Path
 
 # Test cross-platform path operations
@@ -277,7 +287,7 @@ print(f"Is absolute: {file_path.is_absolute()}")
 print(f"Path parts: {file_path.parts}")
 
 "Pathlib operations completed successfully"
-'''
+"""
 
         data = execute_python_code(api_session, base_url, code)
         assert data is not None, "API contract validation failed"
@@ -290,7 +300,9 @@ print(f"Path parts: {file_path.parts}")
 class TestComplexStringHandling:
     """Test complex string scenarios and edge cases"""
 
-    def test_given_mixed_quotes_when_execute_then_handles_correctly(self, api_session, base_url):
+    def test_given_mixed_quotes_when_execute_then_handles_correctly(
+        self, api_session, base_url
+    ):
         """
         Test complex string handling with mixed quotes and escapes.
 
@@ -311,7 +323,7 @@ class TestComplexStringHandling:
             Input: Various quote combinations
             Output: {"success": true, "data": {"stdout": "All quote types handled"}}
         """
-        code = '''
+        code = """
 # Test various quote combinations
 single = 'This is a single-quoted string'
 double = "This is a double-quoted string"
@@ -332,7 +344,7 @@ print(f_string)
 print("Triple quote string processed")
 
 "Complex string handling completed"
-'''
+"""
 
         data = execute_python_code(api_session, base_url, code)
         assert data is not None, "API contract validation failed"
@@ -341,7 +353,9 @@ print("Triple quote string processed")
         assert "Complex string handling completed" in data["data"]["result"]
         assert "Hello World!" in data["data"]["stdout"]
 
-    def test_given_json_like_strings_when_execute_then_processes_correctly(self, api_session, base_url):
+    def test_given_json_like_strings_when_execute_then_processes_correctly(
+        self, api_session, base_url
+    ):
         """
         Test JSON-like string processing without breaking parsing.
 
@@ -362,7 +376,7 @@ print("Triple quote string processed")
             Input: JSON creation and parsing
             Output: {"success": true, "data": {"stdout": "{\\"key\\": \\"value\\"}"}}
         """
-        code = '''
+        code = """
 import json
 
 # Create JSON-like data
@@ -387,7 +401,7 @@ print(f"Parsed name: {parsed['name']}")
 print(f"Skills count: {len(parsed['skills'])}")
 
 "JSON processing completed successfully"
-'''
+"""
 
         data = execute_python_code(api_session, base_url, code)
         assert data is not None, "API contract validation failed"
@@ -400,7 +414,9 @@ print(f"Skills count: {len(parsed['skills'])}")
 class TestErrorHandling:
     """Test error handling scenarios"""
 
-    def test_given_syntax_error_when_execute_then_returns_error_response(self, api_session, base_url):
+    def test_given_syntax_error_when_execute_then_returns_error_response(
+        self, api_session, base_url
+    ):
         """
         Test syntax error handling with proper API contract.
 
@@ -429,7 +445,9 @@ class TestErrorHandling:
         # Server may return generic "Execution failed" or specific error details
         assert len(data["error"]) > 0, "Error message should not be empty"
 
-    def test_given_runtime_error_when_execute_then_returns_error_response(self, api_session, base_url):
+    def test_given_runtime_error_when_execute_then_returns_error_response(
+        self, api_session, base_url
+    ):
         """
         Test runtime error handling with proper API contract.
 
@@ -449,11 +467,11 @@ class TestErrorHandling:
             Input: 1/0 division by zero
             Output: {"success": false, "error": "ZeroDivisionError: ...", "data": {...}}
         """
-        code = '''
+        code = """
 print("Starting execution...")
 result = 1 / 0  # This will cause ZeroDivisionError
 print("This won't be reached")
-'''
+"""
 
         data = execute_python_code(api_session, base_url, code)
         assert data is not None, "API contract validation failed"
@@ -466,7 +484,9 @@ print("This won't be reached")
 class TestDataScienceOperations:
     """Test data science package operations"""
 
-    def test_given_pandas_operations_when_execute_then_returns_dataframe_results(self, api_session, base_url):
+    def test_given_pandas_operations_when_execute_then_returns_dataframe_results(
+        self, api_session, base_url
+    ):
         """
         Test pandas DataFrame operations and data manipulation.
 
@@ -487,7 +507,7 @@ class TestDataScienceOperations:
             Input: DataFrame with statistical operations
             Output: {"success": true, "data": {"stdout": "DataFrame info...", "result": "completed"}}
         """
-        code = '''
+        code = """
 import pandas as pd
 import numpy as np
 
@@ -507,7 +527,7 @@ print(f"Shape: {df.shape}")
 print(f"Mean salary: ${df['salary'].mean():,.2f}")
 
 "Pandas operations completed successfully"
-'''
+"""
 
         data = execute_python_code(api_session, base_url, code)
         assert data is not None, "API contract validation failed"
@@ -520,7 +540,9 @@ print(f"Mean salary: ${df['salary'].mean():,.2f}")
 class TestFileSystemOperations:
     """Test file system operations using pathlib"""
 
-    def test_given_file_operations_when_execute_then_handles_paths_correctly(self, api_session, base_url):
+    def test_given_file_operations_when_execute_then_handles_paths_correctly(
+        self, api_session, base_url
+    ):
         """
         Test file system operations using pathlib for cross-platform compatibility.
 
@@ -541,7 +563,7 @@ class TestFileSystemOperations:
             Input: Path existence checks and operations
             Output: {"success": true, "data": {"stdout": "File operations completed"}}
         """
-        code = '''
+        code = """
 from pathlib import Path
 import os
 
@@ -568,7 +590,7 @@ print(f"Name: {test_path.name}")
 print(f"Suffix: {test_path.suffix}")
 
 "File system operations completed successfully"
-'''
+"""
 
         data = execute_python_code(api_session, base_url, code)
         assert data is not None, "API contract validation failed"
