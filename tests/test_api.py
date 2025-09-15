@@ -558,7 +558,7 @@ class TestPythonExecution:
             server_ready: Fixture ensuring server availability
         """
         # Given: Python code using pathlib for cross-platform compatibility
-        code = TestConfig.SAMPLE_DATA["pathlib_python"]
+        code = TestConfig.SAMPLE_DATA["complex_pathlib_python"]
 
         # When: Executing the pathlib code
         result = execute_python_code(code)
@@ -588,7 +588,7 @@ class TestPythonExecution:
             server_ready: Fixture ensuring server availability
         """
         # Given: Complex Python code
-        code = Config.SAMPLE_DATA["complex_pathlib_python"]
+        code = TestConfig.SAMPLE_DATA["complex_pathlib_python"]
 
 
         # When: Executing complex code
@@ -690,7 +690,7 @@ class TestPythonExecution:
             using pathlib.Path for cross-platform file operations.
         """
         # Given: Matplotlib code using pathlib
-        code = Config.SAMPLE_DATA["matplotlib_pathlib_python"]
+        code = TestConfig.SAMPLE_DATA["matplotlib_pathlib_python"]
 
         # When: Executing matplotlib code with pathlib
         result = execute_python_code(code)
@@ -723,7 +723,7 @@ class TestPythonExecution:
             reading, and file system introspection operations.
         """
         # Given: File operations code using pathlib
-        code = Config.SAMPLE_DATA["file_operations_pathlib_python"]
+        code = TestConfig.SAMPLE_DATA["file_operations_pathlib_python"]
 
         # When: Executing file operations code
         result = execute_python_code(code)
@@ -968,7 +968,7 @@ class TestPerformanceAndStress:
             stress_test_ready: Fixture ensuring server can handle stress tests
         """
         # Given: Python code with infinite loop
-        code = TestConfig.SAMPLE_DATA["infinite_loop"]
+        code = TestConfig.SAMPLE_DATA["infinite_loop_python"]
 
         # When: Executing infinite loop with short timeout
         start_time = time.time()
@@ -1015,7 +1015,7 @@ class TestPerformanceAndStress:
             stress_test_ready: Fixture ensuring server can handle stress tests
         """
         # Given: Memory-intensive Python code
-        code = TestConfig.SAMPLE_DATA["memory_intensive"]
+        code = TestConfig.SAMPLE_DATA["memory_intensive_python"]
 
         # When: Executing memory-intensive code
         start_time = time.time()
