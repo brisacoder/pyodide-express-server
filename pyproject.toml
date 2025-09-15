@@ -35,6 +35,7 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "api: marks tests as API tests",
+    "functional: marks tests as functional tests",
     "security: marks tests as security tests",
     "timeout: marks tests with timeout limits for stress testing",
     "matplotlib: marks tests that use matplotlib plotting",
