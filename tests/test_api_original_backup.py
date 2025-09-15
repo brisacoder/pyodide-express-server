@@ -34,10 +34,11 @@ API Contract Validation:
 }
 """
 
+import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Generator, List
+from typing import Any, Dict, Generator, Optional, Tuple
 
 import pytest
 import requests
@@ -46,7 +47,7 @@ import requests
 # ==================== TEST CONFIGURATION CONSTANTS ====================
 
 
-class TestConfig:
+class Config:
     """Test configuration constants - centralized and easily tweakable."""
 
     # Base URL for all API requests
@@ -72,68 +73,33 @@ class TestConfig:
         "concurrent_requests": 3,
     }
 
-    # Test data samples - all Python code uses pathlib for cross-platform compatibility
+    # Test data samples
     SAMPLE_DATA = {
-        "csv_content": "name,value,category\nitem1,100,A\nitem2,200,B\nitem3,300,C\n",
+        "csv_content": "name,value,category\nitem1,1,A\nitem2,2,B\nitem3,3,C\n",
         "simple_python": "print('Hello World')",
-        "pathlib_python": """
-from pathlib import Path
-import json
-
-# Test pathlib for cross-platform compatibility
-test_dir = Path('/tmp')
-test_file = test_dir / 'test_output.json'
-
-data = {
-    'message': 'Pathlib test successful',
-    'path_str': str(test_file),
-    'path_exists': test_file.exists(),
-    'parent_dir': str(test_dir)
-}
-
-print(json.dumps(data, indent=2))
-        """.strip(),
         "complex_python": """
 from pathlib import Path
 import json
 import time
 
-# Complex operations with pathlib
-base_path = Path('/plots')
-matplotlib_dir = base_path / 'matplotlib'
-data_path = Path('/uploads')
+# Test pathlib usage
+test_path = Path('/tmp/test.txt')
+print(f'Path exists: {test_path.exists()}')
 
-# Test directory operations
-paths_info = {
-    'base_exists': base_path.exists(),
-    'matplotlib_exists': matplotlib_dir.exists(),
-    'uploads_exists': data_path.exists(),
-    'timestamp': time.time()
-}
-
-# Test JSON serialization
-result = json.dumps(paths_info, indent=2)
-print(f"Path analysis complete: {len(paths_info)} items checked")
-print(result)
+# Test JSON handling
+data = {'message': 'Hello from Python', 'timestamp': time.time()}
+print(json.dumps(data))
         """.strip(),
-        "error_python": "import nonexistent_module",
-        "syntax_error_python": "print('unclosed string",
-        "infinite_loop_python": "while True: pass",
-        "memory_intensive_python": """
+        "infinite_loop": "while True: pass",
+        "memory_intensive": """
 import time
-from pathlib import Path
-
-# Memory allocation test with pathlib
+# Memory allocation test
 data = []
-temp_dir = Path('/tmp')
-
-for i in range(100):  # Reduced for testing
-    data.append([0] * 100)
-    if i % 25 == 0:
-        print(f'Allocated {i * 100} items')
-        print(f'Temp directory exists: {temp_dir.exists()}')
+for i in range(1000):
+    data.append([0] * 1000)
+    if i % 100 == 0:
+        print(f'Allocated {i * 1000} items')
         time.sleep(0.01)
-
 print(f'Total allocated: {len(data) * len(data[0])} items')
         """.strip(),
     }
@@ -142,7 +108,7 @@ print(f'Total allocated: {len(data) * len(data[0])} items')
 # ==================== UTILITY FUNCTIONS ====================
 
 
-def wait_for_server(url: str, timeout: int = TestConfig.TIMEOUTS["server_startup"]) -> None:
+def wait_for_server(url: str, timeout: int = Config.TIMEOUTS["server_startup"]) -> None:
     """
     Wait for the server to become available before running tests.
 
@@ -232,7 +198,7 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
 
 
 def execute_python_code(
-    code: str, timeout: int = TestConfig.TIMEOUTS["code_execution"]
+    code: str, timeout: int = Config.TIMEOUTS["code_execution"]
 ) -> Dict[str, Any]:
     """
     Execute Python code using the /api/execute-raw endpoint.
@@ -253,7 +219,7 @@ def execute_python_code(
         >>> assert "Hello" in result["data"]["result"]["stdout"]
     """
     response = requests.post(
-        f"{TestConfig.BASE_URL}/api/execute-raw",
+        f"{Config.BASE_URL}/api/execute-raw",
         headers={"Content-Type": "text/plain"},
         data=code,
         timeout=timeout,
@@ -298,7 +264,7 @@ def server_ready() -> bool:
     Raises:
         RuntimeError: If server fails to start within timeout
     """
-    wait_for_server(f"{TestConfig.BASE_URL}/health")
+    wait_for_server(f"{Config.BASE_URL}/health")
     return True
 
 
@@ -314,7 +280,7 @@ def stress_test_ready() -> bool:
         pytest.skip: If server is unrecoverable after crash
     """
     try:
-        wait_for_server(f"{TestConfig.BASE_URL}/health", timeout=30)
+        wait_for_server(f"{Config.BASE_URL}/health", timeout=30)
         return True
     except RuntimeError:
         pytest.skip("Server unavailable - likely crashed during stress testing")
@@ -334,7 +300,7 @@ def temp_csv_file() -> Generator[Path, None, None]:
         ...     content = temp_csv_file.read_text()
         ...     assert "name,value" in content
     """
-    file_path = create_test_file(TestConfig.SAMPLE_DATA["csv_content"], ".csv")
+    file_path = create_test_file(Config.SAMPLE_DATA["csv_content"], ".csv")
     try:
         yield file_path
     finally:
@@ -363,8 +329,8 @@ def uploaded_files_cleanup() -> Generator[list, None, None]:
     for filename in uploaded_files:
         try:
             requests.delete(
-                f"{TestConfig.BASE_URL}/api/uploaded-files/{filename}",
-                timeout=TestConfig.TIMEOUTS["api_request"],
+                f"{Config.BASE_URL}/api/uploaded-files/{filename}",
+                timeout=Config.TIMEOUTS["api_request"],
             )
         except requests.RequestException:
             pass  # File might already be deleted
@@ -389,7 +355,7 @@ class TestHealthAndStatus:
         """
         # When: Making health check request
         response = requests.get(
-            f"{TestConfig.BASE_URL}/health", timeout=TestConfig.TIMEOUTS["health_check"]
+            f"{Config.BASE_URL}/health", timeout=Config.TIMEOUTS["health_check"]
         )
 
         # Then: Response should indicate server status
@@ -417,7 +383,7 @@ class TestHealthAndStatus:
         """
         # When: Making status check request
         response = requests.get(
-            f"{TestConfig.BASE_URL}/api/status", timeout=TestConfig.TIMEOUTS["health_check"]
+            f"{Config.BASE_URL}/api/status", timeout=Config.TIMEOUTS["health_check"]
         )
 
         # Then: Response should contain detailed status
@@ -455,7 +421,7 @@ class TestPythonExecution:
             server_ready: Fixture ensuring server availability
         """
         # Given: Simple Python code
-        code = TestConfig.SAMPLE_DATA["simple_python"]
+        code = Config.SAMPLE_DATA["simple_python"]
 
         # When: Executing the code
         result = execute_python_code(code)
@@ -473,15 +439,31 @@ class TestPythonExecution:
         """
         Test Python code execution with pathlib for cross-platform compatibility.
 
-        Given: Server is ready and Python code uses pathlib.Path
-        When: Executing code with pathlib Path operations
+        Given: Server is ready and Python code uses pathlib
+        When: Executing code with Path operations
         Then: Response should handle pathlib operations without errors
 
         Args:
             server_ready: Fixture ensuring server availability
         """
-        # Given: Python code using pathlib for cross-platform compatibility
-        code = TestConfig.SAMPLE_DATA["pathlib_python"]
+        # Given: Python code using pathlib
+        code = """
+from pathlib import Path
+import json
+
+# Use pathlib for cross-platform compatibility
+base_path = Path('/tmp')
+test_file = base_path / 'test.json'
+
+# Create sample data
+data = {
+    'message': 'Pathlib test successful',
+    'path_str': str(test_file),
+    'path_exists': test_file.exists()
+}
+
+print(json.dumps(data, indent=2))
+        """.strip()
 
         # When: Executing the pathlib code
         result = execute_python_code(code)
@@ -493,7 +475,7 @@ class TestPythonExecution:
         # Validate pathlib functionality
         output = result["data"]["result"]["stdout"]
         assert "Pathlib test successful" in output
-        assert "/tmp/test_output.json" in output
+        assert "/tmp/test.json" in output
         assert result["data"]["result"]["stderr"] == ""
 
     def test_given_complex_python_code_when_executed_then_handles_imports_and_logic(
@@ -510,7 +492,7 @@ class TestPythonExecution:
             server_ready: Fixture ensuring server availability
         """
         # Given: Complex Python code
-        code = TestConfig.SAMPLE_DATA["complex_python"]
+        code = Config.SAMPLE_DATA["complex_python"]
 
         # When: Executing complex code
         result = execute_python_code(code)
@@ -580,10 +562,10 @@ class TestPythonExecution:
 
         # When: Executing empty code
         response = requests.post(
-            f"{TestConfig.BASE_URL}/api/execute-raw",
+            f"{Config.BASE_URL}/api/execute-raw",
             headers={"Content-Type": "text/plain"},
             data=code,
-            timeout=TestConfig.TIMEOUTS["code_execution"],
+            timeout=Config.TIMEOUTS["code_execution"],
         )
 
         # Then: Should return error for empty code
@@ -622,9 +604,9 @@ class TestFileManagement:
         with open(temp_csv_file, "rb") as file:
             files = {"file": (filename, file, "text/csv")}
             upload_response = requests.post(
-                f"{TestConfig.BASE_URL}/api/upload",
+                f"{Config.BASE_URL}/api/upload",
                 files=files,
-                timeout=TestConfig.TIMEOUTS["file_upload"],
+                timeout=Config.TIMEOUTS["file_upload"],
             )
 
         # Track for cleanup
@@ -638,8 +620,8 @@ class TestFileManagement:
 
         # When: Requesting file list
         list_response = requests.get(
-            f"{TestConfig.BASE_URL}/api/uploaded-files",
-            timeout=TestConfig.TIMEOUTS["api_request"],
+            f"{Config.BASE_URL}/api/uploaded-files",
+            timeout=Config.TIMEOUTS["api_request"],
         )
 
         # Then: File should appear in list
@@ -672,17 +654,17 @@ class TestFileManagement:
         with open(temp_csv_file, "rb") as file:
             files = {"file": (filename, file, "text/csv")}
             upload_response = requests.post(
-                f"{TestConfig.BASE_URL}/api/upload",
+                f"{Config.BASE_URL}/api/upload",
                 files=files,
-                timeout=TestConfig.TIMEOUTS["file_upload"],
+                timeout=Config.TIMEOUTS["file_upload"],
             )
 
         assert upload_response.status_code == 200
 
         # When: Deleting the file
         delete_response = requests.delete(
-            f"{TestConfig.BASE_URL}/api/uploaded-files/{filename}",
-            timeout=TestConfig.TIMEOUTS["api_request"],
+            f"{Config.BASE_URL}/api/uploaded-files/{filename}",
+            timeout=Config.TIMEOUTS["api_request"],
         )
 
         # Then: Deletion should be successful
@@ -693,8 +675,8 @@ class TestFileManagement:
 
         # Verify file is removed from list
         list_response = requests.get(
-            f"{TestConfig.BASE_URL}/api/uploaded-files",
-            timeout=TestConfig.TIMEOUTS["api_request"],
+            f"{Config.BASE_URL}/api/uploaded-files",
+            timeout=Config.TIMEOUTS["api_request"],
         )
 
         assert list_response.status_code == 200
@@ -727,10 +709,10 @@ class TestSecurityAndErrorHandling:
 
         # When: Sending with wrong content type
         response = requests.post(
-            f"{TestConfig.BASE_URL}/api/execute-raw",
+            f"{Config.BASE_URL}/api/execute-raw",
             headers={"Content-Type": "application/json"},  # Wrong content type
             data=code,
-            timeout=TestConfig.TIMEOUTS["code_execution"],
+            timeout=Config.TIMEOUTS["code_execution"],
         )
 
         # Then: Should handle gracefully (might still work or return error)
@@ -789,7 +771,7 @@ class TestPerformanceAndStress:
         """
         # Given: Multiple simple Python codes
         codes = [
-            f"print('Request {i}')" for i in range(TestConfig.LIMITS["concurrent_requests"])
+            f"print('Request {i}')" for i in range(Config.LIMITS["concurrent_requests"])
         ]
 
         # When: Executing multiple requests rapidly
@@ -821,7 +803,7 @@ class TestPerformanceAndStress:
             stress_test_ready: Fixture ensuring server can handle stress tests
         """
         # Given: Python code with infinite loop
-        code = TestConfig.SAMPLE_DATA["infinite_loop"]
+        code = Config.SAMPLE_DATA["infinite_loop"]
 
         # When: Executing infinite loop with short timeout
         start_time = time.time()
@@ -848,7 +830,7 @@ class TestPerformanceAndStress:
 
         # Most importantly: Server should still be responsive
         health_response = requests.get(
-            f"{TestConfig.BASE_URL}/health", timeout=TestConfig.TIMEOUTS["health_check"]
+            f"{Config.BASE_URL}/health", timeout=Config.TIMEOUTS["health_check"]
         )
         assert (
             health_response.status_code == 200
@@ -868,7 +850,7 @@ class TestPerformanceAndStress:
             stress_test_ready: Fixture ensuring server can handle stress tests
         """
         # Given: Memory-intensive Python code
-        code = TestConfig.SAMPLE_DATA["memory_intensive"]
+        code = Config.SAMPLE_DATA["memory_intensive"]
 
         # When: Executing memory-intensive code
         start_time = time.time()
@@ -894,7 +876,7 @@ class TestPerformanceAndStress:
 
         # Server should remain responsive
         health_response = requests.get(
-            f"{TestConfig.BASE_URL}/health", timeout=TestConfig.TIMEOUTS["health_check"]
+            f"{Config.BASE_URL}/health", timeout=Config.TIMEOUTS["health_check"]
         )
         assert (
             health_response.status_code == 200
@@ -923,7 +905,7 @@ class TestPerformanceAndStress:
         successful_executions = 0
 
         # When: Running multiple stress iterations
-        for iteration in range(TestConfig.LIMITS["stress_test_iterations"]):
+        for iteration in range(Config.LIMITS["stress_test_iterations"]):
             code = stress_codes[iteration % len(stress_codes)]
 
             try:
@@ -940,14 +922,14 @@ class TestPerformanceAndStress:
                 pass
 
         # Then: Should have reasonable success rate
-        success_rate = successful_executions / TestConfig.LIMITS["stress_test_iterations"]
+        success_rate = successful_executions / Config.LIMITS["stress_test_iterations"]
         assert (
             success_rate >= 0.6
         ), f"Success rate {success_rate:.2f} too low during stress testing"
 
         # Final health check
         health_response = requests.get(
-            f"{TestConfig.BASE_URL}/health", timeout=TestConfig.TIMEOUTS["health_check"]
+            f"{Config.BASE_URL}/health", timeout=Config.TIMEOUTS["health_check"]
         )
         assert (
             health_response.status_code == 200
@@ -982,9 +964,9 @@ class TestIntegration:
         with open(temp_csv_file, "rb") as file:
             files = {"file": (filename, file, "text/csv")}
             upload_response = requests.post(
-                f"{TestConfig.BASE_URL}/api/upload",
+                f"{Config.BASE_URL}/api/upload",
                 files=files,
-                timeout=TestConfig.TIMEOUTS["file_upload"],
+                timeout=Config.TIMEOUTS["file_upload"],
             )
 
         uploaded_files_cleanup.append(filename)
@@ -1033,8 +1015,8 @@ else:
 
         # Clean up by deleting the file
         delete_response = requests.delete(
-            f"{TestConfig.BASE_URL}/api/uploaded-files/{filename}",
-            timeout=TestConfig.TIMEOUTS["api_request"],
+            f"{Config.BASE_URL}/api/uploaded-files/{filename}",
+            timeout=Config.TIMEOUTS["api_request"],
         )
         assert delete_response.status_code == 200
 

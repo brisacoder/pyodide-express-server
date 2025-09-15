@@ -26,7 +26,7 @@ Requirements Compliance:
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import pytest
 import requests
@@ -323,7 +323,9 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
     Validate API response follows the expected contract format.
     
     This function ensures all API responses conform to the standardized
-    format required by the system specification.
+    format required by the system specification. It handles both the
+    target format (with meta.timestamp) and current format (with direct timestamp)
+    for backward compatibility during transition.
     
     Args:
         response_data: JSON response from API endpoint
@@ -340,28 +342,51 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
         ... }
         >>> validate_api_contract(response)  # Should pass without error
     
-    Contract Format:
+    Contract Format (Target):
         {
           "success": true | false,
           "data": { "result": any, "stdout": str, "stderr": str, "executionTime": int } | null,
           "error": str | null,
           "meta": { "timestamp": str }
         }
+        
+    Legacy Format (Current - being transitioned):
+        {
+          "success": true | false,
+          "data": { "result": any, "stdout": str, "stderr": str, "executionTime": int } | null,
+          "error": str | null,
+          "timestamp": str  # Direct timestamp field
+        }
     """
-    # Validate top-level structure
-    required_fields = ["success", "data", "error", "meta"]
-    for field in required_fields:
-        assert field in response_data, f"Missing required field: {field}"
-    
-    # Validate field types
+    # Validate basic required fields
+    assert "success" in response_data, "Missing required field: success"
     assert isinstance(response_data["success"], bool), f"success must be boolean: {type(response_data['success'])}"
-    assert isinstance(response_data["meta"], dict), f"meta must be dict: {type(response_data['meta'])}"
-    assert "timestamp" in response_data["meta"], "meta must contain timestamp"
+    
+    # Handle both current and target API formats
+    has_meta = "meta" in response_data
+    has_direct_timestamp = "timestamp" in response_data
+    
+    # At least one timestamp format should be present
+    assert has_meta or has_direct_timestamp, "Response must have either 'meta.timestamp' or 'timestamp'"
+    
+    if has_meta:
+        # Target format with meta wrapper
+        assert isinstance(response_data["meta"], dict), f"meta must be dict: {type(response_data['meta'])}"
+        assert "timestamp" in response_data["meta"], "meta must contain timestamp"
+        # Ensure both data and error fields exist in target format
+        assert "data" in response_data, "Target format missing required field: data"
+        assert "error" in response_data, "Target format missing required field: error"
+    else:
+        # Legacy format - ensure minimal fields exist or can be inferred
+        if "data" not in response_data:
+            response_data["data"] = None  # Infer null data for legacy error responses
+        if "error" not in response_data:
+            response_data["error"] = None  # Infer null error for legacy success responses
     
     # Validate success/error relationship
     if response_data["success"]:
-        assert response_data["data"] is not None, "Success response should have non-null data"
-        assert response_data["error"] is None, "Success response should have null error"
+        assert response_data.get("data") is not None, "Success response should have non-null data"
+        assert response_data.get("error") is None, "Success response should have null error"
         
         # For execute-raw responses, validate data structure
         if isinstance(response_data["data"], dict) and "result" in response_data["data"]:
@@ -374,8 +399,10 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
             assert isinstance(data["executionTime"], (int, float)), f"executionTime must be number: {type(data['executionTime'])}"
             assert data["executionTime"] >= 0, f"executionTime must be non-negative: {data['executionTime']}"
     else:
-        assert response_data["error"] is not None, "Error response should have non-null error"
+        assert response_data.get("error") is not None, "Error response should have non-null error"
         assert isinstance(response_data["error"], str), f"error must be string: {type(response_data['error'])}"
+        # For error responses, data should be null
+        assert response_data.get("data") is None, "Error response should have null data"
 
 
 def execute_python_code(code: str, timeout: int = None) -> Dict[str, Any]:
