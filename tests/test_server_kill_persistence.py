@@ -66,7 +66,7 @@ from pathlib import Path
 tmp_file = Path("/tmp/persistence_test_{timestamp}.txt")
 tmp_file.write_text("This file should NOT persist after server restart")
 
-plots_file = Path("/plots/matplotlib/persistence_test_{timestamp}.txt")
+plots_file = Path('/home/pyodide/plots/matplotlib/persistence_test_{timestamp}.txt")
 plots_file.parent.mkdir(parents=True, exist_ok=True)
 plots_file.write_text("This file SHOULD persist after server restart")
 

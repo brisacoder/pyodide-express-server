@@ -205,8 +205,8 @@ class PyodideProcessPool {
 
   /**
    * Handle messages from child processes
-   * @param processId
-   * @param message
+   * @param {number} processId - The ID of the process that sent the message
+   * @param {Object} message - The message received from the child process
    * @private
    */
   _handleMessage(processId, message) {
@@ -362,8 +362,8 @@ class PyodideProcessPool {
 
   /**
    * Install a Python package using an available process
-   * @param packageName
-   * @param timeout
+   * @param {string} packageName - Name of the Python package to install
+   * @param {number} timeout - Timeout in milliseconds for the installation
    */
   async installPackage(packageName, timeout = 60000) {
     if (!this.isInitialized) {
@@ -418,6 +418,7 @@ class PyodideProcessPool {
   /**
    * Get an available process, waiting if necessary
    * @private
+   * @returns {Promise<string>} Process ID of an available process
    */
   async _getAvailableProcess() {
     return new Promise((resolve) => {
@@ -444,8 +445,8 @@ class PyodideProcessPool {
 
   /**
    * Kill a process and optionally replace it
-   * @param processId
-   * @param reason
+   * @param {string} processId - ID of the process to kill
+   * @param {string} reason - Reason for killing the process
    * @private
    */
   _killProcess(processId, reason) {
@@ -479,7 +480,7 @@ class PyodideProcessPool {
 
   /**
    * Handle process death and replacement
-   * @param processId
+   * @param {string} processId - ID of the process that died
    * @private
    */
   _handleProcessDeath(processId) {
@@ -511,7 +512,7 @@ class PyodideProcessPool {
 
   /**
    * Recycle a process after it reaches max executions
-   * @param processId
+   * @param {string} processId - ID of the process to recycle
    * @private
    */
   _recycleProcess(processId) {
@@ -526,6 +527,7 @@ class PyodideProcessPool {
 
   /**
    * Get pool statistics
+   * @returns {Object} Pool statistics including active processes and execution counts
    */
   getStats() {
     const activeProcesses = this.processes.filter(p => p !== null).length;

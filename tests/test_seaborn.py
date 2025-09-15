@@ -233,7 +233,7 @@ def cleanup_pyodide_filesystem(verified_server: str, server_config: Dict[str, An
 import os
 from pathlib import Path
 
-plot_dir = Path('/plots/seaborn')
+plot_dir = Path('/home/pyodide/plots/seaborn')
 if plot_dir.exists():
     for file_path in plot_dir.glob('*.png'):
         try:
@@ -1163,7 +1163,7 @@ plt.text(0.05, 0.95, info_text,
          verticalalignment='top')
 
 # Ensure plots directory exists
-plots_dir = Path('/plots/seaborn')
+plots_dir = Path('/home/pyodide/plots/seaborn')
 plots_dir.mkdir(parents=True, exist_ok=True)
 
 # Save directly to virtual filesystem with unique timestamp
@@ -1383,7 +1383,7 @@ plt.suptitle('Comprehensive Seaborn Dashboard Analysis', fontsize=16, fontweight
 plt.tight_layout()
 
 # Ensure directory exists and save to virtual filesystem
-plots_dir = Path('/plots/seaborn')
+plots_dir = Path('/home/pyodide/plots/seaborn')
 plots_dir.mkdir(parents=True, exist_ok=True)
 
 timestamp = int(time.time() * 1000)

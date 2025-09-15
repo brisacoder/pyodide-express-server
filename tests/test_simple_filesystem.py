@@ -68,7 +68,7 @@ class TestFilesystemOperations:
 from pathlib import Path
 
 # Create file in plots directory (should appear locally)
-plots_file = Path("/plots/matplotlib/{filename}")
+plots_file = Path('/home/pyodide/plots/matplotlib/{filename}")
 plots_file.parent.mkdir(parents=True, exist_ok=True)
 
 # Write test content
@@ -275,7 +275,7 @@ result
 from pathlib import Path
 
 # Create nested directory structure
-base_dir = Path("/plots/filesystem_test_{timestamp}")
+base_dir = Path('/home/pyodide/plots/filesystem_test_{timestamp}")
 subdirs = [
     base_dir / "subdir1",
     base_dir / "subdir2",
@@ -416,7 +416,7 @@ from pathlib import Path
 import json
 
 # File operations test
-test_file = Path("/plots/matplotlib/{filename}")
+test_file = Path('/home/pyodide/plots/matplotlib/{filename}")
 test_file.parent.mkdir(parents=True, exist_ok=True)
 
 operations = []

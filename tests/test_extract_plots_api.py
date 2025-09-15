@@ -63,7 +63,7 @@ class TestConfig:
     
     # Directory paths for testing (all use pathlib for portability)
     TEST_DIRECTORIES = [
-        "/plots",
+        '/home/pyodide/plots',
         "/plots/matplotlib",
         "/plots/seaborn", 
         "/plots/test_extract",
@@ -520,7 +520,7 @@ from pathlib import Path
 import time
 
 # Setup
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 timestamp = int(time.time() * 1000)
 

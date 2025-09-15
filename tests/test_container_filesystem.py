@@ -88,8 +88,8 @@ class TestConfig:
 
     # Virtual filesystem paths
     FILESYSTEM_PATHS = [
-        "/plots",
-        "/uploads",
+        '/home/pyodide/plots',
+        '/home/pyodide/uploads',
         "/logs",
         "/plots/matplotlib",
     ]
@@ -413,7 +413,7 @@ plt.grid(True, alpha=0.3)
 plt.legend()
 
 # Use pathlib for cross-platform file operations
-plot_path = Path('/plots/matplotlib/{plot_filename}')
+plot_path = Path('/home/pyodide/plots/matplotlib/{plot_filename}')
 plot_path.parent.mkdir(parents=True, exist_ok=True)
 plt.savefig(plot_path, dpi={TestConfig.PLOT_DIMENSIONS["default_dpi"]}, bbox_inches='tight')
 plt.close()
@@ -577,7 +577,7 @@ ax4.legend()
 plt.tight_layout()
 
 # Save dashboard using pathlib for cross-platform compatibility
-dashboard_path = Path('/plots/matplotlib/{dashboard_filename}')
+dashboard_path = Path('/home/pyodide/plots/matplotlib/{dashboard_filename}')
 dashboard_path.parent.mkdir(parents=True, exist_ok=True)
 plt.savefig(dashboard_path, dpi={TestConfig.PLOT_DIMENSIONS["default_dpi"]}, 
            bbox_inches='tight', facecolor='white')

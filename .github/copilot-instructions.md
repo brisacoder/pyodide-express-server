@@ -110,7 +110,7 @@ from pathlib import Path
 x = np.linspace(0, 10, 100)
 y = np.sin(x)
 plt.plot(x, y)
-plt.savefig(Path('/plots/matplotlib/demo.png'))
+plt.savefig(Path('/home/pyodide/plots/matplotlib/demo.png'))
 print("Plot saved successfully!")
     `
   })
@@ -330,20 +330,21 @@ import pandas as pd
 import numpy as np
 
 # File operations using pathlib (MANDATORY)
-data_path = Path('/uploads/data.csv')
+# Files are saved in /home/pyodide/uploads inside Pyodide
+data_path = Path('/home/pyodide/uploads/data.csv')
 if data_path.exists():
     df = pd.read_csv(data_path)
 
 # Plot generation with proper directory handling
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 plot_file = plots_dir / f'analysis_{int(time.time())}.png'
 plt.savefig(plot_file, dpi=150, bbox_inches='tight')
 
 # ❌ DEPRECATED - Old-style file operations (DO NOT USE)
 import os
-if os.path.exists('/uploads/data.csv'):  # Deprecated
-    df = pd.read_csv('/uploads/data.csv')
+if os.path.exists('/uploads/data.csv'):  # Deprecated - use /home/pyodide/uploads
+    df = pd.read_csv('/uploads/data.csv')  # Deprecated
 os.makedirs('/plots/matplotlib', exist_ok=True)  # Use pathlib instead
 ```
 
@@ -596,8 +597,8 @@ const configPath = path.resolve('./config/app.json');
 
 // ✅ Python pathlib (Pyodide execution)
 from pathlib import Path
-plots_dir = Path('/plots/matplotlib')
-data_file = Path('/uploads') / 'analysis.csv'
+plots_dir = Path('/home/pyodide/plots/matplotlib')
+data_file = Path('/home/pyodide/uploads') / 'analysis.csv'
 ```
 
 ## 🐛 Debugging & Troubleshooting Guide

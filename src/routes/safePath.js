@@ -17,6 +17,7 @@ const path = require('node:path');
  * @returns {string} - The sanitized filename segment.
  */
 function sanitizeFilenameSegment(input, { replacement = '-' } = {}) {
+  // eslint-disable-next-line no-control-regex
   const forbiddenRe = /[<>:"/\\|?*\u0000-\u001F]/g; // Windows + control chars
   const reservedWinNames = new Set([
     'CON', 'PRN', 'AUX', 'NUL',

@@ -294,7 +294,7 @@ from pathlib import Path
 import pandas as pd
 
 # Use pathlib for cross-platform file handling
-uploads_dir = Path('/uploads')
+uploads_dir = Path('/home/pyodide/uploads')
 csv_file = uploads_dir / '{uploaded_filename}'
 
 # Verify file exists and read it
@@ -305,7 +305,7 @@ if csv_file.exists():
     print(f"First row data: {{df.iloc[0].to_dict()}}")
 
     # Create output directory using pathlib
-    output_dir = Path('/plots/processed_data')
+    output_dir = Path('/home/pyodide/plots/processed_data')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save processed data
@@ -383,7 +383,7 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 
 # Use pathlib for cross-platform file operations
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 plot_file = plots_dir / 'file_upload_test_sine.png'
 
@@ -614,7 +614,7 @@ def invalid_function(
 from pathlib import Path
 
 # Try to access non-existent file
-nonexistent_file = Path('/uploads/does_not_exist.csv')
+nonexistent_file = Path('/home/pyodide/uploads/does_not_exist.csv')
 print(f"Checking file: {nonexistent_file}")
 
 if nonexistent_file.exists():
@@ -627,7 +627,7 @@ else:
 
 # Try to read non-existent file (should raise error)
 try:
-    with open('/uploads/definitely_does_not_exist.txt', 'r') as f:
+    with open('/home/pyodide/uploads/definitely_does_not_exist.txt', 'r') as f:
         content = f.read()
 except FileNotFoundError as e:
     print(f"Caught expected error: {e}")
@@ -682,7 +682,7 @@ print(f"Operating system: {os.name}")
 print(f"Platform: {sys.platform}")
 
 # Test pathlib cross-platform functionality
-base_paths = ['/uploads', '/plots', '/plots/matplotlib']
+base_paths = ['/home/pyodide/uploads', '/home/pyodide/plots', '/plots/matplotlib']
 
 for path_str in base_paths:
     path_obj = Path(path_str)
@@ -750,7 +750,7 @@ print("SUCCESS: All pathlib operations completed successfully")
 from pathlib import Path
 
 # Test UTF-8 encoding handling
-test_dir = Path('/plots/encoding_test')
+test_dir = Path('/home/pyodide/plots/encoding_test')
 test_dir.mkdir(parents=True, exist_ok=True)
 
 # Test various text content including special characters

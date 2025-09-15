@@ -185,7 +185,7 @@ class TestNissanLeafTelemetryAnalysis:
         Example:
             Test validates automotive data analysis like:
             ```python
-            df = pd.read_csv('/uploads/DEVRT-NISSAN-LEAF.csv')
+            df = pd.read_csv('/home/pyodide/uploads/DEVRT-NISSAN-LEAF.csv')
             soc_range = f"{df['soc'].min()}% - {df['soc'].max()}%"
             power_range = f"{df['Motor Pwr(w)'].min()} - {df['Motor Pwr(w)'].max()}W"
             ```
@@ -200,7 +200,7 @@ import pandas as pd
 import numpy as np
 
 # Load the automotive telemetry data using pathlib for portability
-data_file = Path('/uploads') / '{filename}'
+data_file = Path('/home/pyodide/uploads') / '{filename}'
 if not data_file.exists():
     raise FileNotFoundError(f"Telemetry data file not found: {{data_file}}")
 
@@ -320,7 +320,7 @@ import pandas as pd
 import numpy as np
 
 # Load telemetry data using pathlib
-data_file = Path('/uploads') / '{filename}'
+data_file = Path('/home/pyodide/uploads') / '{filename}'
 df = pd.read_csv(data_file)
 
 print("⚡ ENERGY EFFICIENCY ANALYSIS")
@@ -462,7 +462,7 @@ import pandas as pd
 import numpy as np
 
 # Load telemetry data using pathlib
-data_file = Path('/uploads') / '{filename}'
+data_file = Path('/home/pyodide/uploads') / '{filename}'
 df = pd.read_csv(data_file)
 
 print("🗺️ GEOSPATIAL ROUTE ANALYSIS")
@@ -597,7 +597,7 @@ import pandas as pd
 import numpy as np
 
 # Load telemetry data using pathlib
-data_file = Path('/uploads') / '{filename}'
+data_file = Path('/home/pyodide/uploads') / '{filename}'
 df = pd.read_csv(data_file)
 
 print("🚗 DRIVING BEHAVIOR ANALYTICS")
@@ -737,7 +737,7 @@ import pandas as pd
 import numpy as np
 
 # Load telemetry data using pathlib
-data_file = Path('/uploads') / '{filename}'
+data_file = Path('/home/pyodide/uploads') / '{filename}'
 df = pd.read_csv(data_file)
 
 print("📊 ADVANCED TIME SERIES ANALYSIS")
@@ -918,7 +918,7 @@ import matplotlib.pyplot as plt
 import time
 
 # Load telemetry data using pathlib
-data_file = Path('/uploads') / '{filename}'
+data_file = Path('/home/pyodide/uploads') / '{filename}'
 df = pd.read_csv(data_file)
 
 # Sort by timestamp if available

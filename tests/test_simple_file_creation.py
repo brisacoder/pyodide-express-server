@@ -418,9 +418,9 @@ test_paths = [
     "/etc",
     "/mnt",
     "/opt",
-    "/plots",     # Expected plots directory
+    '/home/pyodide/plots',     # Expected plots directory
     "/vfs",       # Custom vfs directory
-    "/uploads",   # Expected uploads directory
+    '/home/pyodide/uploads',   # Expected uploads directory
     "/test_data"  # Test data directory
 ]
 

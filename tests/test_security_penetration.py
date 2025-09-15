@@ -51,7 +51,7 @@ try:
     print("Tmp dir:", tempfile.gettempdir())
     
     # Try to list various directories
-    for path_str in ["/", "/home", "/tmp", "/plots", "/uploads"]:
+    for path_str in ["/", "/home", "/tmp", '/home/pyodide/plots', '/home/pyodide/uploads']:
         try:
             path = Path(path_str)
             if path.exists():
@@ -230,7 +230,7 @@ import os
 print("=== FILE SYSTEM ACCESS TEST ===")
 
 # Test file creation in various directories
-test_dirs = ["/tmp", "/plots", "/uploads", "/home/pyodide", "."]
+test_dirs = ["/tmp", '/home/pyodide/plots', '/home/pyodide/uploads', "/home/pyodide", "."]
 
 for dir_path in test_dirs:
     try:

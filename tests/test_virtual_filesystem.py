@@ -66,8 +66,8 @@ test_paths = [
     Path("/"),
     Path("/tmp"),
     Path("/home"),
-    Path("/plots"),
-    Path("/plots/matplotlib"),
+    Path('/home/pyodide/plots'),
+    Path('/home/pyodide/plots/matplotlib"),
     Path("/vfs"),
     Path("/mnt")
 ]

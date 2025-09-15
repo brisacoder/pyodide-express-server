@@ -547,7 +547,7 @@ test_directories = [
     "/test_mount_dir",
     "/virtual_test/nested/deep/structure",
     "/plots/test_matplotlib",
-    "/uploads/test_data"
+    "/home/pyodide/uploads/test_data"
 ]
 
 for test_dir in test_directories:
@@ -688,7 +688,7 @@ result = {
 
 # Create plots directory in virtual filesystem using pathlib
 try:
-    plots_dir = Path("/plots/matplotlib")
+    plots_dir = Path('/home/pyodide/plots/matplotlib")
     plots_dir.mkdir(parents=True, exist_ok=True)
     
     result["plots_dir_created"] = plots_dir.exists()

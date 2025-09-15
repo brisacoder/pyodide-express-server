@@ -92,7 +92,7 @@ import time
 # Use pathlib for cross-platform file operations
 base_path = Path('/tmp')
 test_file = base_path / 'edge_case_test.json'
-uploads_dir = Path('/uploads')
+uploads_dir = Path('/home/pyodide/uploads')
 
 # Create test data with timestamp
 test_data = {
@@ -766,7 +766,7 @@ import sys
 
 # Test sandbox boundaries with pathlib
 safe_temp_dir = Path('/tmp')
-safe_uploads_dir = Path('/uploads')
+safe_uploads_dir = Path('/home/pyodide/uploads')
 
 # Attempt to access various paths (should be sandboxed)
 test_paths = [
@@ -908,8 +908,8 @@ import time
 # Complex cross-platform pathlib operations
 base_paths = [
     Path('/tmp'),
-    Path('/uploads'),
-    Path('/plots/matplotlib'),
+    Path('/home/pyodide/uploads'),
+    Path('/home/pyodide/plots/matplotlib'),
 ]
 
 # Create comprehensive test data
@@ -954,7 +954,7 @@ for base_path in base_paths:
     test_data['path_operations'][path_name] = operations
 
 # Test path joining and resolution
-complex_path = Path('/uploads') / 'data' / 'analysis' / 'results.csv'
+complex_path = Path('/home/pyodide/uploads') / 'data' / 'analysis' / 'results.csv'
 test_data['complex_path_example'] = {
     'path': str(complex_path),
     'parts': list(complex_path.parts),

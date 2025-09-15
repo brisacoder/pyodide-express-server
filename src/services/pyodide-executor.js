@@ -25,11 +25,23 @@ async function initializePyodide() {
     });
 
     // Setup filesystem directories
-    pyodide.FS.mkdir('/uploads');
-    pyodide.FS.mkdir('/plots');
-    pyodide.FS.mkdir('/plots/matplotlib');
-    pyodide.FS.mkdir('/plots/seaborn');
-    pyodide.FS.mkdir('/plots/base64');
+    // Create /home/pyodide directories for user data
+    // Use a helper function to create directories safely
+    const mkdirSafe = (path) => {
+      try {
+        pyodide.FS.mkdir(path);
+      } catch {
+        // Directory might already exist, which is fine
+      }
+    };
+
+    mkdirSafe('/home');
+    mkdirSafe('/home/pyodide');
+    mkdirSafe('/home/pyodide/uploads');
+    mkdirSafe('/home/pyodide/plots');
+    mkdirSafe('/home/pyodide/plots/matplotlib');
+    mkdirSafe('/home/pyodide/plots/seaborn');
+    mkdirSafe('/home/pyodide/plots/base64');
 
     // Mount host filesystem directories from pyodide_data
     const projectRoot = path.resolve(__dirname, '../..');
@@ -38,8 +50,8 @@ async function initializePyodide() {
     const plotsPath = path.join(pyodideDataDir, 'plots');
     
     try {
-      pyodide.FS.mount(pyodide.FS.filesystems.NODEFS, { root: uploadsPath }, '/uploads');
-      pyodide.FS.mount(pyodide.FS.filesystems.NODEFS, { root: plotsPath }, '/plots');
+      pyodide.FS.mount(pyodide.FS.filesystems.NODEFS, { root: uploadsPath }, '/home/pyodide/uploads');
+      pyodide.FS.mount(pyodide.FS.filesystems.NODEFS, { root: plotsPath }, '/home/pyodide/plots');
     } catch (err) {
       console.warn('Failed to mount filesystem directories:', err.message);
       // Fallback to virtual filesystem if mounting fails
@@ -53,10 +65,8 @@ import sys
 import os
 from pathlib import Path
 
-# Ensure plot directories exist
-Path('/plots/matplotlib').mkdir(parents=True, exist_ok=True)
-Path('/plots/seaborn').mkdir(parents=True, exist_ok=True)
-Path('/plots/base64').mkdir(parents=True, exist_ok=True)
+# Set up home directory
+os.environ['HOME'] = '/home/pyodide'
 
 # Configure matplotlib for non-interactive backend
 import matplotlib
@@ -76,7 +86,8 @@ plt.rcParams['savefig.bbox'] = 'tight'
     sendMessage({ 
       type: 'initialized', 
       success: false, 
-      error: error.message 
+      error: error.message,
+      stack: error.stack
     });
     process.exit(1);
   }

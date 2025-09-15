@@ -1081,7 +1081,7 @@ import csv
 from pathlib import Path
 
 # Ensure directory exists
-Path("/plots/matplotlib").mkdir(parents=True, exist_ok=True)
+Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
 
 # Files to create with their content
 files_config = {{
@@ -1170,7 +1170,7 @@ from pathlib import Path
 results = {{}}
 
 # Check text file
-text_path = Path("/plots/matplotlib/{test_files[0]}")
+text_path = Path('/home/pyodide/plots/matplotlib/{test_files[0]}")
 if text_path.exists():
     content = text_path.read_text()
     results["text_file"] = {{
@@ -1180,7 +1180,7 @@ if text_path.exists():
     }}
 
 # Check JSON file
-json_path = Path("/plots/matplotlib/{test_files[1]}")
+json_path = Path('/home/pyodide/plots/matplotlib/{test_files[1]}")
 if json_path.exists():
     with open(json_path, 'r') as f:
         data = json.load(f)
@@ -1191,7 +1191,7 @@ if json_path.exists():
     }}
 
 # Check CSV file
-csv_path = Path("/plots/matplotlib/{test_files[2]}")
+csv_path = Path('/home/pyodide/plots/matplotlib/{test_files[2]}")
 if csv_path.exists():
     content = csv_path.read_text()
     results["csv_file"] = {{
@@ -1258,7 +1258,7 @@ print(json.dumps(results))
 import json
 from pathlib import Path
 
-base_dir = Path("/plots/matplotlib/{test_subdir}")
+base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}")
 structure = {repr(nested_structure)}
 
 results = []
@@ -1323,7 +1323,7 @@ print(json.dumps(summary))
 import json
 from pathlib import Path
 
-base_dir = Path("/plots/matplotlib/{test_subdir}")
+base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}")
 structure = {repr(nested_structure)}
 verification_results = []
 
@@ -1397,8 +1397,8 @@ print(json.dumps(summary))
 from pathlib import Path
 import json
 
-file_path = Path("/plots/matplotlib/{test_filename}")
-Path("/plots/matplotlib").mkdir(parents=True, exist_ok=True)
+file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}")
+Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
 
 # Create initial file
 initial_content = "Initial content before overwrite"
@@ -1421,7 +1421,7 @@ print(json.dumps(result))
 from pathlib import Path
 import json
 
-file_path = Path("/plots/matplotlib/{test_filename}")
+file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}")
 
 # Read initial content
 initial_content = file_path.read_text() if file_path.exists() else ""
@@ -1496,8 +1496,8 @@ import numpy as np
 from pathlib import Path
 
 # Create directories
-Path("/plots/matplotlib").mkdir(parents=True, exist_ok=True)
-Path("/plots/seaborn").mkdir(parents=True, exist_ok=True)
+Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
+Path('/home/pyodide/plots/seaborn").mkdir(parents=True, exist_ok=True)
 
 results = []
 
@@ -1608,7 +1608,7 @@ df = pd.DataFrame(data)
 
 # Save to CSV
 csv_path = f"/plots/matplotlib/{csv_filename}"
-Path("/plots/matplotlib").mkdir(parents=True, exist_ok=True)
+Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
 df.to_csv(csv_path, index=False)
 
 # Verify file was created and read it back

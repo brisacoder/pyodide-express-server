@@ -865,7 +865,7 @@ for name, path_obj in test_paths.items():
 # Test 2: Path operations that should work consistently
 path_operations = {}
 try:
-    data_path = Path("/uploads") / "data.csv"
+    data_path = Path('/home/pyodide/uploads') / "data.csv"
     path_operations["join_operation"] = str(data_path)
     path_operations["parent"] = str(data_path.parent)  
     path_operations["name"] = data_path.name
@@ -884,8 +884,8 @@ try:
     if hasattr(js, 'console') or True:  # Always test this
         # Create paths that might be used with JavaScript file operations  
         js_compatible_paths = [
-            str(Path("/plots") / "matplotlib" / "chart.png"),
-            str(Path("/uploads") / "data.csv"),
+            str(Path('/home/pyodide/plots') / "matplotlib" / "chart.png"),
+            str(Path('/home/pyodide/uploads') / "data.csv"),
             str(Path("./temp") / "processing.log")
         ]
         

@@ -781,7 +781,7 @@ import sys
 
 # Test pathlib usage for portability
 test_path = Path('/tmp') / 'test_file.txt'
-plots_path = Path('/plots') / 'matplotlib' / 'test.png'
+plots_path = Path('/home/pyodide/plots') / 'matplotlib' / 'test.png'
 
 # Validate pathlib functionality
 print(f"Test path: {test_path}")
@@ -815,7 +815,7 @@ print("Pathlib portability test completed successfully")
         # Validate pathlib operations worked correctly
         assert "Test path: /tmp/test_file.txt" in result_text, "Pathlib path construction failed"
         assert "Test path is absolute: True" in result_text, "Pathlib absolute path check failed"
-        assert "Plots path parent: /plots/matplotlib" in result_text, "Pathlib parent operation failed"
+        assert "Plots path parent: /home/pyodide/plots/matplotlib" in result_text, "Pathlib parent operation failed"
         assert "Pathlib portability test completed successfully" in result_text, "Test completion marker not found"
 
     def test_given_server_running_when_code_execution_fails_then_returns_proper_error_contract(
@@ -918,7 +918,7 @@ print(f"Pandas DataFrame shape: {df.shape}")
 print(f"DataFrame mean: {df.mean().to_dict()}")
 
 # Test pathlib for file operations
-data_dir = Path('/uploads')
+data_dir = Path('/home/pyodide/uploads')
 print(f"Data directory path: {data_dir}")
 print(f"Is data_dir absolute: {data_dir.is_absolute()}")
 
@@ -948,7 +948,7 @@ print("Data science libraries validation completed successfully")
         assert "NumPy array mean: 3.0" in result_text, "NumPy operations failed"
         assert "Pandas DataFrame shape: (5, 2)" in result_text, "Pandas DataFrame creation failed"
         assert "'A': 3.0, 'B': 30.0" in result_text, "Pandas mean calculation failed"
-        assert "Data directory path: /uploads" in result_text, "Pathlib path operations failed"
+        assert "Data directory path: /home/pyodide/uploads" in result_text, "Pathlib path operations failed"
         assert "Data science libraries validation completed successfully" in result_text, (
             "Test completion marker not found"
         )

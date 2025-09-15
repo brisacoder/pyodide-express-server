@@ -805,7 +805,7 @@ import os
 
 # Demonstrate pathlib usage for cross-platform compatibility
 temp_dir = Path("/tmp")
-plots_dir = Path("/plots/matplotlib")
+plots_dir = Path('/home/pyodide/plots/matplotlib")
 
 # Show path information for verification
 path_info = {

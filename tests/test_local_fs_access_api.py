@@ -141,8 +141,8 @@ import json
 session_id = "{session_id}"
 
 # Create test files in mounted directories
-plots_dir = Path('/plots')
-uploads_dir = Path('/uploads')
+plots_dir = Path('/home/pyodide/plots')
+uploads_dir = Path('/home/pyodide/uploads')
 
 # Ensure directories exist
 plots_dir.mkdir(parents=True, exist_ok=True)
@@ -207,8 +207,8 @@ print("File setup completed successfully!")
 from pathlib import Path
 
 session_id = "{session_id}"
-plots_dir = Path('/plots')
-uploads_dir = Path('/uploads')
+plots_dir = Path('/home/pyodide/plots')
+uploads_dir = Path('/home/pyodide/uploads')
 
 # Find and remove all test files for this session
 cleanup_patterns = [f'*{{session_id}}*']
@@ -266,7 +266,7 @@ print(f"Cleanup completed: {{len(removed_files)}} files removed")
             Test validates that this Pyodide code works:
             ```python
             from pathlib import Path
-            file_path = Path('/plots/test_file.txt')
+            file_path = Path('/home/pyodide/plots/test_file.txt')
             content = file_path.read_text(encoding='utf-8')
             print(content)
             ```
@@ -281,7 +281,7 @@ print(f"Cleanup completed: {{len(removed_files)}} files removed")
 from pathlib import Path
 
 # Use pathlib for cross-platform compatibility
-file_path = Path('/plots/{test_filename}')
+file_path = Path('/home/pyodide/plots/{test_filename}')
 
 # Validate file exists before reading
 if not file_path.exists():
@@ -330,7 +330,7 @@ print(f"File size: {{file_path.stat().st_size}} bytes")
         Example:
             Validates directory operations like:
             ```python
-            plots_dir = Path('/plots')
+            plots_dir = Path('/home/pyodide/plots')
             files = list(plots_dir.glob('*.txt'))
             assert len(files) >= 2
             ```
@@ -350,8 +350,8 @@ from pathlib import Path
 import json
 
 # Check plots directory
-plots_dir = Path('/plots')
-uploads_dir = Path('/uploads')
+plots_dir = Path('/home/pyodide/plots')
+uploads_dir = Path('/home/pyodide/uploads')
 
 # Validate directories exist
 print(f"Plots directory exists: {{plots_dir.exists()}}")
@@ -427,7 +427,7 @@ if json_file.exists():
             Tests JSON operations like:
             ```python
             import json
-            data = json.loads(Path('/uploads/data.json').read_text())
+            data = json.loads(Path('/home/pyodide/uploads/data.json').read_text())
             assert data['message'] == 'Test JSON data'
             ```
         """
@@ -440,7 +440,7 @@ import json
 from pathlib import Path
 
 # Read JSON file from uploads directory
-json_file = Path('/uploads/test_data_{session_id}.json')
+json_file = Path('/home/pyodide/uploads/test_data_{session_id}.json')
 
 if not json_file.exists():
     raise FileNotFoundError(f"JSON file not found: {{json_file}}")
@@ -505,7 +505,7 @@ print("JSON parsing validation successful!")
         Example:
             Tests binary operations like:
             ```python
-            data = Path('/plots/image.png').read_bytes()
+            data = Path('/home/pyodide/plots/image.png').read_bytes()
             assert data[:4] == b'\\x89PNG'
             ```
         """
@@ -517,7 +517,7 @@ print("JSON parsing validation successful!")
 from pathlib import Path
 
 # Read binary file from plots directory
-binary_file = Path('/plots/test_binary_{session_id}.dat')
+binary_file = Path('/home/pyodide/plots/test_binary_{session_id}.dat')
 
 if not binary_file.exists():
     raise FileNotFoundError(f"Binary file not found: {{binary_file}}")
@@ -598,7 +598,7 @@ files_to_read = [
     'multi_test_2_{session_id}.txt'
 ]
 
-plots_dir = Path('/plots')
+plots_dir = Path('/home/pyodide/plots')
 results = {{}}
 errors = []
 
@@ -678,7 +678,7 @@ print("Batch file operation completed!")
             Tests error handling like:
             ```python
             try:
-                Path('/plots/nonexistent.txt').read_text()
+                Path('/home/pyodide/plots/nonexistent.txt').read_text()
             except FileNotFoundError as e:
                 print(f"Expected error: {e}")
             ```
@@ -691,7 +691,7 @@ print("Batch file operation completed!")
 from pathlib import Path
 
 # Attempt to read non-existent file with proper error handling
-nonexistent_file = Path('/plots/{nonexistent_file}')
+nonexistent_file = Path('/home/pyodide/plots/{nonexistent_file}')
 
 print(f"Checking file: {{nonexistent_file}}")
 print(f"File exists: {{nonexistent_file.exists()}}")
@@ -773,8 +773,8 @@ from datetime import datetime
 print("=== Starting Complex Filesystem Workflow ===")
 
 # Step 1: Directory analysis
-plots_dir = Path('/plots')
-uploads_dir = Path('/uploads')
+plots_dir = Path('/home/pyodide/plots')
+uploads_dir = Path('/home/pyodide/uploads')
 
 workflow_results = {{
     'timestamp': datetime.now().isoformat(),
@@ -923,7 +923,7 @@ print("\\n✓ Complex filesystem workflow completed successfully!")
         # Test successful filesystem operation
         success_code = """
 from pathlib import Path
-plots_dir = Path('/plots')
+plots_dir = Path('/home/pyodide/plots')
 print(f"Directory exists: {plots_dir.exists()}")
 """
 

@@ -111,7 +111,7 @@ import json
 
 # Read the uploaded file
 try:
-    df = pd.read_csv('/uploads/{uploaded_filename}')
+    df = pd.read_csv('/home/pyodide/uploads/{uploaded_filename}')
     result = {{
         "shape": list(df.shape),
         "columns": list(df.columns),
@@ -168,7 +168,7 @@ import pandas as pd
 import json
 
 try:
-    df = pd.read_csv('/uploads/{uploaded_filename}')
+    df = pd.read_csv('/home/pyodide/uploads/{uploaded_filename}')
     result = {{
         "success": True,
         "shape": list(df.shape),
@@ -214,11 +214,11 @@ class TestConcurrentOperations:
 
             # WHEN: Execute multiple operations using the same file
             operations = [
-                f"import pandas as pd; df = pd.read_csv('/uploads/{uploaded_filename}'); "
+                f"import pandas as pd; df = pd.read_csv('/home/pyodide/uploads/{uploaded_filename}'); "
                 + "print(df.shape[0])",
-                f"import pandas as pd; df = pd.read_csv('/uploads/{uploaded_filename}'); "
+                f"import pandas as pd; df = pd.read_csv('/home/pyodide/uploads/{uploaded_filename}'); "
                 + "print(df.sum().sum())",
-                f"import pandas as pd; df = pd.read_csv('/uploads/{uploaded_filename}'); "
+                f"import pandas as pd; df = pd.read_csv('/home/pyodide/uploads/{uploaded_filename}'); "
                 + "print(list(df.columns))",
             ]
 
@@ -325,8 +325,8 @@ import pandas as pd
 import json
 
 # Load both datasets
-df1 = pd.read_csv('/uploads/{uploaded_files[0]}')
-df2 = pd.read_csv('/uploads/{uploaded_files[1]}')
+df1 = pd.read_csv('/home/pyodide/uploads/{uploaded_files[0]}')
+df2 = pd.read_csv('/home/pyodide/uploads/{uploaded_files[1]}')
 
 # Merge the datasets
 merged = pd.merge(df1, df2, on='id')

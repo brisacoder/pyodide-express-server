@@ -121,7 +121,7 @@ uv sync
 import matplotlib.pyplot as plt
 
 plt.plot([1, 2, 3], [1, 4, 2])
-plt.savefig('/plots/matplotlib/my_chart.png')  # Appears instantly in local plots/ folder!
+plt.savefig('/home/pyodide/plots/matplotlib/my_chart.png')  # Appears instantly in local pyodide_data/plots/ folder!
 ```
 
 **📖 Complete Guide:** See [`docs/FILESYSTEM_MOUNTING_GUIDE.md`](docs/FILESYSTEM_MOUNTING_GUIDE.md) for comprehensive documentation  

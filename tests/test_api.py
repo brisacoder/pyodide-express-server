@@ -85,8 +85,8 @@ import time
 # Test pathlib usage for cross-platform compatibility
 base_path = Path('/tmp')
 test_file = base_path / 'test.json'
-data_dir = Path('/uploads')
-plots_dir = Path('/plots/matplotlib')
+data_dir = Path('/home/pyodide/uploads')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 
 # Create sample data structure
 data = {
@@ -113,7 +113,7 @@ x = np.linspace(0, 10, 100)
 y = np.sin(x)
 
 # Use pathlib for plot file handling
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 
 # Create unique filename with timestamp
@@ -139,9 +139,9 @@ import json
 import time
 
 # Test comprehensive pathlib file operations
-uploads_dir = Path('/uploads')
+uploads_dir = Path('/home/pyodide/uploads')
 temp_dir = Path('/tmp')
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 
 # Create directories if they don't exist
 for directory in [uploads_dir, temp_dir, plots_dir]:
@@ -1143,7 +1143,7 @@ from pathlib import Path
 import csv
 
 # Use pathlib for cross-platform file handling
-uploads_dir = Path('/uploads')
+uploads_dir = Path('/home/pyodide/uploads')
 csv_file = uploads_dir / '{filename}'
 
 print(f'Processing file: {{csv_file}}')

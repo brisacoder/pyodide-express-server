@@ -117,7 +117,7 @@ from pathlib import Path
 import os
 
 filename = "${filename.replace(/"/g, '\\"')}"
-upload_path = Path('/uploads') / filename
+upload_path = Path('/home/pyodide/uploads') / filename
 
 success = False
 message = ""

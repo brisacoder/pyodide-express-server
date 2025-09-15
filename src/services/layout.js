@@ -6,13 +6,13 @@ const path = require('node:path');
  * @typedef {Object} BaseConfig
  * @property {string} urlBase
  *   Relative path for URLs (will be prefixed with '/' automatically), e.g. "uploads".
- * @property {string[]=} subfolders
+ * @property {string[]} [subfolders]
  *   Optional list of subdirectory names to create under this base directory on disk.
  *   Each name must match /^[A-Za-z0-9._-]+$/.
  */
 
 /**
- * @typedef {Record<string, BaseConfig>} BasesConfig
+ * @typedef {Object<string, BaseConfig>} BasesConfig
  * An object keyed by base name. Example:
  * {
  *   uploads: { urlBase: '/uploads', subfolders: [] },
@@ -31,7 +31,7 @@ const path = require('node:path');
  */
 
 /**
- * @typedef {Record<string, BaseRealized>} BasesRealized
+ * @typedef {Object<string, BaseRealized>} BasesRealized
  * Object keyed by base name mapping to realized base info.
  */
 

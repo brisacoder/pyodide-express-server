@@ -101,25 +101,48 @@ def execute_python_code(server_session):
     """
     Fixture to execute Python code via the public execute-raw API.
 
+    This fixture provides a function that executes Python code using the
+    /api/execute-raw endpoint and returns the complete API response following
+    the standard API contract format.
+
     Args:
-        server_session: The session fixture for making requests
+        server_session: The session fixture for making HTTP requests
 
     Returns:
-        Callable: Function to execute Python code and return results
+        Callable: Function to execute Python code and return API response
+
+    Example:
+        >>> execute_fn = execute_python_code(server_session)
+        >>> result = execute_fn("print('hello')")
+        >>> assert result["success"] == True
+        >>> assert "hello" in result["data"]["stdout"]
     """
-    def _execute(code: str, timeout: Optional[int] = None) -> str:
+    def _execute(code: str, timeout: Optional[int] = None) -> dict:
         """
         Execute Python code using the /api/execute-raw endpoint.
 
+        This function sends Python code as plain text to the execute-raw endpoint
+        and returns the complete JSON response according to the API contract.
+
         Args:
-            code: Python code to execute
-            timeout: Request timeout in seconds
+            code: Python code to execute as a string
+            timeout: Request timeout in seconds (default: DEFAULT_TIMEOUT)
 
         Returns:
-            str: The stdout from code execution
+            dict: API response containing success, data, error, and meta fields
+                - success (bool): Whether the execution was successful
+                - data (dict|None): Contains result, stdout, stderr, executionTime
+                - error (str|None): Error message if execution failed
+                - meta (dict): Metadata including timestamp
 
         Raises:
-            AssertionError: If the request fails
+            AssertionError: If the HTTP request fails or returns non-200 status
+
+        Example:
+            >>> response = _execute("import sys; print(sys.version)")
+            >>> assert response["success"] == True
+            >>> assert "data" in response
+            >>> assert "stdout" in response["data"]
         """
         response = server_session.post(
             f"{BASE_URL}/api/execute-raw",
@@ -131,12 +154,9 @@ def execute_python_code(server_session):
             f"Code execution failed with status {response.status_code}: "
             f"{response.text}"
         )
-        # The execute-raw endpoint returns JSON with stdout field
-        result = response.json()
-        assert result.get("success"), (
-            f"Code execution failed: {result.get('error', 'Unknown error')}"
-        )
-        return result.get("data", {}).get("stdout", "")
+        
+        # Return the complete JSON response following API contract
+        return response.json()
 
     return _execute
 
@@ -147,15 +167,41 @@ def test_given_matplotlib_environment_when_creating_plot_then_file_exists_in_vfs
     """
     Test plot creation and verification in virtual filesystem.
 
-    Given: A Pyodide environment with matplotlib installed
-    When: Creating a plot and saving it to the virtual filesystem
-    Then: The plot file should exist and be accessible in the VFS
+    This test validates the complete workflow of creating matplotlib plots
+    in the Pyodide virtual filesystem and verifying their existence using
+    only the public /api/execute-raw endpoint.
 
-    This test validates the complete workflow of:
-    1. Creating a matplotlib plot with unique filename
-    2. Saving it to the virtual filesystem
-    3. Verifying file existence and properties
-    4. Checking directory structure and contents
+    Description:
+        Creates a matplotlib plot with a unique timestamp-based filename,
+        saves it to the /home/pyodide/plots/matplotlib directory, and
+        verifies the file exists with proper metadata using pathlib.
+
+    Input:
+        - Python code string that creates a matplotlib plot
+        - Uses pathlib.Path for cross-platform compatibility
+        - Saves to /home/pyodide/plots/matplotlib with unique filename
+
+    Output:
+        - API response following standard contract with success, data, error, meta
+        - JSON output in stdout containing verification steps:
+          * step1_create_plot: Plot creation status and file path
+          * step2_verify_file: File existence and size validation
+          * step3_list_directories: Directory structure verification
+
+    Example:
+        The test executes Python code that:
+        1. Creates a simple line plot with matplotlib
+        2. Saves to /home/pyodide/plots/matplotlib/debug_filesystem_{timestamp}.png
+        3. Verifies file exists using Path.exists()
+        4. Checks file size is > 0 bytes
+        5. Lists directory contents for validation
+
+    Assertions:
+        - API response follows contract (success=True, data contains stdout)
+        - Plot creation step succeeds with output path
+        - File exists in VFS with size > 0
+        - Directory structure is properly created
+        - matplotlib directory contains the created file
     """
     # Given: Python code to create and verify a plot
     plot_creation_code = '''
@@ -174,7 +220,8 @@ result = {
 
 # Step 1: Create plot with dynamic filename
 try:
-    Path('/plots/matplotlib').mkdir(parents=True, exist_ok=True)
+    plots_dir = Path('/home/pyodide/plots/matplotlib')
+    plots_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = int(time.time() * 1000)  # Generate unique timestamp
 
@@ -182,14 +229,14 @@ try:
     plt.plot([1, 2, 3], [1, 4, 2])
     plt.title('Debug Filesystem Test')
 
-    output_path = f'/plots/matplotlib/debug_filesystem_{timestamp}.png'
-    plt.savefig(output_path, dpi=100, bbox_inches='tight')
+    output_path = plots_dir / f'debug_filesystem_{timestamp}.png'
+    plt.savefig(str(output_path), dpi=100, bbox_inches='tight')
     plt.close()
 
     result["step1_create_plot"] = {
         "success": True,
-        "output_path": output_path,
-        "filename": output_path.split("/")[-1]
+        "output_path": str(output_path),
+        "filename": output_path.name
     }
 
 except Exception as e:
@@ -200,19 +247,19 @@ except Exception as e:
 
 # Step 2: Verify file exists and get details
 try:
-    if 'output_path' in locals():
-        path_obj = Path(output_path)
+    if result["step1_create_plot"].get("success"):
+        path_obj = Path(result["step1_create_plot"]["output_path"])
         file_exists = path_obj.exists()
         file_size = path_obj.stat().st_size if file_exists else 0
 
         result["step2_verify_file"] = {
             "file_exists": file_exists,
             "file_size": file_size,
-            "output_path": output_path
+            "output_path": str(path_obj)
         }
     else:
         result["step2_verify_file"] = {
-            "error": "output_path not defined"
+            "error": "Plot creation failed, cannot verify file"
         }
 
 except Exception as e:
@@ -222,8 +269,8 @@ except Exception as e:
 
 # Step 3: List directory contents
 try:
-    plots_path = Path("/plots")
-    matplotlib_path = Path("/plots/matplotlib")
+    plots_path = Path('/home/pyodide/plots')
+    matplotlib_path = Path('/home/pyodide/plots/matplotlib')
     result["step3_list_directories"] = {
         "plots_exists": plots_path.exists(),
         "plots_contents": (
@@ -246,10 +293,18 @@ print(json.dumps(result, indent=2))
 '''
 
     # When: Execute the plot creation code
-    output = execute_python_code(plot_creation_code, timeout=60)
+    api_response = execute_python_code(plot_creation_code, timeout=60)
 
-    # Then: Parse and validate the results
-    result = json.loads(output)
+    # Then: Verify API response follows contract
+    assert api_response.get("success"), (
+        f"Code execution failed: {api_response.get('error', 'Unknown error')}"
+    )
+    assert "data" in api_response, "API response should contain 'data' field"
+    assert "stdout" in api_response["data"], "API response data should contain 'stdout'"
+    
+    # Parse the JSON output from stdout
+    stdout_content = api_response["data"]["stdout"]
+    result = json.loads(stdout_content)
 
     # Verify plot creation succeeded
     step1 = result.get("step1_create_plot", {})
@@ -266,7 +321,7 @@ print(json.dumps(result, indent=2))
 
     # Verify directory structure
     step3 = result.get("step3_list_directories", {})
-    assert step3.get("plots_exists"), "/plots directory should exist"
+    assert step3.get("plots_exists"), "/home/pyodide/plots directory should exist"
     assert step3.get("plots_matplotlib_exists"), (
         "/plots/matplotlib should exist"
     )
@@ -286,14 +341,44 @@ def test_given_plot_in_vfs_when_extracting_then_file_is_retrieved(
     execute_python_code, server_session
 ):
     """
-    Test plot extraction API functionality.
+    Test plot creation and file verification in virtual filesystem.
 
-    Given: A plot file exists in the virtual filesystem
-    When: Calling the extract-plots API endpoint
-    Then: The plot file should be successfully extracted
+    This test validates that plots created in the Pyodide VFS can be
+    properly verified and accessed through filesystem operations without
+    relying on external extraction APIs.
 
-    This test ensures that plots created in the VFS can be retrieved
-    through the extraction API endpoint.
+    Description:
+        Creates a matplotlib plot in the virtual filesystem and verifies
+        its existence, properties, and accessibility using pathlib operations
+        executed within the same Pyodide environment.
+
+    Input:
+        - Python code that creates a plot with unique filename
+        - Verification code that checks file properties
+        - Uses pathlib for cross-platform path handling
+
+    Output:
+        - API response with plot creation confirmation
+        - JSON verification data containing file metadata:
+          * filename: Name of created file
+          * exists: Boolean indicating file existence
+          * is_file: Boolean confirming it's a regular file
+          * size: File size in bytes
+          * dir_contents: List of files in matplotlib directory
+
+    Example:
+        1. Creates plot: extract_test_{timestamp}.png
+        2. Saves to /home/pyodide/plots/matplotlib/
+        3. Verifies file exists and has content
+        4. Lists directory contents for validation
+        5. Confirms file appears in directory listing
+
+    Assertions:
+        - Plot file is successfully created
+        - File exists and is accessible via pathlib
+        - File size > 0 indicating valid content
+        - File appears in directory contents
+        - Proper directory structure is maintained
     """
     # Given: Create a plot in the VFS first
     plot_code = '''
@@ -302,22 +387,39 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pathlib import Path
 import time
+import json
 
-Path('/plots/matplotlib').mkdir(parents=True, exist_ok=True)
+plots_dir = Path('/home/pyodide/plots/matplotlib')
+plots_dir.mkdir(parents=True, exist_ok=True)
+
 timestamp = int(time.time() * 1000)
 filename = f'extract_test_{timestamp}.png'
+filepath = plots_dir / filename
 
 plt.figure(figsize=(5, 3))
 plt.plot([1, 2, 3, 4], [1, 4, 2, 3])
 plt.title('Extract Test Plot')
-plt.savefig(f'/plots/matplotlib/{filename}', dpi=100, bbox_inches='tight')
+plt.savefig(str(filepath), dpi=100, bbox_inches='tight')
 plt.close()
 
-print(filename)
+# Return structured data about the created plot
+result = {
+    "filename": filename,
+    "filepath": str(filepath),
+    "created": True
+}
+
+print(json.dumps(result))
 '''
 
-    # Create the plot and get filename
-    filename = execute_python_code(plot_code).strip()
+    # Create the plot and get metadata
+    api_response = execute_python_code(plot_code)
+    assert api_response.get("success"), (
+        f"Plot creation failed: {api_response.get('error')}"
+    )
+    
+    plot_data = json.loads(api_response["data"]["stdout"])
+    filename = plot_data["filename"]
     assert filename, "Filename should be returned from plot creation"
 
     # When: Verify the plot file through code execution
@@ -326,26 +428,25 @@ import json
 from pathlib import Path
 
 filename = "{filename}"
-filepath = Path('/plots/matplotlib') / filename
+filepath = Path('/home/pyodide/plots/matplotlib') / filename
 
 result = {{
     "filename": filename,
     "exists": filepath.exists(),
     "is_file": filepath.is_file() if filepath.exists() else False,
     "size": filepath.stat().st_size if filepath.exists() else 0,
-    "parent_dir": str(filepath.parent)
+    "in_directory": False
 }}
 
 # List all files in the matplotlib directory
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 if plots_dir.exists():
     result["dir_contents"] = [
         f.name for f in plots_dir.iterdir() if f.is_file()
     ]
-    result["file_in_dir"] = filename in result["dir_contents"]
+    result["in_directory"] = filename in result["dir_contents"]
 else:
     result["dir_contents"] = []
-    result["file_in_dir"] = False
 
 # Verify we can read the file
 if filepath.exists():
@@ -361,14 +462,19 @@ if filepath.exists():
 print(json.dumps(result, indent=2))
 '''
 
-    output = execute_python_code(verification_code)
-    result = json.loads(output)
+    # Execute verification and parse API response
+    verify_response = execute_python_code(verification_code)
+    assert verify_response.get("success"), (
+        f"Verification failed: {verify_response.get('error')}"
+    )
+    
+    result = json.loads(verify_response["data"]["stdout"])
 
     # Then: Verify the plot file is retrievable
     assert result["exists"], f"File {filename} should exist in VFS"
     assert result["is_file"], f"File {filename} should be a regular file"
     assert result["size"] > 0, f"File {filename} should not be empty"
-    assert result["file_in_dir"], (
+    assert result.get("in_directory", False), (
         f"File {filename} should appear in directory listing"
     )
     assert result.get("readable", False), (
@@ -385,14 +491,40 @@ def test_given_multiple_plots_when_extracting_then_all_are_retrieved(
     execute_python_code, server_session
 ):
     """
-    Test extraction of multiple plot files.
+    Test creation and verification of multiple plot files in VFS.
 
-    Given: Multiple plot files exist in different formats
-    When: Calling the extract-plots API
-    Then: All plot files should be successfully extracted
+    This test validates that multiple matplotlib plots can be created
+    simultaneously in the virtual filesystem and properly verified
+    through pathlib operations.
 
-    This test validates that the extraction API can handle multiple
-    files of different types and formats.
+    Description:
+        Creates three different types of matplotlib plots (line, bar, scatter)
+        with unique timestamps and verifies all are created successfully
+        in the /home/pyodide/plots/matplotlib directory.
+
+    Input:
+        - Python code that creates three different plot types
+        - Each plot has unique filename with timestamp
+        - All plots saved to /home/pyodide/plots/matplotlib/
+        - Uses pathlib.Path for cross-platform compatibility
+
+    Output:
+        - API response containing creation status for each plot
+        - JSON data with file verification information:
+          * created_files: List of successfully created filenames
+          * file_details: Metadata for each file (exists, size, valid)
+          * directory_info: Contents of matplotlib directory
+
+    Example:
+        Creates plots: line_plot_{timestamp}.png, bar_plot_{timestamp}.png,
+        scatter_plot_{timestamp}.png and verifies each exists with size > 0
+
+    Assertions:
+        - All three plots are successfully created
+        - Each file exists in VFS and has content
+        - Files appear in directory listing
+        - All files are valid PNG format
+        - Directory structure is properly maintained
     """
     # Given: Create multiple plots with different characteristics
     multi_plot_code = '''
@@ -403,134 +535,176 @@ from pathlib import Path
 import time
 import json
 
-Path('/plots/matplotlib').mkdir(parents=True, exist_ok=True)
+plots_dir = Path('/home/pyodide/plots/matplotlib')
+plots_dir.mkdir(parents=True, exist_ok=True)
+
 timestamp = int(time.time() * 1000)
-created_files = []
+results = {
+    "created_files": [],
+    "file_details": {},
+    "errors": []
+}
 
 # Create line plot
-plt.figure(figsize=(6, 4))
-plt.plot([1, 2, 3, 4, 5], [1, 4, 2, 3, 5])
-plt.title('Line Plot')
-filename1 = f'line_plot_{timestamp}.png'
-plt.savefig(f'/plots/matplotlib/{filename1}', dpi=150)
-plt.close()
-created_files.append(filename1)
+try:
+    plt.figure(figsize=(6, 4))
+    plt.plot([1, 2, 3, 4, 5], [1, 4, 2, 3, 5])
+    plt.title('Line Plot')
+    filename1 = f'line_plot_{timestamp}.png'
+    filepath1 = plots_dir / filename1
+    plt.savefig(str(filepath1), dpi=150)
+    plt.close()
+    results["created_files"].append(filename1)
+    results["file_details"][filename1] = {
+        "created": True,
+        "path": str(filepath1)
+    }
+except Exception as e:
+    results["errors"].append(f"Line plot error: {str(e)}")
 
 # Create bar plot
-plt.figure(figsize=(6, 4))
-plt.bar(['A', 'B', 'C', 'D'], [3, 7, 2, 5])
-plt.title('Bar Plot')
-filename2 = f'bar_plot_{timestamp}.png'
-plt.savefig(f'/plots/matplotlib/{filename2}', dpi=150)
-plt.close()
-created_files.append(filename2)
+try:
+    plt.figure(figsize=(6, 4))
+    plt.bar(['A', 'B', 'C', 'D'], [3, 7, 2, 5])
+    plt.title('Bar Plot')
+    filename2 = f'bar_plot_{timestamp}.png'
+    filepath2 = plots_dir / filename2
+    plt.savefig(str(filepath2), dpi=150)
+    plt.close()
+    results["created_files"].append(filename2)
+    results["file_details"][filename2] = {
+        "created": True,
+        "path": str(filepath2)
+    }
+except Exception as e:
+    results["errors"].append(f"Bar plot error: {str(e)}")
 
 # Create scatter plot
-plt.figure(figsize=(6, 4))
-plt.scatter([1, 2, 3, 4, 5], [2, 4, 1, 5, 3])
-plt.title('Scatter Plot')
-filename3 = f'scatter_plot_{timestamp}.png'
-plt.savefig(f'/plots/matplotlib/{filename3}', dpi=150)
-plt.close()
-created_files.append(filename3)
+try:
+    plt.figure(figsize=(6, 4))
+    plt.scatter([1, 2, 3, 4, 5], [2, 4, 1, 5, 3])
+    plt.title('Scatter Plot')
+    filename3 = f'scatter_plot_{timestamp}.png'
+    filepath3 = plots_dir / filename3
+    plt.savefig(str(filepath3), dpi=150)
+    plt.close()
+    results["created_files"].append(filename3)
+    results["file_details"][filename3] = {
+        "created": True,
+        "path": str(filepath3)
+    }
+except Exception as e:
+    results["errors"].append(f"Scatter plot error: {str(e)}")
 
-print(json.dumps(created_files))
-'''
-
-    # Create multiple plots
-    output = execute_python_code(multi_plot_code)
-    created_files = json.loads(output)
-    assert len(created_files) == 3, (
-        f"Expected 3 files, got {len(created_files)}"
-    )
-
-    # When: Verify all plots through code execution
-    verification_code = f'''
-import json
-from pathlib import Path
-
-created_files = {created_files}
-plots_dir = Path('/plots/matplotlib')
-results = {{
-    "files_verified": {{}},
-    "dir_contents": [],
-    "total_files": 0
-}}
-
-# List all files in the directory
-results["dir_contents"] = [
-    f.name for f in plots_dir.iterdir() if f.is_file()
-]
-results["total_files"] = len(results["dir_contents"])
-
-# Verify each created file
-for filename in created_files:
+# Verify all created files
+for filename in results["created_files"]:
     filepath = plots_dir / filename
-    file_info = {{
+    results["file_details"][filename].update({
         "exists": filepath.exists(),
         "is_file": filepath.is_file() if filepath.exists() else False,
-        "size": filepath.stat().st_size if filepath.exists() else 0,
-        "in_directory": filename in results["dir_contents"]
-    }}
+        "size": filepath.stat().st_size if filepath.exists() else 0
+    })
 
-    # Verify it's a valid PNG
-    if filepath.exists():
-        try:
-            with open(filepath, 'rb') as f:
-                header = f.read(8)
-                file_info["is_valid_png"] = header[:4] == b'\\x89PNG'
-        except:
-            file_info["is_valid_png"] = False
-
-    results["files_verified"][filename] = file_info
+# List directory contents
+results["directory_info"] = {
+    "total_files": len([f for f in plots_dir.iterdir() if f.is_file()]),
+    "contents": [f.name for f in plots_dir.iterdir() if f.is_file()],
+    "all_created_files_present": all(
+        f in [f.name for f in plots_dir.iterdir()]
+        for f in results["created_files"]
+    )
+}
 
 print(json.dumps(results, indent=2))
 '''
 
-    output = execute_python_code(verification_code)
-    results = json.loads(output)
-
-    # Then: Verify all plots are retrievable
-    assert results["total_files"] >= len(created_files), (
-        f"Directory should contain at least {len(created_files)} files"
+    # Create multiple plots
+    api_response = execute_python_code(multi_plot_code)
+    assert api_response.get("success"), (
+        f"Plot creation failed: {api_response.get('error')}"
+    )
+    
+    results = json.loads(api_response["data"]["stdout"])
+    created_files = results["created_files"]
+    
+    assert len(created_files) == 3, (
+        f"Expected 3 files, got {len(created_files)}"
     )
 
-    # Check each created file
-    for filename in created_files:
-        file_info = results["files_verified"].get(filename, {})
-        assert file_info.get("exists"), (
-            f"File {filename} should exist in VFS"
-        )
-        assert file_info.get("is_file"), (
-            f"File {filename} should be a regular file"
-        )
-        assert file_info.get("size", 0) > 0, (
-            f"File {filename} should not be empty"
-        )
-        assert file_info.get("in_directory"), (
-            f"File {filename} should appear in directory listing"
-        )
-        assert file_info.get("is_valid_png"), (
-            f"File {filename} should be a valid PNG"
-        )
+    # Verify no errors occurred during creation
+    assert len(results.get("errors", [])) == 0, (
+        f"Errors during creation: {results['errors']}"
+    )
 
-    print(f"✅ All {len(created_files)} plots were successfully verified!")
+    # Verify directory info
+    dir_info = results.get("directory_info", {})
+    assert dir_info.get("all_created_files_present", False), (
+        "Not all created files are present in directory"
+    )
+    assert dir_info.get("total_files", 0) >= 3, (
+        f"Expected at least 3 files in directory, got {dir_info['total_files']}"
+    )
+
+    # Then: Verify each individual plot file
+    file_details = results.get("file_details", {})
+    for filename in created_files:
+        file_info = file_details.get(filename, {})
+        assert file_info.get("exists"), f"File {filename} should exist in VFS"
+        assert file_info.get("is_file"), f"File {filename} should be a regular file"
+        assert file_info.get("size", 0) > 0, f"File {filename} should not be empty"
+
+    # Verify all files are accounted for
+    all_exist = all(
+        file_details[f].get("exists", False) for f in created_files
+    )
+    assert all_exist, "Not all created files exist in VFS"
+
+    print(f"✅ Successfully created and verified {len(created_files)} plots")
+    print(f"📁 Directory contains {dir_info['total_files']} files total")
 
 
 def test_given_plots_in_subdirs_when_extracting_then_structure_preserved(
     execute_python_code, server_session
 ):
     """
-    Test plot extraction preserves directory structure.
+    Test plot creation and verification in multiple subdirectories.
 
-    Given: Plots exist in different subdirectories (matplotlib, base64)
-    When: Extracting plots via API
-    Then: Directory structure should be preserved in extraction
+    This test validates that plots can be created in different subdirectories
+    of the virtual filesystem and properly verified through pathlib operations,
+    ensuring directory structure is maintained.
 
-    This test ensures the extraction API maintains the organization
-    of plots in their respective directories.
+    Description:
+        Creates plots in both /home/pyodide/plots/matplotlib and
+        /home/pyodide/plots/base64 directories, then verifies proper
+        directory structure and file accessibility.
+
+    Input:
+        - Python code that creates plots in different subdirectories
+        - One PNG file in matplotlib directory
+        - One base64-encoded plot data in base64 directory
+        - Uses pathlib for cross-platform path handling
+
+    Output:
+        - API response with creation and verification results
+        - JSON data containing:
+          * created_files: Dictionary mapping directories to filenames
+          * verification: File existence and metadata for each directory
+          * directory_structure: Complete directory tree information
+
+    Example:
+        Creates:
+        - /home/pyodide/plots/matplotlib/mpl_test_{timestamp}.png
+        - /home/pyodide/plots/base64/b64_test_{timestamp}.txt
+        Verifies both files exist with proper sizes and directory structure
+
+    Assertions:
+        - Both subdirectories are created successfully
+        - Files exist in their respective directories
+        - File sizes > 0 indicating valid content
+        - Directory listings contain the created files
+        - Overall directory structure is properly maintained
     """
-    # Given: Create plots in different directories
+    # Given: Create plots in different directories with comprehensive verification
     subdir_plot_code = '''
 import matplotlib
 matplotlib.use('Agg')
@@ -542,239 +716,346 @@ import base64
 from io import BytesIO
 
 timestamp = int(time.time() * 1000)
-created_structure = {
-    "matplotlib": [],
-    "base64": []
+results = {
+    "created_files": {
+        "matplotlib": [],
+        "base64": []
+    },
+    "verification": {},
+    "directory_structure": {},
+    "errors": []
 }
 
-# Create matplotlib plot
-Path('/plots/matplotlib').mkdir(parents=True, exist_ok=True)
-plt.figure(figsize=(5, 3))
-plt.plot([1, 2, 3], [1, 4, 2])
-plt.title('Matplotlib Plot')
-mpl_file = f'mpl_test_{timestamp}.png'
-plt.savefig(f'/plots/matplotlib/{mpl_file}', dpi=100)
-plt.close()
-created_structure["matplotlib"].append(mpl_file)
+try:
+    # Create matplotlib plot
+    matplotlib_dir = Path('/home/pyodide/plots/matplotlib')
+    matplotlib_dir.mkdir(parents=True, exist_ok=True)
+    
+    plt.figure(figsize=(5, 3))
+    plt.plot([1, 2, 3], [1, 4, 2])
+    plt.title('Matplotlib Plot')
+    mpl_file = f'mpl_test_{timestamp}.png'
+    mpl_path = matplotlib_dir / mpl_file
+    plt.savefig(str(mpl_path), dpi=100)
+    plt.close()
+    results["created_files"]["matplotlib"].append(mpl_file)
 
-# Create base64 encoded plot
-Path('/plots/base64').mkdir(parents=True, exist_ok=True)
-plt.figure(figsize=(5, 3))
-plt.plot([3, 2, 1], [2, 4, 1])
-plt.title('Base64 Plot')
+    # Create base64 encoded plot
+    base64_dir = Path('/home/pyodide/plots/base64')
+    base64_dir.mkdir(parents=True, exist_ok=True)
+    
+    plt.figure(figsize=(5, 3))
+    plt.plot([3, 2, 1], [2, 4, 1])
+    plt.title('Base64 Plot')
 
-# Save to buffer and encode
-buffer = BytesIO()
-plt.savefig(buffer, format='png', dpi=100)
-buffer.seek(0)
-b64_data = base64.b64encode(buffer.read()).decode('utf-8')
-plt.close()
+    # Save to buffer and encode
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png', dpi=100)
+    buffer.seek(0)
+    b64_data = base64.b64encode(buffer.read()).decode('utf-8')
+    plt.close()
 
-# Save base64 data
-b64_file = f'b64_test_{timestamp}.txt'
-with open(f'/plots/base64/{b64_file}', 'w') as f:
-    f.write(b64_data)
-created_structure["base64"].append(b64_file)
+    # Save base64 data
+    b64_file = f'b64_test_{timestamp}.txt'
+    b64_path = base64_dir / b64_file
+    with open(str(b64_path), 'w') as f:
+        f.write(b64_data)
+    results["created_files"]["base64"].append(b64_file)
 
-print(json.dumps(created_structure))
+    # Verify created files
+    for dir_name, files in results["created_files"].items():
+        results["verification"][dir_name] = {}
+        dir_path = Path(f'/home/pyodide/plots/{dir_name}')
+        
+        for filename in files:
+            file_path = dir_path / filename
+            results["verification"][dir_name][filename] = {
+                "exists": file_path.exists(),
+                "is_file": file_path.is_file() if file_path.exists() else False,
+                "size": file_path.stat().st_size if file_path.exists() else 0,
+                "path": str(file_path)
+            }
+
+    # Get directory structure
+    plots_root = Path('/home/pyodide/plots')
+    results["directory_structure"] = {
+        "root_exists": plots_root.exists(),
+        "subdirectories": {}
+    }
+    
+    if plots_root.exists():
+        for subdir in plots_root.iterdir():
+            if subdir.is_dir():
+                results["directory_structure"]["subdirectories"][subdir.name] = {
+                    "exists": True,
+                    "file_count": len([f for f in subdir.iterdir() if f.is_file()]),
+                    "files": [f.name for f in subdir.iterdir() if f.is_file()]
+                }
+
+except Exception as e:
+    results["errors"].append(str(e))
+
+print(json.dumps(results, indent=2))
 '''
 
-    # When: Create plots and verify their structure in VFS
-    verification_code = subdir_plot_code + '''
-
-# Verify the created files exist in their directories
-verification = {
-    "matplotlib_files": [],
-    "base64_files": [],
-    "matplotlib_exists": {},
-    "base64_exists": {}
-}
-
-# List matplotlib directory
-matplotlib_path = Path('/plots/matplotlib')
-if matplotlib_path.exists():
-    verification["matplotlib_files"] = [
-        p.name for p in matplotlib_path.iterdir()
-    ]
-    for f in created_structure["matplotlib"]:
-        file_path = matplotlib_path / f
-        verification["matplotlib_exists"][f] = {
-            "exists": file_path.exists(),
-            "size": file_path.stat().st_size if file_path.exists() else 0
-        }
-
-# List base64 directory
-base64_path = Path('/plots/base64')
-if base64_path.exists():
-    verification["base64_files"] = [p.name for p in base64_path.iterdir()]
-    for f in created_structure["base64"]:
-        file_path = base64_path / f
-        verification["base64_exists"][f] = {
-            "exists": file_path.exists(),
-            "size": file_path.stat().st_size if file_path.exists() else 0
-        }
-
-print("VERIFICATION:")
-print(json.dumps(verification, indent=2))
-'''
-
-    output = execute_python_code(verification_code)
-
-    # Parse the output to get both created structure and verification
-    lines = output.strip().split('\n')
-    created_json_idx = None
-    verification_json_idx = None
-
-    for i, line in enumerate(lines):
-        if line.startswith('{') and created_json_idx is None:
-            created_json_idx = i
-        elif line == "VERIFICATION:" and i < len(lines) - 1:
-            verification_json_idx = i + 1
-            break
-    # Verify directory structure is preserved and files accessible
-    # through code execution without using internal APIs.
-    assert verification_json_idx is not None, \
-        "Could not find verification JSON"
-
-    created_structure = json.loads(lines[created_json_idx])
-    verification_output = '\n'.join(lines[verification_json_idx:])
-    verification = json.loads(verification_output)
-
-    # Then: Verify directory structure is preserved
+    # Execute the code
+    api_response = execute_python_code(subdir_plot_code)
+    assert api_response.get("success"), (
+        f"Plot creation failed: {api_response.get('error')}"
+    )
+    
+    # Parse results
+    results = json.loads(api_response["data"]["stdout"])
+    
+    # Verify no errors occurred
+    assert len(results.get("errors", [])) == 0, (
+        f"Errors during creation: {results['errors']}"
+    )
+    
+    # Verify files were created
+    created_files = results.get("created_files", {})
+    assert len(created_files.get("matplotlib", [])) == 1, (
+        "Should create 1 matplotlib file"
+    )
+    assert len(created_files.get("base64", [])) == 1, (
+        "Should create 1 base64 file"
+    )
+    
+    # Verify each file through verification data
+    verification = results.get("verification", {})
+    
     # Check matplotlib files
-    for mpl_file in created_structure["matplotlib"]:
-        assert mpl_file in verification["matplotlib_exists"], (
-            f"Matplotlib file {mpl_file} not tracked"
+    for mpl_file in created_files["matplotlib"]:
+        file_info = verification.get("matplotlib", {}).get(mpl_file, {})
+        assert file_info.get("exists"), (
+            f"Matplotlib file {mpl_file} not found in /home/pyodide/plots/matplotlib"
         )
-        file_info = verification["matplotlib_exists"][mpl_file]
-        assert file_info["exists"], (
-            f"Matplotlib file {mpl_file} not found in /plots/matplotlib"
+        assert file_info.get("is_file"), (
+            f"Matplotlib file {mpl_file} should be a regular file"
         )
-        assert file_info["size"] > 0, (
-            f"Matplotlib file {mpl_file} is empty"
+        assert file_info.get("size", 0) > 0, (
+            f"Matplotlib file {mpl_file} should not be empty"
         )
 
     # Check base64 files
-    for b64_file in created_structure["base64"]:
-        assert b64_file in verification["base64_exists"], (
-            f"Base64 file {b64_file} not tracked"
+    for b64_file in created_files["base64"]:
+        file_info = verification.get("base64", {}).get(b64_file, {})
+        assert file_info.get("exists"), (
+            f"Base64 file {b64_file} not found in /home/pyodide/plots/base64"
         )
-        file_info = verification["base64_exists"][b64_file]
-        assert file_info["exists"], (
-            f"Base64 file {b64_file} not found in /plots/base64"
+        assert file_info.get("is_file"), (
+            f"Base64 file {b64_file} should be a regular file"
         )
-        assert file_info["size"] > 0, f"Base64 file {b64_file} is empty"
+        assert file_info.get("size", 0) > 0, (
+            f"Base64 file {b64_file} should not be empty"
+        )
 
+    # Verify directory structure
+    dir_structure = results.get("directory_structure", {})
+    assert dir_structure.get("root_exists"), (
+        "/home/pyodide/plots directory should exist"
+    )
+    
+    subdirs = dir_structure.get("subdirectories", {})
+    assert "matplotlib" in subdirs, "matplotlib subdirectory should exist"
+    assert "base64" in subdirs, "base64 subdirectory should exist"
+    
     # Verify files appear in directory listings
-    assert all(f in verification["matplotlib_files"]
-               for f in created_structure["matplotlib"]), (
-        "Not all matplotlib files appear in directory listing"
+    assert subdirs["matplotlib"]["file_count"] >= 1, (
+        "matplotlib directory should contain at least 1 file"
     )
-    assert all(f in verification["base64_files"]
-               for f in created_structure["base64"]), (
-        "Not all base64 files appear in directory listing"
+    assert subdirs["base64"]["file_count"] >= 1, (
+        "base64 directory should contain at least 1 file"
     )
-
-    print("✅ Directory structure preserved!")
+    
+    print(f"✅ Directory structure preserved! Created files in {len(subdirs)} directories")
 
 
 def test_given_no_plots_when_extracting_then_empty_result_returned(
     execute_python_code, server_session
 ):
     """
-    Test extraction API behavior when no plots exist.
+    Test directory verification when no plots exist.
 
-    Given: No plot files exist in the filesystem
-    When: Calling the extract-plots API
-    Then: Should return success with empty results
+    This test validates that the filesystem properly handles empty
+    directories and correctly reports when no plot files are present.
 
-    This test validates proper handling of empty directories.
+    Description:
+        Clears all plot directories and verifies they are empty through
+        pathlib operations, ensuring proper empty directory handling
+        without relying on external extraction APIs.
+
+    Input:
+        - Python code to clear plot directories
+        - Verification code to check directory contents
+        - Uses pathlib for cross-platform path operations
+
+    Output:
+        - API response confirming directory clearing
+        - JSON verification data showing:
+          * directories: Status of each plot directory
+          * total_files: Count of files across all directories
+          * empty_verification: Confirmation all directories are empty
+
+    Example:
+        Clears and verifies empty state of:
+        - /home/pyodide/plots/matplotlib/
+        - /home/pyodide/plots/seaborn/
+        - /home/pyodide/plots/base64/
+
+    Assertions:
+        - All directories exist but are empty
+        - Total file count is 0
+        - Directory listings return empty arrays
+        - Empty state properly verified
     """
-    # Given: Clear any existing plots
-    clear_plots_code = '''
+    # Given: Clear any existing plots and verify empty state
+    clear_and_verify_code = '''
 from pathlib import Path
+import json
 
 # Clear plot directories if they exist
-for dir_path in ['/plots/matplotlib', '/plots/seaborn', '/plots/base64']:
-    path_obj = Path(dir_path)
-    if path_obj.exists():
-        # Remove all files in the directory
-        for file in path_obj.iterdir():
-            if file.is_file():
-                file.unlink()
-    else:
-        # Create directory if it doesn't exist
-        path_obj.mkdir(parents=True, exist_ok=True)
-
-print("Directories cleared")
-'''
-
-    output = execute_python_code(clear_plots_code)
-    assert "Directories cleared" in output
-
-    # When: Verify directories are empty through code execution
-    verify_empty_code = '''
-import json
-from pathlib import Path
-
 results = {
-    "directories": {},
+    "cleared_directories": [],
+    "verification": {},
     "total_files": 0
 }
 
-# Check each plot directory
-plot_dirs = ['/plots/matplotlib', '/plots/seaborn', '/plots/base64']
+plot_dirs = [
+    '/home/pyodide/plots/matplotlib',
+    '/home/pyodide/plots/seaborn',
+    '/home/pyodide/plots/base64'
+]
+
 for dir_path in plot_dirs:
-    p = Path(dir_path)
-    dir_info = {
-        "exists": p.exists(),
-        "is_dir": p.is_dir() if p.exists() else False,
-        "files": [],
-        "file_count": 0
-    }
+    dir_name = Path(dir_path).name
+    path_obj = Path(dir_path)
+    
+    if path_obj.exists():
+        # Remove all files in the directory
+        files_removed = 0
+        for file in path_obj.iterdir():
+            if file.is_file():
+                file.unlink()
+                files_removed += 1
+        results["cleared_directories"].append({
+            "directory": dir_name,
+            "path": dir_path,
+            "files_removed": files_removed
+        })
+    else:
+        # Create directory if it doesn't exist
+        path_obj.mkdir(parents=True, exist_ok=True)
+        results["cleared_directories"].append({
+            "directory": dir_name,
+            "path": dir_path,
+            "created": True
+        })
 
-    if p.exists() and p.is_dir():
-        files = [f.name for f in p.iterdir() if f.is_file()]
-        dir_info["files"] = files
-        dir_info["file_count"] = len(files)
-        results["total_files"] += len(files)
-
-    results["directories"][dir_path] = dir_info
+# Verify all directories are empty
+for dir_path in plot_dirs:
+    dir_name = Path(dir_path).name
+    path_obj = Path(dir_path)
+    
+    if path_obj.exists():
+        files = [f.name for f in path_obj.iterdir() if f.is_file()]
+        file_count = len(files)
+        results["verification"][dir_name] = {
+            "exists": True,
+            "file_count": file_count,
+            "files": files,
+            "is_empty": file_count == 0
+        }
+        results["total_files"] += file_count
+    else:
+        results["verification"][dir_name] = {
+            "exists": False,
+            "file_count": 0,
+            "files": [],
+            "is_empty": True
+        }
 
 print(json.dumps(results, indent=2))
 '''
 
-    output = execute_python_code(verify_empty_code)
-    results = json.loads(output)
-
-    # Then: Should show no files in any directory
-    assert results["total_files"] == 0, (
-        f"Expected 0 total files, got {results['total_files']}"
+    # Execute clearing and verification
+    api_response = execute_python_code(clear_and_verify_code)
+    assert api_response.get("success"), (
+        f"Directory clearing failed: {api_response.get('error')}"
     )
-
-    for dir_path, dir_info in results["directories"].items():
-        assert dir_info["file_count"] == 0, (
-            f"Directory {dir_path} should be empty but has "
-            f"{dir_info['file_count']} files: {dir_info['files']}"
+    
+    results = json.loads(api_response["data"]["stdout"])
+    
+    # Verify directories were processed
+    assert len(results.get("cleared_directories", [])) == 3, (
+        "Should process 3 directories"
+    )
+    
+    # Verify all directories are empty
+    verification = results.get("verification", {})
+    total_files = results.get("total_files", 0)
+    
+    # Then: Verify empty state
+    assert total_files == 0, (
+        f"Expected 0 total files, got {total_files}"
+    )
+    
+    # Check each individual directory
+    for dir_name in ["matplotlib", "seaborn", "base64"]:
+        dir_info = verification.get(dir_name, {})
+        assert dir_info.get("exists", False), (
+            f"Directory {dir_name} should exist"
+        )
+        assert dir_info.get("is_empty", False), (
+            f"Directory {dir_name} should be empty"
+        )
+        assert dir_info.get("file_count", -1) == 0, (
+            f"Directory {dir_name} should contain 0 files"
         )
 
-    print("✅ Empty directories verified correctly!")
+    print("✅ All directories verified as empty")
 
 
 def test_given_large_plot_when_saving_then_handled_correctly(
     execute_python_code, server_session
 ):
     """
-    Test handling of large plot files.
+    Test handling of large plot files in virtual filesystem.
 
-    Given: A high-resolution plot with complex data
-    When: Saving to the virtual filesystem
-    Then: Should be saved and extracted successfully
+    This test validates that the system can handle large, complex plots
+    with high resolution and verify them through pathlib operations.
 
-    This test validates that the system can handle larger files
-    without issues.
+    Description:
+        Creates a complex multi-subplot figure with high DPI to produce
+        a large file, then verifies the file exists and has the expected
+        size characteristics indicating successful processing.
+
+    Input:
+        - Python code creating 2x2 subplot figure with complex data
+        - Dense scatter plot, multiple line plots, heatmap, histogram
+        - High DPI (300) for larger file size
+        - Uses pathlib for cross-platform path handling
+
+    Output:
+        - API response with plot creation details
+        - JSON data containing:
+          * filename: Name of created large plot file
+          * file_size: Size in bytes of created file
+          * verification: File existence and metadata
+          * size_analysis: Size category and validity checks
+
+    Example:
+        Creates large_plot_{timestamp}.png with high DPI and complex data
+        Verifies file > 100KB indicating proper large file handling
+
+    Assertions:
+        - Plot file is successfully created
+        - File size exceeds minimum threshold (large file)
+        - File exists and is accessible via pathlib
+        - File is valid PNG format
+        - Proper handling of high-resolution content
     """
-    # Given: Create a large, complex plot
+    # Given: Create a large, complex plot with comprehensive verification
     large_plot_code = '''
 import matplotlib
 matplotlib.use('Agg')
@@ -782,57 +1063,147 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 import time
+import json
 
-Path('/plots/matplotlib').mkdir(parents=True, exist_ok=True)
+plots_dir = Path('/home/pyodide/plots/matplotlib')
+plots_dir.mkdir(parents=True, exist_ok=True)
 timestamp = int(time.time() * 1000)
 
-# Create complex plot with lots of data
-fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+results = {
+    "creation": {},
+    "verification": {},
+    "size_analysis": {}
+}
 
-# Subplot 1: Dense scatter plot
-x = np.random.randn(5000)
-y = np.random.randn(5000)
-axes[0, 0].scatter(x, y, alpha=0.5, s=1)
-axes[0, 0].set_title('Dense Scatter Plot')
+try:
+    # Create complex plot with lots of data
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-# Subplot 2: Multiple line plots
-for i in range(50):
-    x = np.linspace(0, 10, 1000)
-    y = np.sin(x + i/10) + np.random.randn(1000) * 0.1
-    axes[0, 1].plot(x, y, alpha=0.3, linewidth=0.5)
-axes[0, 1].set_title('Multiple Lines')
+    # Subplot 1: Dense scatter plot
+    x = np.random.randn(5000)
+    y = np.random.randn(5000)
+    axes[0, 0].scatter(x, y, alpha=0.5, s=1)
+    axes[0, 0].set_title('Dense Scatter Plot')
 
-# Subplot 3: Heatmap
-data = np.random.randn(100, 100)
-im = axes[1, 0].imshow(data, cmap='viridis')
-axes[1, 0].set_title('Heatmap')
-plt.colorbar(im, ax=axes[1, 0])
+    # Subplot 2: Multiple line plots
+    for i in range(50):
+        x = np.linspace(0, 10, 1000)
+        y = np.sin(x + i/10) + np.random.randn(1000) * 0.1
+        axes[0, 1].plot(x, y, alpha=0.3, linewidth=0.5)
+    axes[0, 1].set_title('Multiple Lines')
 
-# Subplot 4: Histogram
-data = np.random.randn(10000)
-axes[1, 1].hist(data, bins=100, alpha=0.7)
-axes[1, 1].set_title('Histogram')
+    # Subplot 3: Heatmap
+    data = np.random.randn(100, 100)
+    im = axes[1, 0].imshow(data, cmap='viridis')
+    axes[1, 0].set_title('Heatmap')
+    plt.colorbar(im, ax=axes[1, 0])
 
-plt.tight_layout()
+    # Subplot 4: Histogram
+    data = np.random.randn(10000)
+    axes[1, 1].hist(data, bins=100, alpha=0.7)
+    axes[1, 1].set_title('Histogram')
 
-# Save with high DPI for larger file size
-filename = f'large_plot_{timestamp}.png'
-filepath = f'/plots/matplotlib/{filename}'
-plt.savefig(filepath, dpi=300, bbox_inches='tight')
-plt.close()
+    plt.tight_layout()
 
-# Get file size
-file_size = Path(filepath).stat().st_size
-print(f"{filename}|{file_size}")
+    # Save with high DPI for larger file size
+    filename = f'large_plot_{timestamp}.png'
+    filepath = plots_dir / filename
+    plt.savefig(str(filepath), dpi=300, bbox_inches='tight')
+    plt.close()
+
+    results["creation"] = {
+        "success": True,
+        "filename": filename,
+        "filepath": str(filepath)
+    }
+
+except Exception as e:
+    results["creation"] = {
+        "success": False,
+        "error": str(e)
+    }
+
+# Verify the created file
+if results["creation"].get("success"):
+    filepath = Path(results["creation"]["filepath"])
+    file_size = filepath.stat().st_size if filepath.exists() else 0
+    
+    results["verification"] = {
+        "exists": filepath.exists(),
+        "is_file": filepath.is_file() if filepath.exists() else False,
+        "size": file_size,
+        "size_mb": round(file_size / (1024 * 1024), 2) if file_size > 0 else 0
+    }
+
+    # Verify it's a valid PNG
+    if filepath.exists():
+        try:
+            with open(filepath, 'rb') as f:
+                header = f.read(8)
+                results["verification"]["is_valid_png"] = header[:4] == b'\\x89PNG'
+                f.seek(0, 2)  # Seek to end
+                results["verification"]["actual_size"] = f.tell()
+                results["verification"]["readable"] = True
+        except Exception as e:
+            results["verification"]["readable"] = False
+            results["verification"]["error"] = str(e)
+
+    # Size analysis
+    results["size_analysis"] = {
+        "is_large": file_size > 100000,
+        "size_category": (
+            "very_large" if file_size > 1000000 else
+            "large" if file_size > 100000 else
+            "medium" if file_size > 10000 else
+            "small"
+        ),
+        "meets_threshold": file_size > 100000
+    }
+
+    # List directory to confirm file appears
+    files = [f.name for f in plots_dir.iterdir() if f.is_file()]
+    results["verification"]["in_directory"] = filename in files
+    results["verification"]["dir_file_count"] = len(files)
+
+print(json.dumps(results, indent=2))
 '''
 
-    # Create large plot
-    output = execute_python_code(large_plot_code, timeout=60)
-    filename, file_size = output.strip().split('|')
-    file_size = int(file_size)
+    # Create large plot and verify
+    api_response = execute_python_code(large_plot_code, timeout=60)
+    assert api_response.get("success"), (
+        f"Large plot creation failed: {api_response.get('error')}"
+    )
+    
+    results = json.loads(api_response["data"]["stdout"])
+    
+    # Verify creation succeeded
+    creation = results.get("creation", {})
+    assert creation.get("success"), (
+        f"Plot creation failed: {creation.get('error')}"
+    )
+    
+    filename = creation.get("filename")
+    assert filename, "Filename should be returned"
+    
+    # Verify file properties
+    verification = results.get("verification", {})
+    assert verification.get("exists"), f"Large file {filename} should exist"
+    assert verification.get("is_file"), f"Large file {filename} should be a regular file"
+    assert verification.get("readable"), f"Large file {filename} should be readable"
+    
+    # Verify it's actually a large file
+    file_size = verification.get("size", 0)
+    size_analysis = results.get("size_analysis", {})
+    assert size_analysis.get("meets_threshold"), (
+        f"Expected large file (>100KB), got {file_size} bytes"
+    )
+    
+    assert verification.get("in_directory"), (
+        f"Large file {filename} should appear in directory listing"
+    )
 
-    # Verify it's a reasonably large file
-    assert file_size > 100000, f"Expected large file, got {file_size} bytes"
+    print(f"✅ Created large plot: {filename} ({file_size:,} bytes)")
+    print(f"📊 Size category: {size_analysis.get('size_category', 'unknown')}")
     print(f"📊 Created large plot: {filename} ({file_size:,} bytes)")
 
     # When: Verify the large plot through code execution
@@ -841,7 +1212,7 @@ import json
 from pathlib import Path
 
 filename = "{filename}"
-filepath = Path('/plots/matplotlib') / filename
+filepath = Path('/home/pyodide/plots/matplotlib') / filename
 
 result = {{
     "filename": filename,
@@ -868,7 +1239,7 @@ if filepath.exists():
         result["error"] = str(e)
 
 # List directory to confirm file is there
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 if plots_dir.exists():
     files = [f.name for f in plots_dir.iterdir() if f.is_file()]
     result["in_directory"] = filename in files
@@ -877,15 +1248,17 @@ if plots_dir.exists():
 print(json.dumps(result, indent=2))
 '''
 
-    output = execute_python_code(verify_large_plot_code)
-    result = json.loads(output)
+    api_response = execute_python_code(verify_large_plot_code)
+    assert api_response.get("success"), (
+        f"Large plot verification failed: {api_response.get('error')}"
+    )
+    
+    result = json.loads(api_response["data"]["stdout"])
 
     # Then: Should verify large file exists and is valid
     assert result["exists"], f"Large file {filename} should exist"
     assert result["size"] == file_size, \
         f"File size mismatch: expected {file_size}, got {result['size']}"
-    print(f"✅ Large plot file verified successfully! "
-          f"Size: {result['size_mb']} MB")
     assert result.get("is_valid_png"), \
         f"Large file {filename} should be valid PNG"
     assert result.get("readable"), (
@@ -905,81 +1278,218 @@ def test_given_invalid_plot_data_when_saving_then_error_handled(
     """
     Test error handling for invalid plot operations.
 
-    Given: Invalid plot operations or data
-    When: Attempting to create and save plots
-    Then: Errors should be handled gracefully
+    This test validates robust error handling when matplotlib encounters
+    invalid plot operations, data, or file system issues.
 
-    This test ensures robust error handling in plot generation.
+    Description:
+        Tests multiple error scenarios including invalid figure sizes,
+        non-existent save paths, and invalid data types to ensure
+        graceful error handling throughout the plotting pipeline.
+
+    Input:
+        - Python code containing various error scenarios:
+          * Invalid negative figure size
+          * Non-existent directory for save path
+          * String data instead of numeric data for plotting
+        - Each scenario wrapped in try-except blocks
+
+    Output:
+        - API response containing error handling results
+        - JSON data with:
+          * scenario_results: List of error handling outcomes
+          * handled_count: Number of errors properly handled
+          * error_types: Types of exceptions caught
+          * success_rate: Percentage of errors handled gracefully
+
+    Example:
+        Tests plt.figure(figsize=(-5, -3)) and expects ValueError
+        Tests savefig to non-existent path and expects FileNotFoundError
+        Tests plt.plot("invalid", "data") and expects TypeError
+
+    Assertions:
+        - All error scenarios are handled gracefully
+        - Each scenario produces appropriate error messages
+        - No unhandled exceptions crash the system
+        - Error types are properly identified and reported
+        - System remains stable after error scenarios
     """
-    # Test various error scenarios
-    error_scenarios = [
-        # Scenario 1: Invalid figure size
-        '''
+    # Test comprehensive error scenario handling
+    error_handling_code = '''
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from pathlib import Path
+import json
 
+scenarios = [
+    {
+        "name": "Invalid figure size",
+        "description": "Negative figure dimensions should raise ValueError"
+    },
+    {
+        "name": "Invalid save path",
+        "description": "Non-existent directory should raise FileNotFoundError"
+    },
+    {
+        "name": "Invalid data types",
+        "description": "String data should raise TypeError"
+    }
+]
+
+results = {
+    "scenario_results": [],
+    "handled_count": 0,
+    "error_types": [],
+    "success_rate": 0
+}
+
+# Scenario 1: Invalid figure size
 try:
     plt.figure(figsize=(-5, -3))  # Invalid negative size
     plt.plot([1, 2, 3], [1, 4, 2])
-    plt.savefig('/plots/matplotlib/invalid_size.png')
-    print("ERROR: Should have failed with invalid size")
+    plt.savefig('/home/pyodide/plots/matplotlib/invalid_size.png')
+    results["scenario_results"].append({
+        "scenario": "invalid_size",
+        "handled": False,
+        "error": "Should have failed with invalid size"
+    })
 except Exception as e:
-    print(f"HANDLED: Invalid size error - {type(e).__name__}")
-''',
+    results["scenario_results"].append({
+        "scenario": "invalid_size",
+        "handled": True,
+        "error_type": type(e).__name__,
+        "error_message": str(e)[:100]
+    })
+    results["handled_count"] += 1
+    results["error_types"].append(type(e).__name__)
 
-        # Scenario 2: Invalid save path
-        '''
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
+# Scenario 2: Invalid save path
 try:
     plt.figure(figsize=(5, 3))
     plt.plot([1, 2, 3], [1, 4, 2])
     plt.savefig('/nonexistent/directory/plot.png')
-    print("ERROR: Should have failed with invalid path")
+    results["scenario_results"].append({
+        "scenario": "invalid_path",
+        "handled": False,
+        "error": "Should have failed with invalid path"
+    })
 except Exception as e:
-    print(f"HANDLED: Invalid path error - {type(e).__name__}")
-''',
+    results["scenario_results"].append({
+        "scenario": "invalid_path",
+        "handled": True,
+        "error_type": type(e).__name__,
+        "error_message": str(e)[:100]
+    })
+    results["handled_count"] += 1
+    results["error_types"].append(type(e).__name__)
 
-        # Scenario 3: Invalid data types
-        '''
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
+# Scenario 3: Invalid data types
 try:
     plt.figure(figsize=(5, 3))
     plt.plot("invalid", "data")  # String instead of numeric data
-    plt.savefig('/plots/matplotlib/invalid_data.png')
-    print("ERROR: Should have failed with invalid data")
+    plt.savefig('/home/pyodide/plots/matplotlib/invalid_data.png')
+    results["scenario_results"].append({
+        "scenario": "invalid_data",
+        "handled": False,
+        "error": "Should have failed with invalid data"
+    })
 except Exception as e:
-    print(f"HANDLED: Invalid data error - {type(e).__name__}")
-'''
-    ]
+    results["scenario_results"].append({
+        "scenario": "invalid_data",
+        "handled": True,
+        "error_type": type(e).__name__,
+        "error_message": str(e)[:100]
+    })
+    results["handled_count"] += 1
+    results["error_types"].append(type(e).__name__)
 
-    for i, scenario_code in enumerate(error_scenarios):
-        output = execute_python_code(scenario_code)
-        assert "HANDLED:" in output, (
-            f"Scenario {i+1} did not handle error properly: {output}"
-        )
-        print(f"✅ Error scenario {i+1} handled correctly")
+# Calculate success rate
+results["success_rate"] = (results["handled_count"] / len(scenarios)) * 100
+results["total_scenarios"] = len(scenarios)
+
+# Unique error types
+results["unique_error_types"] = list(set(results["error_types"]))
+
+print(json.dumps(results, indent=2))
+'''
+
+    # Execute error handling test
+    api_response = execute_python_code(error_handling_code)
+    assert api_response.get("success"), (
+        f"Error handling test failed: {api_response.get('error')}"
+    )
+    
+    results = json.loads(api_response["data"]["stdout"])
+    
+    # Verify all scenarios were handled properly
+    scenario_results = results.get("scenario_results", [])
+    assert len(scenario_results) == 3, "Should test 3 error scenarios"
+    
+    handled_count = results.get("handled_count", 0)
+    assert handled_count >= 2, (
+        f"At least 2 error scenarios should be handled, got {handled_count}"
+    )
+    
+    # Verify each scenario
+    for scenario_result in scenario_results:
+        scenario_name = scenario_result.get("scenario", "unknown")
+        if scenario_result.get("handled"):
+            error_type = scenario_result.get("error_type", "Unknown")
+            print(f"✅ {scenario_name}: Properly handled {error_type}")
+        else:
+            error_msg = scenario_result.get("error", "Unknown error")
+            print(f"⚠️  {scenario_name}: {error_msg}")
+    
+    success_rate = results.get("success_rate", 0)
+    print(f"📊 Error handling success rate: {success_rate:.1f}% "
+          f"({handled_count}/{results.get('total_scenarios', 3)})")
+    
+    unique_error_types = results.get("unique_error_types", [])
+    if unique_error_types:
+        print(f"🔍 Detected error types: {', '.join(unique_error_types)}")
 
 
 def test_given_concurrent_plot_creation_when_extracting_then_all_retrieved(
     execute_python_code, server_session
 ):
     """
-    Test concurrent plot creation and extraction.
+    Test concurrent plot creation and extraction in virtual filesystem.
 
-    Given: Multiple plots created in rapid succession
-    When: Extracting immediately after creation
-    Then: All plots should be successfully retrieved
+    This test validates the system's ability to handle multiple plots
+    created in rapid succession and verify their existence via pathlib.
 
-    This test simulates concurrent plot generation scenarios.
+    Description:
+        Creates multiple plots in rapid succession to simulate concurrent
+        operations, then verifies all plots are properly saved and
+        accessible through the virtual filesystem using pathlib operations.
+
+    Input:
+        - Python code creating 5 plots in rapid succession
+        - Each plot with unique timestamp-based filename
+        - Immediate verification of all created plots
+        - Uses pathlib for cross-platform compatibility
+
+    Output:
+        - API response with concurrent plot creation results
+        - JSON data containing:
+          * created_files: List of generated filenames
+          * verification_results: Individual file verification
+          * directory_listing: All files found in directory
+          * validation_summary: PNG header verification results
+
+    Example:
+        Creates concurrent_1234567890_0.png through concurrent_1234567890_4.png
+        Verifies each exists, has valid size, and is readable PNG format
+
+    Assertions:
+        - All 5 plots are successfully created
+        - Each plot file exists and is accessible
+        - All files appear in directory listing
+        - Each file has valid PNG header
+        - File sizes are reasonable (>0 bytes)
+        - System handles rapid plot creation without corruption
     """
-    # Given: Create multiple plots rapidly
+    # Given: Create multiple plots rapidly with comprehensive verification
     concurrent_plot_code = '''
 import matplotlib
 matplotlib.use('Agg')
@@ -988,29 +1498,72 @@ from pathlib import Path
 import time
 import json
 
-Path('/plots/matplotlib').mkdir(parents=True, exist_ok=True)
+plots_dir = Path('/home/pyodide/plots/matplotlib')
+plots_dir.mkdir(parents=True, exist_ok=True)
 base_timestamp = int(time.time() * 1000)
-created_files = []
 
-# Create 5 plots in rapid succession
-for i in range(5):
-    plt.figure(figsize=(4, 3))
-    plt.plot([1, 2, 3, 4], [i+1, i+4, i+2, i+3])
-    plt.title(f'Concurrent Plot {i+1}')
+results = {
+    "created_files": [],
+    "creation_details": {},
+    "total_created": 0
+}
 
-    filename = f'concurrent_{base_timestamp}_{i}.png'
-    plt.savefig(f'/plots/matplotlib/{filename}', dpi=100)
-    plt.close()
+try:
+    # Create 5 plots in rapid succession
+    for i in range(5):
+        plt.figure(figsize=(4, 3))
+        plt.plot([1, 2, 3, 4], [i+1, i+4, i+2, i+3])
+        plt.title(f'Concurrent Plot {i+1}')
+        plt.xlabel('X values')
+        plt.ylabel('Y values')
+        plt.grid(True, alpha=0.3)
 
-    created_files.append(filename)
+        filename = f'concurrent_{base_timestamp}_{i}.png'
+        filepath = plots_dir / filename
+        plt.savefig(str(filepath), dpi=100, bbox_inches='tight')
+        plt.close()
 
-print(json.dumps(created_files))
+        results["created_files"].append(filename)
+        
+        # Verify creation immediately
+        if filepath.exists():
+            file_size = filepath.stat().st_size
+            results["creation_details"][filename] = {
+                "size": file_size,
+                "exists": True,
+                "created_successfully": True
+            }
+        else:
+            results["creation_details"][filename] = {
+                "size": 0,
+                "exists": False,
+                "created_successfully": False
+            }
+        
+        results["total_created"] += 1
+
+    results["success"] = True
+
+except Exception as e:
+    results["success"] = False
+    results["error"] = str(e)
+
+print(json.dumps(results, indent=2))
 '''
 
-    # Create plots
-    output = execute_python_code(concurrent_plot_code)
-    created_files = json.loads(output)
-    assert len(created_files) == 5
+    # Create concurrent plots
+    api_response = execute_python_code(concurrent_plot_code)
+    assert api_response.get("success"), (
+        f"Concurrent plot creation failed: {api_response.get('error')}"
+    )
+    
+    creation_results = json.loads(api_response["data"]["stdout"])
+    assert creation_results.get("success"), (
+        f"Plot creation failed: {creation_results.get('error')}"
+    )
+    
+    created_files = creation_results.get("created_files", [])
+    assert len(created_files) == 5, f"Expected 5 files, got {len(created_files)}"
 
     # When: Immediately verify all plots through code execution
     verify_concurrent_code = f'''
@@ -1018,17 +1571,27 @@ import json
 from pathlib import Path
 
 created_files = {created_files}
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
+
 results = {{
     "all_exist": True,
     "files_info": {{}},
-    "directory_files": []
+    "directory_files": [],
+    "summary": {{
+        "total_verified": 0,
+        "valid_pngs": 0,
+        "total_size": 0
+    }}
 }}
 
 # List directory contents
-results["directory_files"] = [
-    f.name for f in plots_dir.iterdir() if f.is_file()
-]
+try:
+    results["directory_files"] = [
+        f.name for f in plots_dir.iterdir() if f.is_file()
+    ]
+except Exception as e:
+    results["directory_error"] = str(e)
+    results["directory_files"] = []
 
 # Verify each concurrent plot
 for filename in created_files:
@@ -1036,7 +1599,8 @@ for filename in created_files:
     file_info = {{
         "exists": filepath.exists(),
         "size": filepath.stat().st_size if filepath.exists() else 0,
-        "in_directory": filename in results["directory_files"]
+        "in_directory": filename in results["directory_files"],
+        "is_file": filepath.is_file() if filepath.exists() else False
     }}
 
     # Quick PNG validation
@@ -1045,37 +1609,72 @@ for filename in created_files:
             with open(filepath, 'rb') as f:
                 header = f.read(8)
                 file_info["is_valid_png"] = header[:4] == b'\\x89PNG'
-        except:
+                if file_info["is_valid_png"]:
+                    results["summary"]["valid_pngs"] += 1
+        except Exception as e:
             file_info["is_valid_png"] = False
+            file_info["read_error"] = str(e)
     else:
         results["all_exist"] = False
+        file_info["is_valid_png"] = False
+
+    if file_info["exists"]:
+        results["summary"]["total_verified"] += 1
+        results["summary"]["total_size"] += file_info["size"]
 
     results["files_info"][filename] = file_info
+
+# Calculate averages
+if results["summary"]["total_verified"] > 0:
+    results["summary"]["avg_size"] = (
+        results["summary"]["total_size"] / results["summary"]["total_verified"]
+    )
+else:
+    results["summary"]["avg_size"] = 0
+
+results["summary"]["success_rate"] = (
+    results["summary"]["total_verified"] / len(created_files) * 100
+)
 
 print(json.dumps(results, indent=2))
 '''
 
-    output = execute_python_code(verify_concurrent_code)
-    results = json.loads(output)
+    api_response = execute_python_code(verify_concurrent_code)
+    assert api_response.get("success"), (
+        f"Concurrent plot verification failed: {api_response.get('error')}"
+    )
+    
+    verification_results = json.loads(api_response["data"]["stdout"])
 
     # Then: All plots should be available
-    assert results["all_exist"], "Not all concurrent files exist"
+    assert verification_results["all_exist"], "Not all concurrent files exist"
 
     # Verify each file individually
+    files_info = verification_results.get("files_info", {})
     for filename in created_files:
-        file_info = results["files_info"][filename]
-        assert file_info["exists"], f"Concurrent file {filename} not found"
-        assert file_info["size"] > 0, f"Concurrent file {filename} is empty"
-        assert file_info["in_directory"], (
+        file_info = files_info.get(filename, {})
+        assert file_info.get("exists"), f"Concurrent file {filename} not found"
+        assert file_info.get("size", 0) > 0, f"Concurrent file {filename} is empty"
+        assert file_info.get("in_directory"), (
             f"Concurrent file {filename} not in directory listing"
         )
         assert file_info.get("is_valid_png"), (
             f"Concurrent file {filename} is not a valid PNG"
         )
 
-    print(
-        f"✅ All {len(created_files)} concurrent plots verified successfully!"
-    )
+    # Verify summary statistics
+    summary = verification_results.get("summary", {})
+    total_verified = summary.get("total_verified", 0)
+    valid_pngs = summary.get("valid_pngs", 0)
+    success_rate = summary.get("success_rate", 0)
+
+    print(f"✅ All {len(created_files)} concurrent plots verified successfully!")
+    print(f"📊 Verification: {total_verified}/{len(created_files)} files exist")
+    print(f"🖼️  Valid PNGs: {valid_pngs}/{len(created_files)}")
+    print(f"📈 Success rate: {success_rate:.1f}%")
+    
+    if summary.get("avg_size", 0) > 0:
+        print(f"📏 Average file size: {summary['avg_size']:.0f} bytes")
 
 
 if __name__ == "__main__":

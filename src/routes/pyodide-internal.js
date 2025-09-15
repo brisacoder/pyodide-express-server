@@ -325,9 +325,9 @@ import os
 import json
 from pathlib import Path
 
-# Get list of files from /uploads directory
+# Get list of files from /home/pyodide/uploads directory
 files_before = []
-uploads_dir = Path('/uploads')
+uploads_dir = Path('/home/pyodide/uploads')
 try:
     if uploads_dir.exists():
         files_before = [f.name for f in uploads_dir.iterdir() if f.is_file()]

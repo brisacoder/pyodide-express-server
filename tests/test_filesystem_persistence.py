@@ -173,7 +173,7 @@ result["current_capabilities"]["file_content_as_data"] = {
 }
 
 # Pattern 2: Test if files appear in mounted directories
-mounted_file = Path("/plots/matplotlib/api_test.txt")
+mounted_file = Path('/home/pyodide/plots/matplotlib/api_test.txt")
 try:
     mounted_file.parent.mkdir(parents=True, exist_ok=True)
     mounted_file.write_text("Test file in mounted directory")
@@ -232,7 +232,7 @@ result
         print("\\n1. 🎯 FOR PLOT/IMAGE GENERATION:")
         print("   - Save to mounted directory (/plots/matplotlib/, /plots/seaborn/)")
         print("   - Files appear directly in local filesystem")
-        print("   - Use absolute paths: Path('/plots/matplotlib/myplot.png')")
+        print("   - Use absolute paths: Path('/home/pyodide/plots/matplotlib/myplot.png')")
         
         print("\\n2. 📊 FOR DATA PROCESSING RESULTS:")
         print("   - Return processed data as JSON in API response")

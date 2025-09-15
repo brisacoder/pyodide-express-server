@@ -385,7 +385,7 @@ def create_analysis_plot():
     
     # Use pathlib for cross-platform path handling
     timestamp = int(time.time() * 1000)
-    plots_base = Path('/plots')
+    plots_base = Path('/home/pyodide/plots')
     matplotlib_dir = plots_base / 'matplotlib'
     plot_file = matplotlib_dir / f'function_return_test_{timestamp}.png'
     
@@ -490,7 +490,7 @@ print(json.dumps(result))
             - Cross-platform compatibility validation
         
         Example:
-            Input: test_paths = ['/plots', '/uploads', '/plots/matplotlib']
+            Input: test_paths = ['/home/pyodide/plots', '/home/pyodide/uploads', '/plots/matplotlib']
             Output: {"path_details": {"/plots": {"exists": true, "writable": true}}}
         """
         # Given: A function that tests filesystem operations using pathlib for cross-platform compatibility
@@ -504,8 +504,8 @@ def test_filesystem_operations():
     
     # Test different filesystem paths that should exist in Pyodide environment
     test_paths = [
-        '/plots', 
-        '/uploads', 
+        '/home/pyodide/plots', 
+        '/home/pyodide/uploads', 
         '/logs', 
         '/plots/matplotlib', 
         '/plots/seaborn'

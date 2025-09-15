@@ -186,7 +186,7 @@ async function executeRaw(req, res) {
  *
  * // Complex execution with data analysis:
  * // {
- * //   "code": "df = pd.read_csv('/uploads/data.csv')\nresult = df.describe()\nprint(result)",
+ * //   "code": "df = pd.read_csv('/home/pyodide/uploads/data.csv')\nresult = df.describe()\nprint(result)",
  * //   "context": {"debug": true}
  * // }
  *

@@ -103,7 +103,7 @@ class TestMatplotlibFilesystemIntegration:
 from pathlib import Path
 
 # Clean up existing files in /plots/matplotlib/
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 if plots_dir.exists():
     files_removed = 0
     for file_path in plots_dir.iterdir():
@@ -153,7 +153,7 @@ print("Pyodide cleanup completed")
         Example:
             >>> # Create plot
             >>> plt.plot([1, 2, 3], [1, 4, 9])
-            >>> plt.savefig(Path('/plots/matplotlib/test.png'))
+            >>> plt.savefig(Path('/home/pyodide/plots/matplotlib/test.png'))
             >>> # Extract to host
             >>> extract_plots()
         """
@@ -184,7 +184,7 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 
 # Save using pathlib for portability
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 output_path = plots_dir / f'direct_save_basic_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -240,7 +240,7 @@ print(json.dumps(result))"""
             >>> fig, axes = plt.subplots(2, 2, figsize=(14, 12))
             >>> # Add various plot types to subplots
             >>> plt.tight_layout()
-            >>> plt.savefig(Path('/plots/matplotlib/complex.png'))
+            >>> plt.savefig(Path('/home/pyodide/plots/matplotlib/complex.png'))
         """
         # Add small delay to avoid timestamp collisions
         time.sleep(0.1)
@@ -301,7 +301,7 @@ ax4.set_ylabel('Values')
 plt.tight_layout()
 
 # Save using pathlib for portability
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 output_path = plots_dir / f'direct_save_complex_{timestamp}.png'
 plt.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -405,7 +405,7 @@ plt.ylim(-0.5, 0.5)
 plt.tick_params(axis='both', which='major', labelsize=10)
 
 # Save with high DPI
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 output_path = plots_dir / f'custom_styled_plot_{timestamp}.png'
 plt.savefig(output_path, dpi=300, bbox_inches='tight', 
@@ -471,7 +471,7 @@ from pathlib import Path
 import json
 
 # Create plots directory
-plots_dir = Path('/plots/matplotlib')
+plots_dir = Path('/home/pyodide/plots/matplotlib')
 plots_dir.mkdir(parents=True, exist_ok=True)
 
 results = []
@@ -554,7 +554,7 @@ print(json.dumps({{"plots": results, "total_count": len(results)}}))
         - Directory existence checking
 
         Example:
-            >>> base_dir = Path('/plots/matplotlib')
+            >>> base_dir = Path('/home/pyodide/plots/matplotlib')
             >>> subdir = base_dir / 'analysis' / 'results'
             >>> subdir.mkdir(parents=True, exist_ok=True)
         """
@@ -569,7 +569,7 @@ from pathlib import Path
 import json
 
 # Create nested directory structure
-base_dir = Path('/plots/matplotlib')
+base_dir = Path('/home/pyodide/plots/matplotlib')
 subdir = base_dir / 'organized' / 'charts'
 subdir.mkdir(parents=True, exist_ok=True)
 

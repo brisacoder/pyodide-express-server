@@ -212,7 +212,7 @@ def clean_filesystem(verified_server: str, server_config: Dict[str, Any]):
 # Clean up seaborn plots from virtual filesystem using pathlib
 from pathlib import Path
 
-plot_dir = Path('/plots/seaborn')
+plot_dir = Path('/home/pyodide/plots/seaborn')
 if plot_dir.exists():
     for plot_file in plot_dir.glob('*.png'):
         try:
@@ -345,7 +345,7 @@ plt.text(0.05, 0.95, f'Correlation: {{correlation:.3f}}',
 
 # Save directly to the virtual filesystem using pathlib
 timestamp = int(time.time() * 1000)  # Generate unique timestamp
-plots_path = Path('/plots/seaborn')
+plots_path = Path('/home/pyodide/plots/seaborn')
 plots_path.mkdir(parents=True, exist_ok=True)
 output_file = plots_path / f'direct_save_regression_{{timestamp}}.png'
 
@@ -566,7 +566,7 @@ plt.tight_layout()
 
 # Save dashboard to virtual filesystem using pathlib
 timestamp = int(time.time() * 1000)  # Generate unique timestamp
-plots_path = Path('/plots/seaborn')
+plots_path = Path('/home/pyodide/plots/seaborn')
 plots_path.mkdir(parents=True, exist_ok=True)
 output_file = plots_path / f'direct_save_dashboard_{{timestamp}}.png'
 

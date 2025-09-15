@@ -432,7 +432,7 @@ from pathlib import Path
 
 # Load the data
 start_time = time.time()
-df = pd.read_csv('/uploads/{filename}')
+df = pd.read_csv('/home/pyodide/uploads/{filename}')
 load_time = time.time() - start_time
 
 print(f"Data loading took {{load_time:.3f}} seconds")
@@ -529,7 +529,7 @@ chunk_size = 10000
 chunks = []
 load_start = time.time()
 
-for chunk in pd.read_csv('/uploads/{filename}', chunksize=chunk_size):
+for chunk in pd.read_csv('/home/pyodide/uploads/{filename}', chunksize=chunk_size):
     chunks.append(chunk)
 
 df = pd.concat(chunks, ignore_index=True)
@@ -642,7 +642,7 @@ import pandas as pd
 import time
 
 start_time = time.time()
-df = pd.read_csv('/uploads/{filename}')
+df = pd.read_csv('/home/pyodide/uploads/{filename}')
 load_time = time.time() - start_time
 
 print(f"File: {filename}")
@@ -1283,7 +1283,7 @@ class TestConcurrencyAndCleanup:
         setup_code = '''
 test_var = "should_persist_after_errors"
 import pandas as pd
-df = pd.read_csv("/uploads/{}")
+df = pd.read_csv('/home/pyodide/uploads/{}")
 print(f"Setup complete - DataFrame shape: {{df.shape}}")
 print(f"Test variable: {{test_var}}")
 '''.format(filename)
@@ -1343,7 +1343,7 @@ print(f"Basic math works: {result}")
 
 # Test that uploaded file is still accessible
 import pandas as pd
-df = pd.read_csv("/uploads/{}")
+df = pd.read_csv('/home/pyodide/uploads/{}")
 print(f"File still accessible - shape: {{df.shape}}")
 
 # Test that we can still create new variables
