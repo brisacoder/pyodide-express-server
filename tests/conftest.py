@@ -45,6 +45,7 @@ class Config:
         "code_execution": 45,     # Maximum time for code execution
         "api_request": 10,        # Standard API request timeout
         "quick_operation": 5,     # Quick operations (health checks)
+        "package_install": 120,   # Package installation timeout
     }
     
     # API endpoints
@@ -53,6 +54,7 @@ class Config:
         "execute_raw": "/api/execute-raw",
         "reset": "/api/reset",
         "install_package": "/api/install-package",
+        "packages": "/api/packages",
         "uploaded_files": "/api/uploaded-files",
         "upload": "/api/upload",
         "plots_extract": "/api/extract-plots",

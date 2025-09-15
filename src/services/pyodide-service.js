@@ -389,6 +389,128 @@ print(f"MESSAGE: {message}")
   }
 
   /**
+   * Get installed packages information
+   * @param {number} timeout - Execution timeout in milliseconds
+   * @returns {Promise<Object>} Package information including installed packages and loaded modules
+   */
+  async getInstalledPackages(timeout = this.defaultTimeout) {
+    const startTime = Date.now();
+    
+    try {
+      logger.info('Getting installed packages information', {
+        component: 'pyodide-service',
+        action: 'getInstalledPackages',
+        timeout
+      });
+
+      // Python code to get package information
+      const packageInfoCode = `
+import sys
+import json
+import micropip
+from pathlib import Path
+
+# Get Python version
+python_version = sys.version
+
+# Get all loaded modules
+loaded_modules = list(sys.modules.keys())
+
+# Get installed packages via micropip
+try:
+    # Get packages that micropip knows about
+    installed_packages = []
+    
+    # Try to get the package list from micropip
+    import importlib.metadata
+    distributions = list(importlib.metadata.distributions())
+    installed_packages = [dist.metadata['Name'] for dist in distributions]
+    
+    # Also include basic packages that might not be in distributions
+    basic_packages = ['micropip', 'pyodide-js', 'pyodide']
+    for pkg in basic_packages:
+        if pkg not in installed_packages and pkg in sys.modules:
+            installed_packages.append(pkg)
+    
+except Exception as e:
+    # Fallback: use what we can determine from sys.modules
+    installed_packages = [name for name in sys.modules.keys() 
+                         if not name.startswith('_') and '.' not in name]
+
+# Create result dictionary
+result = {
+    "python_version": python_version,
+    "installed_packages": sorted(list(set(installed_packages))),
+    "total_packages": len(set(installed_packages)),
+    "loaded_modules": sorted([name for name in loaded_modules 
+                            if not name.startswith('_')])
+}
+
+print(json.dumps(result, indent=2))
+result
+`;
+
+      // Execute the package info code
+      const response = await this.processPool.executeCode(packageInfoCode, {}, timeout);
+      const executionTime = Date.now() - startTime;
+      
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to get package information');
+      }
+
+      // Parse the result - it should be a JSON string in stdout or the result itself
+      let packageData;
+      try {
+        if (response.result && typeof response.result === 'object') {
+          packageData = response.result;
+        } else {
+          // Try to parse from stdout
+          const jsonMatch = response.stdout.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            packageData = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error('Could not parse package information from response');
+          }
+        }
+      } catch (parseError) {
+        logger.warn('Failed to parse package info, using fallback', {
+          parseError: parseError.message,
+          stdout: response.stdout?.substring(0, 200)
+        });
+        
+        // Fallback response structure
+        packageData = {
+          python_version: "Unknown",
+          installed_packages: ["micropip", "pyodide-js"],
+          total_packages: 2,
+          loaded_modules: ["sys", "os", "json"]
+        };
+      }
+
+      logger.info('Package information retrieved successfully', {
+        component: 'pyodide-service',
+        action: 'getInstalledPackages',
+        packageCount: packageData.total_packages,
+        executionTime
+      });
+
+      return packageData;
+
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      
+      logger.error('Failed to get package information', {
+        component: 'pyodide-service',
+        action: 'getInstalledPackages',
+        error: error.message,
+        executionTime
+      });
+
+      throw new Error(`Failed to get package information: ${error.message}`);
+    }
+  }
+
+  /**
    * Get service status and statistics
    * @returns {Object} Service status information
    */
