@@ -53,11 +53,11 @@ from conftest import Config, execute_python_code, validate_api_contract
 class TestNissanLeafTelemetryAnalysis:
     """
     Test suite for Nissan Leaf automotive telemetry data analysis.
-    
+
     This class contains comprehensive tests for analyzing real automotive
     telemetry data from a Nissan Leaf electric vehicle using advanced
     data science techniques in the Pyodide WebAssembly environment.
-    
+
     Test Structure:
     - Upload telemetry CSV data via API
     - Execute complex pandas/numpy analysis
@@ -69,111 +69,112 @@ class TestNissanLeafTelemetryAnalysis:
     def telemetry_data_file(self) -> Path:
         """
         Provide path to the Nissan Leaf telemetry CSV data file.
-        
+
         Validates that the test data file exists and is accessible for
         upload and analysis in the test suite.
-        
+
         Returns:
             Path: Path to the DEVRT-NISSAN-LEAF.csv test data file
-            
+
         Raises:
             pytest.skip: If test data file is not found
-            
+
         Example:
             >>> data_file = telemetry_data_file()
             >>> assert data_file.exists()
             >>> assert data_file.suffix == '.csv'
         """
         test_data_file = Path(__file__).parent / "data" / "DEVRT-NISSAN-LEAF.csv"
-        
+
         if not test_data_file.exists():
             pytest.skip(f"Test data file not found: {test_data_file}")
-            
+
         return test_data_file
 
     @pytest.fixture
     def uploaded_telemetry_file(self, server_ready, telemetry_data_file: Path) -> str:
         """
         Upload telemetry data file and return the uploaded filename.
-        
+
         Handles file upload via the /api/upload endpoint and tracks
         the uploaded file for cleanup after test completion.
-        
+
         Args:
             server_ready: Ensures server is available
             telemetry_data_file: Path to the CSV data file
-            
+
         Returns:
             str: The filename as it appears in the Pyodide filesystem
-            
+
         Yields:
             str: Uploaded filename for use in tests
-            
+
         Example:
             >>> filename = uploaded_telemetry_file()
             >>> # Use filename in Pyodide code like: pd.read_csv(filename)
         """
         # Track uploaded files for cleanup
         uploaded_files = []
-        
+
         try:
             # Upload the telemetry data file
-            with open(telemetry_data_file, 'rb') as file:
-                files = {'file': ('DEVRT-NISSAN-LEAF.csv', file, 'text/csv')}
+            with open(telemetry_data_file, "rb") as file:
+                files = {"file": ("DEVRT-NISSAN-LEAF.csv", file, "text/csv")}
                 response = requests.post(
                     f"{Config.BASE_URL}/api/upload",
                     files=files,
-                    timeout=Config.TIMEOUTS["api_request"] * 2
+                    timeout=Config.TIMEOUTS["api_request"] * 2,
                 )
-            
+
             response.raise_for_status()
             result = response.json()
             validate_api_contract(result)
-            
+
             if not result["success"]:
                 pytest.fail(f"File upload failed: {result.get('error')}")
-            
+
             # Extract the filename for Pyodide access
             uploaded_filename = result["data"]["filename"]
-            original_filename = result["data"].get("originalName", "DEVRT-NISSAN-LEAF.csv")
+            original_filename = result["data"].get(
+                "originalName", "DEVRT-NISSAN-LEAF.csv"
+            )
             uploaded_files.append(original_filename)
-            
+
             yield uploaded_filename
-            
+
         finally:
             # Cleanup uploaded files
             for filename in uploaded_files:
                 try:
                     cleanup_response = requests.delete(
                         f"{Config.BASE_URL}/api/uploaded-files/{filename}",
-                        timeout=Config.TIMEOUTS["api_request"]
+                        timeout=Config.TIMEOUTS["api_request"],
                     )
                     cleanup_response.raise_for_status()
                 except requests.RequestException:
                     pass  # Ignore cleanup failures
+
     @pytest.mark.api
     @pytest.mark.telemetry
     @pytest.mark.slow
     def test_basic_telemetry_data_loading(
-        self,
-        server_ready: None,
-        uploaded_telemetry_file: str
+        self, server_ready: None, uploaded_telemetry_file: str
     ) -> None:
         """
         Test basic CSV loading and automotive telemetry data exploration.
-        
+
         Validates that complex automotive telemetry data can be loaded,
         analyzed, and explored using pandas operations in Pyodide with
         comprehensive data quality assessment and key metrics extraction.
-        
+
         Given: A Nissan Leaf telemetry CSV file is uploaded to the server
         When: Python code loads and analyzes the automotive data using pandas
         Then: Key telemetry metrics and data quality info are extracted correctly
-        
+
         Args:
             server_ready: Ensures server is available
             uploaded_telemetry_file: CSV filename in Pyodide filesystem
-            
+
         Validates:
         - CSV file loading with proper column detection
         - Battery and power metrics analysis
@@ -181,7 +182,7 @@ class TestNissanLeafTelemetryAnalysis:
         - Route and geospatial information
         - Data quality assessment
         - Memory usage optimization
-        
+
         Example:
             Test validates automotive data analysis like:
             ```python
@@ -192,9 +193,9 @@ class TestNissanLeafTelemetryAnalysis:
         """
         # Given: Uploaded telemetry data file
         filename = uploaded_telemetry_file
-        
+
         # When: Execute Python code to analyze telemetry data
-        python_code = f'''
+        python_code = f"""
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -253,47 +254,54 @@ for metric in key_metrics:
         print(f"{{metric}}: mean={{df[metric].mean():.2f}}, std={{df[metric].std():.2f}}")
 
 print("\\nTelemetry data loading and analysis completed successfully!")
-'''
-        
-        result = execute_python_code(python_code, timeout=Config.TIMEOUTS["code_execution"] * 2)
-        
+"""
+
+        result = execute_python_code(
+            python_code, timeout=Config.TIMEOUTS["code_execution"] * 2
+        )
+
         # Then: Validate telemetry analysis results
-        assert result["success"] is True, f"Telemetry analysis failed: {result.get('error')}"
-        
+        assert (
+            result["success"] is True
+        ), f"Telemetry analysis failed: {result.get('error')}"
+
         stdout = result["data"]["stdout"]
-        assert "📊 Nissan Leaf Telemetry Dataset Analysis" in stdout, "Analysis header not found"
+        assert (
+            "📊 Nissan Leaf Telemetry Dataset Analysis" in stdout
+        ), "Analysis header not found"
         assert "Dataset shape:" in stdout, "Dataset shape not reported"
         assert "🔋 Battery & Power Metrics:" in stdout, "Battery metrics not analyzed"
         assert "🚗 Vehicle Performance:" in stdout, "Vehicle performance not analyzed"
         assert "🌍 Route Information:" in stdout, "Route information not extracted"
         assert "🔍 Data Quality Assessment:" in stdout, "Data quality not assessed"
         assert "completed successfully!" in stdout, "Analysis did not complete"
-        
+
         # Validate no errors in stderr
-        assert result["data"]["stderr"] == "", f"Unexpected errors: {result['data']['stderr']}"
+        assert (
+            result["data"]["stderr"] == ""
+        ), f"Unexpected errors: {result['data']['stderr']}"
+
     @pytest.mark.api
     @pytest.mark.telemetry
     @pytest.mark.slow
     def test_energy_efficiency_analysis(
-        self,
-        server_ready: None,
-        uploaded_telemetry_file: str
+        self, server_ready: None, uploaded_telemetry_file: str
     ) -> None:
         """
         Test complex energy efficiency and consumption analysis.
-        
+
         Validates advanced energy efficiency calculations, consumption metrics,
         regenerative braking analysis, and temperature impact assessment using
         comprehensive automotive telemetry data processing.
-        
+
         Given: Nissan Leaf telemetry data with power, speed, and environmental metrics
         When: Python code performs energy efficiency analysis with multiple parameters
         Then: Detailed efficiency metrics and insights are generated correctly
-        
+
         Args:
             server_ready: Ensures server is available
             uploaded_telemetry_file: CSV filename in Pyodide filesystem
-            
+
         Validates:
         - Power consumption analysis by speed ranges
         - Regenerative braking efficiency calculations
@@ -301,7 +309,7 @@ print("\\nTelemetry data loading and analysis completed successfully!")
         - Power-to-weight ratio analysis
         - Temperature impact on efficiency
         - Energy recovery metrics
-        
+
         Example:
             Test validates energy analysis like:
             ```python
@@ -312,9 +320,9 @@ print("\\nTelemetry data loading and analysis completed successfully!")
         """
         # Given: Uploaded telemetry data for energy analysis
         filename = uploaded_telemetry_file
-        
+
         # When: Execute energy efficiency analysis
-        python_code = f'''
+        python_code = f"""
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -416,47 +424,59 @@ if total_distance_km > 0 and total_energy_kwh > 0:
     print(f"Total energy consumed: {{total_energy_kwh:.2f}} kWh")
 
 print("\\nEnergy efficiency analysis completed successfully!")
-'''
-        
-        result = execute_python_code(python_code, timeout=Config.TIMEOUTS["code_execution"] * 2)
-        
+"""
+
+        result = execute_python_code(
+            python_code, timeout=Config.TIMEOUTS["code_execution"] * 2
+        )
+
         # Then: Validate energy efficiency analysis results
-        assert result["success"] is True, f"Energy analysis failed: {result.get('error')}"
-        
+        assert (
+            result["success"] is True
+        ), f"Energy analysis failed: {result.get('error')}"
+
         stdout = result["data"]["stdout"]
-        assert "⚡ ENERGY EFFICIENCY ANALYSIS" in stdout, "Energy analysis header not found"
-        assert "📈 Power Consumption by Speed Range:" in stdout, "Speed range analysis not found"
+        assert (
+            "⚡ ENERGY EFFICIENCY ANALYSIS" in stdout
+        ), "Energy analysis header not found"
+        assert (
+            "📈 Power Consumption by Speed Range:" in stdout
+        ), "Speed range analysis not found"
         assert "🔋 Battery State Changes:" in stdout, "Battery analysis not found"
-        assert "⚖️ Power-to-Weight Analysis:" in stdout, "Power-to-weight analysis not found"
+        assert (
+            "⚖️ Power-to-Weight Analysis:" in stdout
+        ), "Power-to-weight analysis not found"
         assert "completed successfully!" in stdout, "Energy analysis did not complete"
-        
+
         # Validate no errors
-        assert result["data"]["stderr"] == "", f"Energy analysis errors: {result['data']['stderr']}"
-        
-        # Additional validations for energy metrics  
+        assert (
+            result["data"]["stderr"] == ""
+        ), f"Energy analysis errors: {result['data']['stderr']}"
+
+        # Additional validations for energy metrics
         assert "km/h:" in stdout, "Speed range breakdowns not found"
         assert "kW avg" in stdout, "Power averages not calculated"
         assert "samples)" in stdout, "Sample counts not displayed"
-        
+
     def test_geospatial_route_analysis(self, upload_telemetry_data):
         """
         Test geospatial analysis and route optimization calculations.
-        
+
         This test validates advanced GPS-based analytics for automotive telemetry:
         - Distance calculations using Haversine formula
         - Speed vs location correlation analysis
         - Route efficiency optimization metrics
         - Geospatial clustering of driving patterns
-        
+
         Given: Nissan Leaf telemetry data with GPS coordinates
         When: Performing geospatial route analysis
         Then: Should calculate accurate distance metrics and route insights
         """
         # Given: Telemetry data with GPS coordinates
         filename = upload_telemetry_data
-        
+
         # When: Execute geospatial route analysis
-        python_code = f'''
+        python_code = f"""
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -557,41 +577,54 @@ convex_hull_area = lat_range * lon_range * (111000 ** 2)  # Approximate area in 
 route_compactness = total_distance_km * 1000 / np.sqrt(convex_hull_area)
 
 print("\\nGeospatial route analysis completed successfully!")
-'''
-        
-        result = execute_python_code(python_code, timeout=Config.TIMEOUTS["code_execution"] * 3)
-        
+"""
+
+        result = execute_python_code(
+            python_code, timeout=Config.TIMEOUTS["code_execution"] * 3
+        )
+
         # Then: Validate geospatial analysis results
-        assert result["success"] is True, f"Geospatial analysis failed: {result.get('error')}"
-        
+        assert (
+            result["success"] is True
+        ), f"Geospatial analysis failed: {result.get('error')}"
+
         stdout = result["data"]["stdout"]
-        assert "🗺️ GEOSPATIAL ROUTE ANALYSIS" in stdout, "Geospatial analysis header not found"
-        assert ("Route Distance Analysis:" in stdout or "Route Bounds:" in stdout or 
-                "GPS coordinates not available" in stdout), "Route analysis not executed"
-        assert "completed successfully!" in stdout, "Geospatial analysis did not complete"
-        
+        assert (
+            "🗺️ GEOSPATIAL ROUTE ANALYSIS" in stdout
+        ), "Geospatial analysis header not found"
+        assert (
+            "Route Distance Analysis:" in stdout
+            or "Route Bounds:" in stdout
+            or "GPS coordinates not available" in stdout
+        ), "Route analysis not executed"
+        assert (
+            "completed successfully!" in stdout
+        ), "Geospatial analysis did not complete"
+
         # Validate no errors
-        assert result["data"]["stderr"] == "", f"Geospatial analysis errors: {result['data']['stderr']}"
-        
+        assert (
+            result["data"]["stderr"] == ""
+        ), f"Geospatial analysis errors: {result['data']['stderr']}"
+
     def test_driving_behavior_analytics(self, upload_telemetry_data):
         """
         Test complex driving behavior pattern analysis.
-        
+
         This test validates sophisticated automotive behavioral analytics:
         - Acceleration/deceleration pattern recognition
         - Aggressive vs eco-friendly driving detection
         - Speed consistency and smoothness metrics
         - Regenerative braking effectiveness analysis
-        
+
         Given: Nissan Leaf telemetry data with speed and power metrics
         When: Analyzing driving behavior patterns
         Then: Should identify behavioral patterns and efficiency correlations
         """
         # Given: Telemetry data with driving behavior signals
         filename = upload_telemetry_data
-        
+
         # When: Execute driving behavior analytics
-        python_code = f'''
+        python_code = f"""
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -698,40 +731,52 @@ if total_motor_energy > 0:
     regen_efficiency = (total_regen_energy / total_motor_energy) * 100
     print(f"\\n🔄 Energy Recovery Efficiency: {{regen_efficiency:.1f}}%")
 print("\\nDriving behavior analytics completed successfully!")
-'''
-        
-        result = execute_python_code(python_code, timeout=Config.TIMEOUTS["code_execution"] * 2)
-        
+"""
+
+        result = execute_python_code(
+            python_code, timeout=Config.TIMEOUTS["code_execution"] * 2
+        )
+
         # Then: Validate driving behavior analysis results
-        assert result["success"] is True, f"Driving behavior analysis failed: {result.get('error')}"
-        
+        assert (
+            result["success"] is True
+        ), f"Driving behavior analysis failed: {result.get('error')}"
+
         stdout = result["data"]["stdout"]
-        assert "🚗 DRIVING BEHAVIOR ANALYTICS" in stdout, "Driving behavior analysis header not found"
-        assert ("driving_event" in stdout.lower() or "acceleration" in stdout.lower()), "Behavior analysis not executed"
-        assert "completed successfully!" in stdout, "Driving behavior analysis did not complete"
-        
+        assert (
+            "🚗 DRIVING BEHAVIOR ANALYTICS" in stdout
+        ), "Driving behavior analysis header not found"
+        assert (
+            "driving_event" in stdout.lower() or "acceleration" in stdout.lower()
+        ), "Behavior analysis not executed"
+        assert (
+            "completed successfully!" in stdout
+        ), "Driving behavior analysis did not complete"
+
         # Validate no errors
-        assert result["data"]["stderr"] == "", f"Driving behavior analysis errors: {result['data']['stderr']}"
-        
+        assert (
+            result["data"]["stderr"] == ""
+        ), f"Driving behavior analysis errors: {result['data']['stderr']}"
+
     def test_advanced_time_series_analysis(self, upload_telemetry_data):
         """
         Test advanced time series analysis and predictive insights.
-        
+
         This test validates sophisticated temporal analytics for automotive data:
         - Rolling window trend analysis with statistical metrics
         - Correlation analysis between operational parameters
         - Pattern detection and anomaly identification
         - Predictive modeling for energy consumption
-        
+
         Given: Nissan Leaf telemetry data with temporal sequences
         When: Performing advanced time series analysis
         Then: Should detect trends, correlations, and predictive insights
         """
         # Given: Telemetry data with time series characteristics
         filename = upload_telemetry_data
-        
+
         # When: Execute advanced time series analysis
-        python_code = f'''
+        python_code = f"""
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -874,41 +919,54 @@ print(f"Total SOC consumption: {{abs(soc_slope):.1f}}%")
 print(f"SOC consumption rate: {{abs(soc_slope)/len(df_sorted)*1000:.2f}}%/1000 points")
 print(f"Battery health (SOH): {{df_sorted['soh'].iloc[0]:.1f}}%")
 print("\\nAdvanced time series analysis completed successfully!")
-'''
-        
-        result = execute_python_code(python_code, timeout=Config.TIMEOUTS["code_execution"] * 3)
-        
+"""
+
+        result = execute_python_code(
+            python_code, timeout=Config.TIMEOUTS["code_execution"] * 3
+        )
+
         # Then: Validate time series analysis results
-        assert result["success"] is True, f"Time series analysis failed: {result.get('error')}"
-        
+        assert (
+            result["success"] is True
+        ), f"Time series analysis failed: {result.get('error')}"
+
         stdout = result["data"]["stdout"]
-        assert "📊 ADVANCED TIME SERIES ANALYSIS" in stdout, "Time series analysis header not found"
-        assert ("rolling" in stdout.lower() or "correlation" in stdout.lower() or 
-                "trend" in stdout.lower()), "Time series analysis not executed"
-        assert "completed successfully!" in stdout, "Time series analysis did not complete"
-        
+        assert (
+            "📊 ADVANCED TIME SERIES ANALYSIS" in stdout
+        ), "Time series analysis header not found"
+        assert (
+            "rolling" in stdout.lower()
+            or "correlation" in stdout.lower()
+            or "trend" in stdout.lower()
+        ), "Time series analysis not executed"
+        assert (
+            "completed successfully!" in stdout
+        ), "Time series analysis did not complete"
+
         # Validate no errors
-        assert result["data"]["stderr"] == "", f"Time series analysis errors: {result['data']['stderr']}"
-        
+        assert (
+            result["data"]["stderr"] == ""
+        ), f"Time series analysis errors: {result['data']['stderr']}"
+
     def test_comprehensive_automotive_insights(self, upload_telemetry_data):
         """
         Test comprehensive automotive insights with visualization generation.
-        
+
         This test validates complete automotive analytics with visual outputs:
         - Multi-dimensional data visualization generation
         - Comprehensive efficiency dashboards
         - Cross-correlation heat maps and trend analysis
         - Professional automotive reporting formats
-        
+
         Given: Complete Nissan Leaf telemetry dataset
         When: Generating comprehensive automotive insights
         Then: Should produce professional analytical reports with visualizations
         """
         # Given: Complete telemetry dataset for comprehensive analysis
         filename = upload_telemetry_data
-        
+
         # When: Execute comprehensive automotive insights analysis
-        python_code = f'''
+        python_code = f"""
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -1054,24 +1112,37 @@ print(f"FILE_PATH: {{dashboard_file}}")
 print(f"PLOT_TYPE: nissan_leaf_dashboard")
 print(f"DATA_POINTS: {{len(df)}}")
 print("\\nComprehensive automotive insights analysis completed successfully!")
-'''
-        
-        result = execute_python_code(python_code, timeout=Config.TIMEOUTS["code_execution"] * 4)
-        
+"""
+
+        result = execute_python_code(
+            python_code, timeout=Config.TIMEOUTS["code_execution"] * 4
+        )
+
         # Then: Validate comprehensive insights results
-        assert result["success"] is True, f"Comprehensive insights analysis failed: {result.get('error')}"
-        
+        assert (
+            result["success"] is True
+        ), f"Comprehensive insights analysis failed: {result.get('error')}"
+
         stdout = result["data"]["stdout"]
-        assert "🚗 COMPREHENSIVE AUTOMOTIVE INSIGHTS" in stdout, "Comprehensive analysis header not found"
-        assert ("dashboard" in stdout.lower() or "summary" in stdout.lower() or
-                "executive" in stdout.lower()), "Comprehensive analysis not executed"
-        assert "completed successfully!" in stdout, "Comprehensive analysis did not complete"
-        
+        assert (
+            "🚗 COMPREHENSIVE AUTOMOTIVE INSIGHTS" in stdout
+        ), "Comprehensive analysis header not found"
+        assert (
+            "dashboard" in stdout.lower()
+            or "summary" in stdout.lower()
+            or "executive" in stdout.lower()
+        ), "Comprehensive analysis not executed"
+        assert (
+            "completed successfully!" in stdout
+        ), "Comprehensive analysis did not complete"
+
         # Validate no errors
-        assert result["data"]["stderr"] == "", f"Comprehensive analysis errors: {result['data']['stderr']}"
+        assert (
+            result["data"]["stderr"] == ""
+        ), f"Comprehensive analysis errors: {result['data']['stderr']}"
         in_verification_section = False
-        
-        for line in output_text.split('\\n'):
+
+        for line in output_text.split("\\n"):
             if "=== FILE_VERIFICATION_DATA ===" in line:
                 in_verification_section = True
                 continue
@@ -1081,39 +1152,68 @@ print("\\nComprehensive automotive insights analysis completed successfully!")
             elif in_verification_section and ":" in line:
                 key, value = line.split(":", 1)
                 verification_data[key.strip()] = value.strip()
-        
+
         # Verify file creation in Pyodide virtual filesystem
-        self.assertEqual(verification_data.get("FILE_SAVED"), "True", "Plot file was not saved to virtual filesystem")
-        self.assertGreater(int(verification_data.get("FILE_SIZE", "0")), 0, "Plot file has zero size in virtual filesystem")
+        self.assertEqual(
+            verification_data.get("FILE_SAVED"),
+            "True",
+            "Plot file was not saved to virtual filesystem",
+        )
+        self.assertGreater(
+            int(verification_data.get("FILE_SIZE", "0")),
+            0,
+            "Plot file has zero size in virtual filesystem",
+        )
         self.assertEqual(verification_data.get("PLOT_TYPE"), "nissan_leaf_dashboard")
-        self.assertEqual(verification_data.get("ANALYSIS_COMPLETED"), "True", "Analysis did not complete successfully")
-        self.assertEqual(verification_data.get("DATA_POINTS"), "5843", "Unexpected number of data points analyzed")
-        
+        self.assertEqual(
+            verification_data.get("ANALYSIS_COMPLETED"),
+            "True",
+            "Analysis did not complete successfully",
+        )
+        self.assertEqual(
+            verification_data.get("DATA_POINTS"),
+            "5843",
+            "Unexpected number of data points analyzed",
+        )
+
         # Extract virtual files to real filesystem
-        plots_response = self.session.post(f"{self.base_url}/api/extract-plots", timeout=30)
+        plots_response = self.session.post(
+            f"{self.base_url}/api/extract-plots", timeout=30
+        )
         self.assertEqual(plots_response.status_code, 200)
         plots_data = plots_response.json()
         self.assertTrue(plots_data.get("success"), "Failed to extract plot files")
-        
+
         # Verify the file exists in the real filesystem
         import os
+
         file_path = verification_data.get("FILE_PATH", "")
         actual_filename = file_path.split("/")[-1]  # Get just the filename part
         expected_plots_dir = os.path.join(os.getcwd(), "plots", "matplotlib")
         local_filepath = os.path.join(expected_plots_dir, actual_filename)
-        
-        self.assertTrue(os.path.exists(local_filepath), f"Plot file not found at {local_filepath}")
-        self.assertGreater(os.path.getsize(local_filepath), 0, "Local plot file has zero size")
-        
+
+        self.assertTrue(
+            os.path.exists(local_filepath), f"Plot file not found at {local_filepath}"
+        )
+        self.assertGreater(
+            os.path.getsize(local_filepath), 0, "Local plot file has zero size"
+        )
+
         # Verify it's a reasonable plot file size (should be > 100KB for a complex dashboard)
         file_size_mb = os.path.getsize(local_filepath) / (1024 * 1024)
-        self.assertGreater(file_size_mb, 0.1, f"Plot file seems too small ({file_size_mb:.2f} MB)")
-        self.assertLess(file_size_mb, 10, f"Plot file seems too large ({file_size_mb:.2f} MB)")
-        
-        print(f"✅ Successfully verified plot file: {actual_filename} ({file_size_mb:.2f} MB)")
+        self.assertGreater(
+            file_size_mb, 0.1, f"Plot file seems too small ({file_size_mb:.2f} MB)"
+        )
+        self.assertLess(
+            file_size_mb, 10, f"Plot file seems too large ({file_size_mb:.2f} MB)"
+        )
+
+        print(
+            f"✅ Successfully verified plot file: {actual_filename} ({file_size_mb:.2f} MB)"
+        )
         print(f"   Virtual filesystem size: {verification_data.get('FILE_SIZE')} bytes")
         print(f"   Real filesystem size: {os.path.getsize(local_filepath)} bytes")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
