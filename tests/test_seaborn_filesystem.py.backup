@@ -22,10 +22,6 @@ Modernization Requirements (STRICT COMPLIANCE):
 import pytest
 import requests
 
-# Import from same directory using absolute import that pytest can resolve  
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent))
 from conftest import Config, execute_python_code
 
 
