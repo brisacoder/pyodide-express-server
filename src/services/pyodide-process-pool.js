@@ -205,6 +205,8 @@ class PyodideProcessPool {
 
   /**
    * Handle messages from child processes
+   * @param processId
+   * @param message
    * @private
    */
   _handleMessage(processId, message) {
@@ -360,6 +362,8 @@ class PyodideProcessPool {
 
   /**
    * Install a Python package using an available process
+   * @param packageName
+   * @param timeout
    */
   async installPackage(packageName, timeout = 60000) {
     if (!this.isInitialized) {
@@ -440,6 +444,8 @@ class PyodideProcessPool {
 
   /**
    * Kill a process and optionally replace it
+   * @param processId
+   * @param reason
    * @private
    */
   _killProcess(processId, reason) {
@@ -473,6 +479,7 @@ class PyodideProcessPool {
 
   /**
    * Handle process death and replacement
+   * @param processId
    * @private
    */
   _handleProcessDeath(processId) {
@@ -504,6 +511,7 @@ class PyodideProcessPool {
 
   /**
    * Recycle a process after it reaches max executions
+   * @param processId
    * @private
    */
   _recycleProcess(processId) {

@@ -136,7 +136,7 @@ def execute_python_code(server_session):
         assert result.get("success"), (
             f"Code execution failed: {result.get('error', 'Unknown error')}"
         )
-        return result.get("stdout", "")
+        return result.get("data", {}).get("stdout", "")
 
     return _execute
 
@@ -338,6 +338,7 @@ result = {{
 
 # List all files in the matplotlib directory
 plots_dir = Path('/plots/matplotlib')
+if plots_dir.exists():
     result["dir_contents"] = [
         f.name for f in plots_dir.iterdir() if f.is_file()
     ]
@@ -692,13 +693,17 @@ def test_given_no_plots_when_extracting_then_empty_result_returned(
     # Given: Clear any existing plots
     clear_plots_code = '''
 from pathlib import Path
-import shutil
 
 # Clear plot directories if they exist
 for dir_path in ['/plots/matplotlib', '/plots/seaborn', '/plots/base64']:
     path_obj = Path(dir_path)
     if path_obj.exists():
-        shutil.rmtree(dir_path)
+        # Remove all files in the directory
+        for file in path_obj.iterdir():
+            if file.is_file():
+                file.unlink()
+    else:
+        # Create directory if it doesn't exist
         path_obj.mkdir(parents=True, exist_ok=True)
 
 print("Directories cleared")
