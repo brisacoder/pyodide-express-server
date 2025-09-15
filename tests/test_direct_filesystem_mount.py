@@ -48,8 +48,8 @@ MATPLOTLIB_EXECUTION_TIMEOUT_MS: int = 120000
 SERVER_STARTUP_TIMEOUT_SECONDS: int = 180
 
 # Test data configuration
-TEST_PLOTS_DIRECTORY: str = "/plots/matplotlib"
-TEST_SEABORN_DIRECTORY: str = "/plots/seaborn"
+TEST_PLOTS_DIRECTORY: str = "/home/pyodide/plots/matplotlib"
+TEST_SEABORN_DIRECTORY: str = "/home/pyodide/plots/seaborn"
 LARGE_OUTPUT_LINE_COUNT: int = 1000
 OUTPUT_SIZE_LIMIT_BYTES: int = 1_000_000
 
@@ -1081,7 +1081,7 @@ import csv
 from pathlib import Path
 
 # Ensure directory exists
-Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
+Path('/home/pyodide/plots/matplotlib').mkdir(parents=True, exist_ok=True)
 
 # Files to create with their content
 files_config = {{
@@ -1102,7 +1102,7 @@ files_config = {{
 results = []
 
 for filename, config in files_config.items():
-    file_path = f"/plots/matplotlib/{{filename}}"
+    file_path = f"/home/pyodide/plots/matplotlib/{{filename}}"
 
     try:
         if config["type"] == "text":
@@ -1170,7 +1170,7 @@ from pathlib import Path
 results = {{}}
 
 # Check text file
-text_path = Path('/home/pyodide/plots/matplotlib/{test_files[0]}")
+text_path = Path('/home/pyodide/plots/matplotlib/{test_files[0]}')
 if text_path.exists():
     content = text_path.read_text()
     results["text_file"] = {{
@@ -1180,7 +1180,7 @@ if text_path.exists():
     }}
 
 # Check JSON file
-json_path = Path('/home/pyodide/plots/matplotlib/{test_files[1]}")
+json_path = Path('/home/pyodide/plots/matplotlib/{test_files[1]}')
 if json_path.exists():
     with open(json_path, 'r') as f:
         data = json.load(f)
@@ -1191,7 +1191,7 @@ if json_path.exists():
     }}
 
 # Check CSV file
-csv_path = Path('/home/pyodide/plots/matplotlib/{test_files[2]}")
+csv_path = Path('/home/pyodide/plots/matplotlib/{test_files[2]}')
 if csv_path.exists():
     content = csv_path.read_text()
     results["csv_file"] = {{
@@ -1258,7 +1258,7 @@ print(json.dumps(results))
 import json
 from pathlib import Path
 
-base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}")
+base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}')
 structure = {repr(nested_structure)}
 
 results = []
@@ -1323,7 +1323,7 @@ print(json.dumps(summary))
 import json
 from pathlib import Path
 
-base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}")
+base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}')
 structure = {repr(nested_structure)}
 verification_results = []
 
@@ -1397,8 +1397,8 @@ print(json.dumps(summary))
 from pathlib import Path
 import json
 
-file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}")
-Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
+file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}')
+Path('/home/pyodide/plots/matplotlib').mkdir(parents=True, exist_ok=True)
 
 # Create initial file
 initial_content = "Initial content before overwrite"
@@ -1421,7 +1421,7 @@ print(json.dumps(result))
 from pathlib import Path
 import json
 
-file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}")
+file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}')
 
 # Read initial content
 initial_content = file_path.read_text() if file_path.exists() else ""
@@ -1496,13 +1496,13 @@ import numpy as np
 from pathlib import Path
 
 # Create directories
-Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
-Path('/home/pyodide/plots/seaborn").mkdir(parents=True, exist_ok=True)
+Path('/home/pyodide/plots/matplotlib').mkdir(parents=True, exist_ok=True)
+Path('/home/pyodide/plots/seaborn').mkdir(parents=True, exist_ok=True)
 
 results = []
 
 # 1. Create a text file
-text_file = f"/plots/matplotlib/extract_test_{timestamp}.txt"
+text_file = f"/home/pyodide/plots/matplotlib/extract_test_{timestamp}.txt"
 with open(text_file, "w") as f:
     f.write("Test content for extraction API")
 results.append({{"type": "text", "path": text_file, "created": True}})
@@ -1518,7 +1518,7 @@ plt.figure(figsize=(6, 4))
 x = np.linspace(0, 5, 50)
 plt.plot(x, np.sin(x), 'b-')
 plt.title("Test Plot for Extraction")
-plot_file = f"/plots/matplotlib/plot_{timestamp}.png"
+plot_file = f"/home/pyodide/plots/matplotlib/plot_{timestamp}.png"
 plt.savefig(plot_file)
 plt.close()
 results.append({{"type": "plot", "path": plot_file, "created": True}})
@@ -1607,8 +1607,8 @@ data = {{
 df = pd.DataFrame(data)
 
 # Save to CSV
-csv_path = f"/plots/matplotlib/{csv_filename}"
-Path('/home/pyodide/plots/matplotlib").mkdir(parents=True, exist_ok=True)
+csv_path = f"/home/pyodide/plots/matplotlib/{csv_filename}"
+Path('/home/pyodide/plots/matplotlib').mkdir(parents=True, exist_ok=True)
 df.to_csv(csv_path, index=False)
 
 # Verify file was created and read it back
