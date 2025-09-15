@@ -68,8 +68,6 @@ plt.rcParams['figure.figsize'] = (10, 6)
 plt.rcParams['figure.dpi'] = 100
 plt.rcParams['savefig.dpi'] = 150
 plt.rcParams['savefig.bbox'] = 'tight'
-
-print("Pyodide executor initialized successfully")
     `);
 
     initialized = true;
@@ -126,7 +124,17 @@ sys.stderr = _captured_stderr
     // Execute the user code
     let result;
     try {
-      result = pyodide.runPython(code);
+      // Check if the code contains await statements or async functions
+      const hasAwait = /\bawait\s+/.test(code);
+      const hasAsyncDef = /\basync\s+def\s+/.test(code);
+      
+      if (hasAwait || hasAsyncDef) {
+        // Use async execution for code with await
+        result = await pyodide.runPythonAsync(code);
+      } else {
+        // Use sync execution for regular code
+        result = pyodide.runPython(code);
+      }
     } catch (pythonError) {
       // Restore stdout/stderr
       pyodide.runPython(`
@@ -141,9 +149,9 @@ sys.stderr = _original_stderr
         type: 'result',
         executionId,
         success: false,
-        error: pythonError.message,
+        error: pythonError.message || pythonError.toString(),
         stdout: stdout || '',
-        stderr: stderr || '',
+        stderr: stderr || pythonError.toString(),
         executionTime: Date.now() - startTime
       });
       return;

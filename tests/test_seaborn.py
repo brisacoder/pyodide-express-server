@@ -347,27 +347,11 @@ class TestSeabornPlotting:
 
         # When: Creating regression plot with controlled data
         regression_code = """
-# Try to use seaborn - it should be available from previous installations
-# or install it if needed (this is a known limitation with Pyodide isolation)
-try:
-    # First, try importing directly (in case it's already available)
-    import seaborn as sns
-    print("Seaborn already available")
-except ImportError:
-    # If not available, try to install (note: this may not work in isolated context)
-    print("Seaborn not found, attempting installation...")
-    import micropip
-    # Note: This installation approach may not work due to async requirements
-    # The test will be skipped if seaborn is not available
-    try:
-        # Try synchronous approach (will generate warning but may work)
-        result = micropip.install("seaborn")
-        print(f"Install result: {result}")
-        import seaborn as sns
-        print("Seaborn installed successfully")
-    except Exception as e:
-        print(f"Seaborn installation failed: {e}")
-        raise ImportError(f"Seaborn not available: {e}")
+# Install seaborn in this execution context
+import micropip
+print("Installing seaborn and dependencies...")
+await micropip.install("seaborn")
+print("Seaborn installed successfully")
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -375,6 +359,7 @@ import numpy as np
 import pandas as pd
 import io
 import base64
+import json
 from pathlib import Path
 
 # Configure matplotlib for headless operation
@@ -417,7 +402,8 @@ plot_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 plt.close()
 
 # Return analysis results
-{
+import json
+print(json.dumps({
     "plot_base64": plot_b64,
     "plot_type": "regression",
     "n_points": n_points,
@@ -428,7 +414,7 @@ plt.close()
         "x_std": float(df['x_feature'].std()),
         "y_std": float(df['y_target'].std())
     }
-}
+}))
 """
 
         response = requests.post(
@@ -453,8 +439,24 @@ plt.close()
             else:
                 assert False, f"Execution failed: {error_msg}"
 
-        result = response_data.get("result")
+        result = response_data.get("data", {}).get("result")
         assert result is not None, "No result data returned"
+        
+        # Parse the JSON result if it's a string
+        if isinstance(result, str):
+            import json
+            try:
+                # Find the JSON part (starts with '{')
+                json_start = result.find('{')
+                if json_start != -1:
+                    json_str = result[json_start:]
+                    result = json.loads(json_str)
+                else:
+                    result = json.loads(result)
+                    result = json.loads(result.strip())
+            except json.JSONDecodeError as e:
+                print(f"Failed to parse JSON result: {result[:500]}")
+                raise ValueError(f"Invalid JSON in result: {e}")
 
         # And: Plot data should be present with correct metadata
         assert "plot_base64" in result, "Missing base64 plot data"
@@ -521,6 +523,7 @@ import numpy as np
 import pandas as pd
 import io
 import base64
+import json
 from pathlib import Path
 
 # Configure matplotlib for headless operation
@@ -588,14 +591,14 @@ for col in df.columns:
     }
 
 # Return comprehensive results
-{
+print(json.dumps({
     "plot_base64": plot_b64,
     "plot_type": "distribution_dashboard",
     "n_samples": n_samples,
     "n_distributions": len(df.columns),
     "statistics": statistics,
     "distribution_types": list(df.columns)
-}
+}))
 """
 
         response = requests.post(
@@ -614,8 +617,19 @@ for col in df.columns:
             "success"
         ), f"Execution failed: {response_data.get('error')}"
 
-        result = response_data.get("result")
+        result = response_data.get("data", {}).get("result")
         assert result is not None, "No result data returned"
+        
+        # Parse the JSON result if it\'s a string
+        if isinstance(result, str):
+            import json
+            # Find the JSON part (starts with '{')
+            json_start = result.find('{')
+            if json_start != -1:
+                json_str = result[json_start:]
+                result = json.loads(json_str)
+            else:
+                result = json.loads(result.strip())
 
         # And: Plot should be generated with correct metadata
         assert "plot_base64" in result, "Missing base64 plot data"
@@ -702,6 +716,7 @@ import numpy as np
 import pandas as pd
 import io
 import base64
+import json
 from pathlib import Path
 
 # Configure matplotlib for headless operation
@@ -775,7 +790,7 @@ correlations = {
 }
 
 # Return comprehensive results
-{
+print(json.dumps({
     "plot_base64": plot_b64,
     "plot_type": "correlation_heatmap",
     "n_samples": n_samples,
@@ -784,7 +799,7 @@ correlations = {
     "key_correlations": correlations,
     "strongest_positive": max(correlations.values()),
     "strongest_negative": min(correlations.values())
-}
+}))
 """
 
         response = requests.post(
@@ -803,8 +818,19 @@ correlations = {
             "success"
         ), f"Execution failed: {response_data.get('error')}"
 
-        result = response_data.get("result")
+        result = response_data.get("data", {}).get("result")
         assert result is not None, "No result data returned"
+        
+        # Parse the JSON result if it\'s a string
+        if isinstance(result, str):
+            import json
+            # Find the JSON part (starts with '{')
+            json_start = result.find('{')
+            if json_start != -1:
+                json_str = result[json_start:]
+                result = json.loads(json_str)
+            else:
+                result = json.loads(result.strip())
 
         # And: Plot should be generated with correct metadata
         assert "plot_base64" in result, "Missing base64 plot data"
@@ -896,6 +922,7 @@ import numpy as np
 import pandas as pd
 import io
 import base64
+import json
 from pathlib import Path
 
 # Configure matplotlib for headless operation
@@ -974,7 +1001,7 @@ for group_name in df['group'].unique():
     }
 
 # Return comprehensive results
-{
+print(json.dumps({
     "plot_base64": plot_b64,
     "plot_type": "pairplot",
     "n_groups": len(df['group'].unique()),
@@ -983,7 +1010,7 @@ for group_name in df['group'].unique():
     "group_names": list(df['group'].unique()),
     "group_statistics": group_stats,
     "points_per_group": n_per_group
-}
+}))
 """
 
         response = requests.post(
@@ -1002,8 +1029,19 @@ for group_name in df['group'].unique():
             "success"
         ), f"Execution failed: {response_data.get('error')}"
 
-        result = response_data.get("result")
+        result = response_data.get("data", {}).get("result")
         assert result is not None, "No result data returned"
+        
+        # Parse the JSON result if it\'s a string
+        if isinstance(result, str):
+            import json
+            # Find the JSON part (starts with '{')
+            json_start = result.find('{')
+            if json_start != -1:
+                json_str = result[json_start:]
+                result = json.loads(json_str)
+            else:
+                result = json.loads(result.strip())
 
         # And: Plot should be generated with correct metadata
         assert "plot_base64" in result, "Missing base64 plot data"
@@ -1173,8 +1211,19 @@ file_size = output_path.stat().st_size if file_exists else 0
             "success"
         ), f"Execution failed: {response_data.get('error')}"
 
-        result = response_data.get("result")
+        result = response_data.get("data", {}).get("result")
         assert result is not None, "No result data returned"
+        
+        # Parse the JSON result if it\'s a string
+        if isinstance(result, str):
+            import json
+            # Find the JSON part (starts with '{')
+            json_start = result.find('{')
+            if json_start != -1:
+                json_str = result[json_start:]
+                result = json.loads(json_str)
+            else:
+                result = json.loads(result.strip())
 
         # And: File should be successfully saved
         assert (
@@ -1259,6 +1308,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import time
+import json as json_module
 from pathlib import Path
 
 # Set consistent styling and color palette
@@ -1348,14 +1398,16 @@ group_stats = df.groupby('group').agg({
     'value2': ['mean', 'std']
 }).round(2)
 
-category_counts = df.groupby(['group', 'category']).size().to_dict()
+# Count samples per category and group (convert tuple keys to strings for JSON serialization)
+category_counts_raw = df.groupby(['group', 'category']).size().to_dict()
+category_counts = {f"{k[0]}_{k[1]}": v for k, v in category_counts_raw.items()}
 
 # Verify file creation
 file_exists = output_path.exists()
 file_size = output_path.stat().st_size if file_exists else 0
 
 # Return comprehensive validation data
-{
+response = {
     "file_saved": file_exists,
     "file_size": file_size,
     "plot_type": "advanced_dashboard",
@@ -1378,6 +1430,8 @@ file_size = output_path.stat().st_size if file_exists else 0
     "correlation_value1_value2": float(df['value1'].corr(df['value2'])),
     "correlation_value1_score": float(df['value1'].corr(df['score']))
 }
+
+print(json_module.dumps(response, indent=2))
 """
 
         response = requests.post(
@@ -1396,8 +1450,19 @@ file_size = output_path.stat().st_size if file_exists else 0
             "success"
         ), f"Execution failed: {response_data.get('error')}"
 
-        result = response_data.get("result")
+        result = response_data.get("data", {}).get("result")
         assert result is not None, "No result data returned"
+        
+        # Parse the JSON result if it\'s a string
+        if isinstance(result, str):
+            import json
+            # Find the JSON part (starts with '{')
+            json_start = result.find('{')
+            if json_start != -1:
+                json_str = result[json_start:]
+                result = json.loads(json_str)
+            else:
+                result = json.loads(result.strip())
 
         # And: Dashboard should be successfully created
         assert (
