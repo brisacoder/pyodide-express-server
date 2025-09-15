@@ -1225,3 +1225,321 @@ class TestAPIContractCompliance:
                 assert "error" in result
                 assert "meta" in result
                 assert "timestamp" in result["meta"]
+
+
+class TestFileOperations:
+    """
+    BDD test scenarios for file upload and management operations.
+    
+    These tests validate file upload, listing, and deletion functionality
+    while ensuring proper cleanup and API contract compliance.
+    """
+    
+    def test_given_csv_file_when_uploaded_then_becomes_available(self, server_ready, temp_csv_file, cleanup_tracker):
+        """
+        Scenario: CSV file upload and availability
+        
+        Given: A CSV file with test data exists locally
+        When: The file is uploaded via /api/upload endpoint
+        Then: The file becomes available in the server's file system
+        
+        This test validates file upload functionality and server file management.
+        
+        Args:
+            server_ready: Fixture ensuring server is available
+            temp_csv_file: Fixture providing test CSV file
+            cleanup_tracker: Fixture for automatic cleanup
+            
+        Expected Output:
+            Successful upload with file available for subsequent operations
+            
+        Example:
+            >>> files = {"file": open("test.csv", "rb")}
+            >>> response = requests.post("/api/upload", files=files)
+            >>> assert response.json()["success"] is True
+        """
+        # Given: CSV file with test data (provided by fixture)
+        assert temp_csv_file.exists()
+        
+        # When: Uploading file via API
+        with open(temp_csv_file, 'rb') as file:
+            files = {"file": file}
+            response = requests.post(
+                f"{TestConstants.BASE_URL}{TestConstants.ENDPOINTS['upload']}",
+                files=files,
+                timeout=TestConstants.TIMEOUTS["file_upload"]
+            )
+        
+        # Then: Upload succeeds and file is available
+        assert response.status_code == 200
+        upload_result = response.json()
+        validate_api_contract(upload_result)
+        assert upload_result["success"] is True
+        
+        # Track uploaded file for cleanup
+        if upload_result["data"] and "file" in upload_result["data"]:
+            filename = upload_result["data"]["file"].get("sanitizedOriginal") or upload_result["data"]["file"].get("filename")
+            if filename:
+                cleanup_tracker.track_upload(filename)
+    
+    def test_given_uploaded_files_when_listed_then_shows_available_files(self, server_ready):
+        """
+        Scenario: Listing uploaded files
+        
+        Given: Files have been uploaded to the server
+        When: A client requests the list of uploaded files via /api/uploaded-files
+        Then: The server returns a list of available uploaded files
+        
+        This test validates file listing functionality.
+        
+        Args:
+            server_ready: Fixture ensuring server is available
+            
+        Expected Output:
+            API contract compliant response with list of uploaded files
+            
+        Example:
+            >>> response = requests.get("/api/uploaded-files")
+            >>> files_data = response.json()
+            >>> assert files_data["success"] is True
+            >>> assert "files" in files_data["data"]
+        """
+        # Given: Server with potential uploaded files
+        # When: Requesting list of uploaded files
+        response = requests.get(
+            f"{TestConstants.BASE_URL}{TestConstants.ENDPOINTS['uploaded_files']}",
+            timeout=TestConstants.TIMEOUTS["api_request"]
+        )
+        
+        # Then: Returns file list following API contract
+        assert response.status_code == 200
+        files_result = response.json()
+        validate_api_contract(files_result)
+        assert files_result["success"] is True
+        
+        # Data should contain files list (empty or populated)
+        assert "files" in files_result["data"]
+        assert isinstance(files_result["data"]["files"], list)
+    
+    def test_given_uploaded_file_when_deleted_then_removes_from_system(self, server_ready, temp_csv_file):
+        """
+        Scenario: File deletion functionality
+        
+        Given: A file has been uploaded and is available on the server
+        When: A client requests deletion of the file via DELETE /api/uploaded-files/{filename}
+        Then: The file is removed from the server file system
+        
+        This test validates file deletion functionality.
+        
+        Args:
+            server_ready: Fixture ensuring server is available
+            temp_csv_file: Fixture providing test CSV file
+            
+        Expected Output:
+            Successful file deletion with confirmation response
+            
+        Example:
+            >>> # Upload file first
+            >>> upload_response = requests.post("/api/upload", files={"file": file})
+            >>> filename = upload_response.json()["data"]["file"]["filename"]
+            >>> # Then delete it
+            >>> delete_response = requests.delete(f"/api/uploaded-files/{filename}")
+            >>> assert delete_response.json()["success"] is True
+        """
+        # Given: Upload a file first
+        with open(temp_csv_file, 'rb') as file:
+            files = {"file": file}
+            upload_response = requests.post(
+                f"{TestConstants.BASE_URL}{TestConstants.ENDPOINTS['upload']}",
+                files=files,
+                timeout=TestConstants.TIMEOUTS["file_upload"]
+            )
+        
+        assert upload_response.status_code == 200
+        upload_result = upload_response.json()
+        validate_api_contract(upload_result)
+        assert upload_result["success"] is True
+        
+        # Extract filename for deletion
+        filename = None
+        if upload_result["data"] and "file" in upload_result["data"]:
+            file_info = upload_result["data"]["file"]
+            filename = file_info.get("sanitizedOriginal") or file_info.get("filename")
+        
+        if filename:
+            # When: Deleting the uploaded file
+            delete_response = requests.delete(
+                f"{TestConstants.BASE_URL}{TestConstants.ENDPOINTS['uploaded_files']}/{filename}",
+                timeout=TestConstants.TIMEOUTS["api_request"]
+            )
+            
+            # Then: Deletion succeeds
+            assert delete_response.status_code in [200, 404]  # 404 if already deleted
+            if delete_response.status_code == 200:
+                delete_result = delete_response.json()
+                validate_api_contract(delete_result)
+                assert delete_result["success"] is True
+
+
+class TestAdvancedScenarios:
+    """
+    BDD test scenarios for advanced functionality and edge cases.
+    
+    These tests cover complex workflows, integration scenarios, and
+    comprehensive validation of server capabilities.
+    """
+    
+    def test_given_pathlib_python_with_file_creation_when_executed_then_creates_accessible_files(self, server_ready):
+        """
+        Scenario: Python code creates files accessible via pathlib
+        
+        Given: The server supports Python pathlib file operations
+        When: Python code creates files using pathlib in mounted directories
+        Then: The files are created and accessible via subsequent operations
+        
+        This test validates end-to-end file creation and access via pathlib.
+        
+        Args:
+            server_ready: Fixture ensuring server is available
+            
+        Expected Output:
+            File creation confirmation with pathlib verification
+            
+        Example:
+            >>> code = '''
+            ... from pathlib import Path
+            ... test_file = Path("/tmp/created_file.txt")
+            ... test_file.write_text("Created via pathlib")
+            ... print(f"File created: {test_file.exists()}")
+            ... '''
+            >>> result = execute_python_code(code)
+            >>> assert "File created: True" in result["data"]["stdout"]
+        """
+        # Given: Python code that creates files using pathlib
+        code = '''
+from pathlib import Path
+import json
+import time
+
+# Create test file using pathlib
+temp_dir = Path("/tmp")
+timestamp = int(time.time())
+test_file = temp_dir / f"bdd_test_file_{timestamp}.txt"
+
+# Create file content
+content = {
+    "test_type": "BDD file creation test",
+    "timestamp": timestamp,
+    "pathlib_used": True,
+    "file_path": str(test_file)
+}
+
+# Write file using pathlib
+test_file.write_text(json.dumps(content, indent=2))
+
+# Verify file creation
+verification = {
+    "file_exists": test_file.exists(),
+    "file_size": test_file.stat().st_size if test_file.exists() else 0,
+    "file_readable": test_file.is_file() if test_file.exists() else False
+}
+
+print(f"File created at: {test_file}")
+print(f"File verification: {verification}")
+print(f"Content preview: {test_file.read_text()[:100]}..." if test_file.exists() else "File not found")
+'''.strip()
+        
+        # When: Executing file creation code
+        result = execute_python_code(code)
+        
+        # Then: File creation succeeds with pathlib
+        assert result["success"] is True
+        
+        stdout = result["data"]["stdout"]
+        assert "File created at:" in stdout
+        assert "file_exists': True" in stdout
+        assert "file_readable': True" in stdout
+        assert "Content preview:" in stdout
+    
+    def test_given_comprehensive_workflow_when_executed_then_all_operations_succeed(self, server_ready):
+        """
+        Scenario: Comprehensive data processing workflow
+        
+        Given: The server supports complete data science workflows
+        When: A complex workflow with multiple operations is executed
+        Then: All operations complete successfully with proper pathlib usage
+        
+        This test validates comprehensive server capabilities.
+        
+        Args:
+            server_ready: Fixture ensuring server is available
+            
+        Expected Output:
+            Successful completion of complex multi-step workflow
+            
+        Example:
+            >>> # Complex workflow with data processing, file operations, and validation
+            >>> result = execute_python_code(comprehensive_workflow_code)
+            >>> assert "Workflow completed successfully" in result["data"]["stdout"]
+        """
+        # Given: Comprehensive workflow code
+        code = '''
+from pathlib import Path
+import json
+import time
+import math
+
+# Step 1: Setup directories using pathlib
+base_dirs = [Path("/tmp"), Path("/uploads"), Path("/plots/matplotlib")]
+for directory in base_dirs:
+    directory.mkdir(parents=True, exist_ok=True)
+
+# Step 2: Generate test data
+data_size = 100
+test_data = {
+    "numbers": [i * 2 for i in range(data_size)],
+    "squares": [i ** 2 for i in range(data_size)],
+    "sin_values": [math.sin(i * 0.1) for i in range(data_size)]
+}
+
+# Step 3: File operations using pathlib
+data_file = Path("/tmp") / f"workflow_data_{int(time.time())}.json"
+data_file.write_text(json.dumps(test_data, indent=2))
+
+# Step 4: Data processing
+processed_data = {
+    "total_numbers": len(test_data["numbers"]),
+    "sum_numbers": sum(test_data["numbers"]),
+    "max_square": max(test_data["squares"]),
+    "avg_sin": sum(test_data["sin_values"]) / len(test_data["sin_values"])
+}
+
+# Step 5: Results file using pathlib
+results_file = Path("/tmp") / f"workflow_results_{int(time.time())}.json"
+results_file.write_text(json.dumps(processed_data, indent=2))
+
+# Step 6: Verification
+verification = {
+    "data_file_exists": data_file.exists(),
+    "results_file_exists": results_file.exists(),
+    "data_file_size": data_file.stat().st_size,
+    "results_file_size": results_file.stat().st_size,
+    "all_directories_exist": all(d.exists() for d in base_dirs)
+}
+
+print("Comprehensive workflow completed successfully")
+print(f"Data processing results: {processed_data}")
+print(f"File verification: {verification}")
+print(f"All pathlib operations successful: {all(verification.values())}")
+'''.strip()
+        
+        # When: Executing comprehensive workflow
+        result = execute_python_code(code, timeout=TestConstants.TIMEOUTS["code_execution"])
+        
+        # Then: Workflow completes successfully
+        assert result["success"] is True
+        
+        stdout = result["data"]["stdout"]
+        assert "Comprehensive workflow completed successfully" in stdout
+        assert "Data processing results:" in stdout
+        assert "All pathlib operations successful: True" in stdout
