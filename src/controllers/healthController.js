@@ -16,14 +16,24 @@ const logger = require('../utils/logger');
  */
 const health = async (req, res) => {
   try {
-    const status = await getBasicHealthStatus();
-    res.status(200).json(status);
+    const healthStatus = await getBasicHealthStatus();
+    res.status(200).json({
+      success: true,
+      data: healthStatus,
+      error: null,
+      meta: {
+        timestamp: healthStatus.timestamp
+      }
+    });
   } catch (error) {
     logger.error('Health check failed', { error: error.message, stack: error.stack });
     res.status(503).json({
-      status: 'error',
-      message: 'Service temporarily unavailable',
-      timestamp: new Date().toISOString(),
+      success: false,
+      data: null,
+      error: 'Service temporarily unavailable',
+      meta: {
+        timestamp: new Date().toISOString()
+      }
     });
   }
 };
@@ -35,15 +45,24 @@ const health = async (req, res) => {
  */
 const healthcheck = async (req, res) => {
   try {
-    const status = await getDetailedHealthStatus();
-    res.status(200).json(status);
+    const healthStatus = await getDetailedHealthStatus();
+    res.status(200).json({
+      success: true,
+      data: healthStatus,
+      error: null,
+      meta: {
+        timestamp: healthStatus.timestamp
+      }
+    });
   } catch (error) {
     logger.error('Detailed health check failed', { error: error.message, stack: error.stack });
     res.status(503).json({
-      status: 'error',
-      message: 'Service health check failed',
-      error: error.message,
-      timestamp: new Date().toISOString(),
+      success: false,
+      data: null,
+      error: `Service health check failed: ${error.message}`,
+      meta: {
+        timestamp: new Date().toISOString()
+      }
     });
   }
 };
@@ -56,23 +75,41 @@ const healthcheck = async (req, res) => {
 const readiness = async (req, res) => {
   try {
     const isReady = await checkServiceReadiness();
+    const timestamp = new Date().toISOString();
     if (isReady) {
       res.status(200).json({
-        status: 'ready',
-        timestamp: new Date().toISOString(),
+        success: true,
+        data: {
+          status: 'ready'
+        },
+        error: null,
+        meta: {
+          timestamp: timestamp
+        }
       });
     } else {
       res.status(503).json({
-        status: 'not_ready',
-        timestamp: new Date().toISOString(),
+        success: false,
+        data: {
+          status: 'not_ready'
+        },
+        error: 'Service is not ready to accept traffic',
+        meta: {
+          timestamp: timestamp
+        }
       });
     }
   } catch (error) {
     logger.error('Readiness check failed', { error: error.message });
     res.status(503).json({
-      status: 'not_ready',
+      success: false,
+      data: {
+        status: 'not_ready'
+      },
       error: error.message,
-      timestamp: new Date().toISOString(),
+      meta: {
+        timestamp: new Date().toISOString()
+      }
     });
   }
 };

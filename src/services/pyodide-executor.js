@@ -219,10 +219,10 @@ async function installPackage(packageName, executionId = null) {
   const startTime = Date.now();
   
   try {
-    await pyodide.runPythonAsync(`
-import micropip
-await micropip.install('${packageName}')
-    `);
+    // Use micropip.install directly with await at JavaScript level
+    const micropip = pyodide.pyimport('micropip');
+    await micropip.install(packageName);
+    micropip.destroy(); // Clean up the PyProxy
 
     sendMessage({
       type: 'package_result',
