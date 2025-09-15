@@ -45,7 +45,10 @@ async function initializePyodide() {
       // Fallback to virtual filesystem if mounting fails
     }
 
-    // Setup Python environment
+    // Install additional packages via micropip
+    const micropip = pyodide.pyimport('micropip');
+    await micropip.install(['seaborn', 'scipy']);
+    micropip.destroy();
 
     // Setup Python environment
     await pyodide.runPythonAsync(`
@@ -69,7 +72,7 @@ plt.rcParams['figure.dpi'] = 100
 plt.rcParams['savefig.dpi'] = 150
 plt.rcParams['savefig.bbox'] = 'tight'
 
-print("Pyodide executor initialized successfully")
+# Initialization complete
     `);
 
     initialized = true;

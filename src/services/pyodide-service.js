@@ -480,10 +480,10 @@ result
         
         // Fallback response structure
         packageData = {
-          python_version: "Unknown",
-          installed_packages: ["micropip", "pyodide-js"],
+          python_version: 'Unknown',
+          installed_packages: ['micropip', 'pyodide-js'],
           total_packages: 2,
-          loaded_modules: ["sys", "os", "json"]
+          loaded_modules: ['sys', 'os', 'json']
         };
       }
 

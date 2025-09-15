@@ -109,20 +109,27 @@ class TestSeabornBase64Plots:
         Raises:
             pytest.skip: If packages cannot be imported
         """
-        # Given: Import test code for package verification
-        test_code = """
-import seaborn as sns
-import matplotlib.pyplot as plt
-print(f"Seaborn version: {sns.__version__}")
-print(f"Matplotlib version: {plt.__version__}")
-"packages_available"
+        # Given: First try to install seaborn if not available
+        install_code = """
+try:
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    print(f"Packages already available - Seaborn: {sns.__version__}, Matplotlib: {plt.__version__}")
+    "already_available"
+except ImportError:
+    import micropip
+    await micropip.install(['seaborn'])
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    print(f"Packages installed - Seaborn: {sns.__version__}, Matplotlib: {plt.__version__}")
+    "newly_installed"
         """
 
-        # When: Execute import test via API
+        # When: Execute installation/check via API
         try:
             response = requests.post(
                 f"{Config.BASE_URL}{Config.ENDPOINTS['execute_raw']}",
-                data=test_code,
+                data=install_code,
                 headers=Config.HEADERS["execute_raw"],
                 timeout=Config.TIMEOUTS["package_install"]
             )
@@ -130,12 +137,14 @@ print(f"Matplotlib version: {plt.__version__}")
             # Then: Verify packages are available
             if response.status_code == 200:
                 data = response.json()
-                if data.get("success") and "packages_available" in data.get("data", {}).get("result", ""):
-                    return True
+                if data.get("success"):
+                    result = data.get("data", {}).get("result", "")
+                    if "already_available" in result or "newly_installed" in result:
+                        return True
         except Exception as e:
-            pytest.skip(f"Package availability check failed: {str(e)}")
+            pytest.skip(f"Package installation/check failed: {str(e)}")
 
-        pytest.skip("Seaborn and/or Matplotlib not available in Pyodide environment")
+        pytest.skip("Seaborn and/or Matplotlib could not be made available in Pyodide environment")
 
     @pytest.fixture
     def plots_directory(self):
@@ -890,7 +899,8 @@ plt.show()
             assert not data["success"], f"Expected failure for {scenario['name']} scenario"
             assert data["data"] is None, "Error response should have null data"
             assert data["error"] is not None, "Error response should have error message"
-            assert scenario["expected_error_type"] in data["error"], f"Expected {scenario['expected_error_type']} in error message"
+            expected_error = scenario["expected_error_type"]
+            assert expected_error in data["error"], f"Expected {expected_error} in error message"
 
     def test_performance_and_timeout_handling(self, seaborn_available):
         """
