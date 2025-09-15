@@ -36,7 +36,11 @@ markers = [
     "unit: marks tests as unit tests",
     "api: marks tests as API tests",
     "security: marks tests as security tests",
-    "timeout: marks tests with timeout limits for stress testing"
+    "timeout: marks tests with timeout limits for stress testing",
+    "matplotlib: marks tests that use matplotlib plotting",
+    "environment: marks tests that check environment configuration",
+    "error_handling: marks tests that validate error conditions",
+    "performance: marks tests that check performance characteristics"
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
