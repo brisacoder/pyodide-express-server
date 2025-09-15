@@ -1,0 +1,80 @@
+"""
+ORIGINAL FILE - DO NOT MODIFY
+This is a backup of the original test_return_data_types.py file before pytest conversion.
+"""
+
+import subprocess
+import time
+import unittest
+
+import requests
+
+# Configuration for tests
+BASE_URL = "http://localhost:3000"
+TIMEOUT = 30
+
+
+def wait_for_server(url, max_retries=30):
+    """Wait for server to be available."""
+    for i in range(max_retries):
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                return
+        except requests.exceptions.RequestException:
+            pass
+        time.sleep(1)
+    raise RuntimeError(f"Server at {url} not available after {max_retries} retries")
+
+
+class ReturnDataTypesTestCase(unittest.TestCase):
+    """Test returning various data types from Pyodide execution."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Use existing server - just wait for it to be ready
+        try:
+            wait_for_server(f"{BASE_URL}/health")
+            cls.server = None  # No server to manage
+        except RuntimeError:
+            # If no server is running, start one
+            cls.server = subprocess.Popen(["node", "src/server.js"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            wait_for_server(f"{BASE_URL}/health")
+
+    @classmethod
+    def tearDownClass(cls):
+        # Only terminate if we started the server
+        if cls.server is not None:
+            cls.server.terminate()
+            try:
+                cls.server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                cls.server.kill()
+
+    def test_return_basic_types(self):
+        """Test returning basic Python data types."""
+        test_cases = [
+            # String
+            ("'hello world'", "hello world"),
+            # Integer  
+            ("42", 42),
+            # Float
+            ("3.14159", 3.14159),
+            # Boolean
+            ("True", True),
+            ("False", False),
+            # None
+            ("None", None),
+        ]
+        
+        for code, expected in test_cases:
+            with self.subTest(code=code):
+                r = requests.post(f"{BASE_URL}/api/execute", json={"code": code}, timeout=TIMEOUT)
+                self.assertEqual(r.status_code, 200)
+                
+                result = r.json()
+                self.assertTrue(result.get("success"), f"Execution failed: {result}")
+                self.assertEqual(result.get("result"), expected)
+
+if __name__ == "__main__":
+    unittest.main()
