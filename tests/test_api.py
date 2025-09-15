@@ -34,11 +34,10 @@ API Contract Validation:
 }
 """
 
-import json
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional, Tuple
+from typing import Any, Dict, Generator
 
 import pytest
 import requests
@@ -77,18 +76,103 @@ class Config:
     SAMPLE_DATA = {
         "csv_content": "name,value,category\nitem1,1,A\nitem2,2,B\nitem3,3,C\n",
         "simple_python": "print('Hello World')",
-        "complex_python": """
+        "complex_pathlib_python": """
 from pathlib import Path
 import json
 import time
 
-# Test pathlib usage
-test_path = Path('/tmp/test.txt')
-print(f'Path exists: {test_path.exists()}')
+# Test pathlib usage for cross-platform compatibility
+base_path = Path('/tmp')
+test_file = base_path / 'test.json'
+data_dir = Path('/uploads')
+plots_dir = Path('/plots/matplotlib')
 
-# Test JSON handling
-data = {'message': 'Hello from Python', 'timestamp': time.time()}
-print(json.dumps(data))
+# Create sample data structure
+data = {
+    'message': 'Pathlib test successful',
+    'base_path': str(base_path),
+    'test_file': str(test_file),
+    'data_dir_exists': data_dir.exists(),
+    'plots_dir_exists': plots_dir.exists(),
+    'timestamp': time.time()
+}
+
+print(json.dumps(data, indent=2))
+        """.strip(),
+        "matplotlib_pathlib_python": """
+from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')  # Use non-GUI backend
+import matplotlib.pyplot as plt
+import numpy as np
+import time
+
+# Generate test data
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
+
+# Use pathlib for plot file handling
+plots_dir = Path('/plots/matplotlib')
+plots_dir.mkdir(parents=True, exist_ok=True)
+
+# Create unique filename with timestamp
+timestamp = int(time.time())
+plot_file = plots_dir / f'pathlib_test_{timestamp}.png'
+
+# Create and save plot
+plt.figure(figsize=(8, 6))
+plt.plot(x, y, 'b-', linewidth=2)
+plt.title('Pathlib Matplotlib Test')
+plt.xlabel('X values')
+plt.ylabel('sin(x)')
+plt.grid(True)
+plt.savefig(plot_file, dpi=100, bbox_inches='tight')
+plt.close()
+
+print(f'Plot saved successfully: {plot_file}')
+print(f'File exists: {plot_file.exists()}')
+        """.strip(),
+        "file_operations_pathlib_python": """
+from pathlib import Path
+import json
+import time
+
+# Test comprehensive pathlib file operations
+uploads_dir = Path('/uploads')
+temp_dir = Path('/tmp')
+plots_dir = Path('/plots/matplotlib')
+
+# Create directories if they don't exist
+for directory in [uploads_dir, temp_dir, plots_dir]:
+    directory.mkdir(parents=True, exist_ok=True)
+
+# Test file operations
+test_data = {
+    'timestamp': time.time(),
+    'directories': {
+        'uploads_exists': uploads_dir.exists(),
+        'temp_exists': temp_dir.exists(),
+        'plots_exists': plots_dir.exists()
+    },
+    'paths': {
+        'uploads_path': str(uploads_dir),
+        'temp_path': str(temp_dir),
+        'plots_path': str(plots_dir)
+    }
+}
+
+# Use pathlib to create test file
+test_file = temp_dir / 'pathlib_test.json'
+test_file.write_text(json.dumps(test_data, indent=2))
+
+print(f'Created test file: {test_file}')
+print(f'File size: {test_file.stat().st_size} bytes')
+print(f'File exists: {test_file.exists()}')
+
+# Read back the file
+content = test_file.read_text()
+print('File content preview:')
+print(content[:200] + '...' if len(content) > 200 else content)
         """.strip(),
         "infinite_loop": "while True: pass",
         "memory_intensive": """
@@ -141,7 +225,7 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
     Expected format:
     {
         "success": true | false,
-        "data": { "result": { "stdout": str, "stderr": str, "executionTime": int } } | null,
+        "data": { "result": str, "stdout": str, "stderr": str, "executionTime": int } | null,
         "error": string | null,
         "meta": { "timestamp": string }
     }
@@ -153,7 +237,12 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
         AssertionError: If response doesn't follow the contract
 
     Example:
-        >>> response = {"success": True, "data": {"result": {"stdout": "test"}}, "error": None, "meta": {"timestamp": "2025-01-01T00:00:00Z"}}
+        >>> response = {
+        ...     "success": True,
+        ...     "data": {"result": "Hello", "stdout": "Hello", "stderr": "", "executionTime": 123},
+        ...     "error": None,
+        ...     "meta": {"timestamp": "2025-01-01T00:00:00Z"}
+        ... }
         >>> validate_api_contract(response)  # Should pass without error
     """
     # Check required top-level fields
@@ -181,13 +270,26 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
         ), "Success response should have non-null data"
         assert response_data["error"] is None, "Success response should have null error"
 
-        # For execute-raw responses, validate data.result structure
-        if "result" in response_data["data"]:
-            result = response_data["data"]["result"]
-            assert isinstance(result, dict), f"data.result must be dict: {type(result)}"
-            required_result_fields = ["stdout", "stderr", "executionTime"]
-            for field in required_result_fields:
-                assert field in result, f"data.result missing '{field}': {result}"
+        # For execute-raw responses, validate data structure
+        if isinstance(response_data["data"], dict):
+            data = response_data["data"]
+
+            # Check if this is an execute-raw response (has result, stdout, stderr, executionTime)
+            execute_fields = ["result", "stdout", "stderr", "executionTime"]
+            is_execute_response = all(field in data for field in execute_fields)
+
+            if is_execute_response:
+                # Validate execute-raw response format
+                for field in execute_fields:
+                    assert field in data, f"data missing '{field}': {data}"
+
+                # Validate field types
+                assert isinstance(data["result"], str), f"data.result must be str: {type(data['result'])}"
+                assert isinstance(data["stdout"], str), f"data.stdout must be str: {type(data['stdout'])}"
+                assert isinstance(data["stderr"], str), f"data.stderr must be str: {type(data['stderr'])}"
+                assert isinstance(data["executionTime"], int), \
+                    f"data.executionTime must be int: {type(data['executionTime'])}"
+            # For other endpoints (status, file lists, etc.), data can have different structure
     else:
         assert (
             response_data["error"] is not None
@@ -216,7 +318,7 @@ def execute_python_code(
     Example:
         >>> result = execute_python_code("print('Hello')")
         >>> assert result["success"] is True
-        >>> assert "Hello" in result["data"]["result"]["stdout"]
+        >>> assert "Hello" in result["data"]["stdout"]
     """
     response = requests.post(
         f"{Config.BASE_URL}/api/execute-raw",
@@ -429,9 +531,9 @@ class TestPythonExecution:
         # Then: Response should be successful with correct output
         validate_api_contract(result)
         assert result["success"] is True
-        assert "Hello World" in result["data"]["result"]["stdout"]
-        assert result["data"]["result"]["stderr"] == ""
-        assert result["data"]["result"]["executionTime"] > 0
+        assert "Hello World" in result["data"]["stdout"]
+        assert result["data"]["stderr"] == ""
+        assert result["data"]["executionTime"] > 0
 
     def test_given_pathlib_python_code_when_executed_then_handles_paths_correctly(
         self, server_ready
@@ -473,10 +575,10 @@ print(json.dumps(data, indent=2))
         assert result["success"] is True
 
         # Validate pathlib functionality
-        output = result["data"]["result"]["stdout"]
+        output = result["data"]["stdout"]
         assert "Pathlib test successful" in output
         assert "/tmp/test.json" in output
-        assert result["data"]["result"]["stderr"] == ""
+        assert result["data"]["stderr"] == ""
 
     def test_given_complex_python_code_when_executed_then_handles_imports_and_logic(
         self, server_ready
@@ -492,7 +594,7 @@ print(json.dumps(data, indent=2))
             server_ready: Fixture ensuring server availability
         """
         # Given: Complex Python code
-        code = Config.SAMPLE_DATA["complex_python"]
+        code = Config.SAMPLE_DATA["complex_pathlib_python"]
 
         # When: Executing complex code
         result = execute_python_code(code)
@@ -501,10 +603,10 @@ print(json.dumps(data, indent=2))
         validate_api_contract(result)
         assert result["success"] is True
 
-        output = result["data"]["result"]["stdout"]
-        assert "Path exists:" in output
+        output = result["data"]["stdout"]
+        assert "Pathlib test successful" in output
         assert "timestamp" in output
-        assert result["data"]["result"]["stderr"] == ""
+        assert result["data"]["stderr"] == ""
 
     def test_given_python_syntax_error_when_executed_then_returns_error_in_stderr(
         self, server_ready
@@ -531,8 +633,8 @@ print(json.dumps(data, indent=2))
         if result["success"]:
             # If success=True, error should be in stderr
             assert (
-                result["data"]["result"]["stderr"] != ""
-            ), f"Expected stderr for syntax error, got: {result['data']['result']}"
+                result["data"]["stderr"] != ""
+            ), f"Expected stderr for syntax error, got: {result['data']}"
         else:
             # If success=False, error should be in error field
             assert (
@@ -574,6 +676,74 @@ print(json.dumps(data, indent=2))
         validate_api_contract(result)
         assert result["success"] is False
         assert "No Python code provided" in result["error"]
+
+    def test_given_matplotlib_code_when_executed_then_creates_plot_with_pathlib(
+        self, server_ready
+    ):
+        """
+        Test matplotlib plot creation using pathlib for file operations.
+
+        Given: Server is ready for matplotlib code execution
+        When: Executing code that creates and saves a plot using pathlib
+        Then: Response should indicate successful plot creation with pathlib
+
+        Args:
+            server_ready: Fixture ensuring server availability
+
+        Example:
+            This test validates that matplotlib plots can be created and saved
+            using pathlib.Path for cross-platform file operations.
+        """
+        # Given: Matplotlib code using pathlib
+        code = Config.SAMPLE_DATA["matplotlib_pathlib_python"]
+
+        # When: Executing matplotlib code with pathlib
+        result = execute_python_code(code)
+
+        # Then: Response should be successful
+        validate_api_contract(result)
+        assert result["success"] is True
+
+        # Validate plot creation output
+        output = result["data"]["stdout"]
+        assert "Plot saved successfully:" in output
+        assert "File exists: True" in output
+        assert result["data"]["stderr"] == ""
+
+    def test_given_file_operations_code_when_executed_then_handles_pathlib_correctly(
+        self, server_ready
+    ):
+        """
+        Test comprehensive file operations using pathlib.
+
+        Given: Server is ready for file operations
+        When: Executing code that performs various file operations with pathlib
+        Then: Response should demonstrate successful pathlib file handling
+
+        Args:
+            server_ready: Fixture ensuring server availability
+
+        Example:
+            This test validates pathlib usage for directory creation, file writing,
+            reading, and file system introspection operations.
+        """
+        # Given: File operations code using pathlib
+        code = Config.SAMPLE_DATA["file_operations_pathlib_python"]
+
+        # When: Executing file operations code
+        result = execute_python_code(code)
+
+        # Then: Response should be successful
+        validate_api_contract(result)
+        assert result["success"] is True
+
+        # Validate file operations output
+        output = result["data"]["stdout"]
+        assert "Created test file:" in output
+        assert "File size:" in output
+        assert "File exists: True" in output
+        assert "File content preview:" in output
+        assert result["data"]["stderr"] == ""
 
 
 # ==================== FILE MANAGEMENT TESTS ====================
@@ -742,7 +912,7 @@ class TestSecurityAndErrorHandling:
         validate_api_contract(result)
         # Should either succeed or return appropriate error for size
         if result["success"]:
-            assert "Line 999" in result["data"]["result"]["stdout"]
+            assert "Line 999" in result["data"]["stdout"]
         else:
             assert (
                 "too large" in result["error"].lower()
@@ -787,7 +957,7 @@ class TestPerformanceAndStress:
         for i, result in enumerate(results):
             validate_api_contract(result)
             assert result["success"] is True
-            assert f"Request {i}" in result["data"]["result"]["stdout"]
+            assert f"Request {i}" in result["data"]["stdout"]
 
     def test_given_infinite_loop_when_executed_then_server_survives(
         self, stress_test_ready
@@ -862,7 +1032,7 @@ class TestPerformanceAndStress:
 
         if result["success"]:
             # If successful, should show memory allocation
-            assert "allocated" in result["data"]["result"]["stdout"].lower()
+            assert "allocated" in result["data"]["stdout"].lower()
         else:
             # If failed, should be due to memory/timeout limits
             error_msg = result["error"].lower()
@@ -1009,7 +1179,7 @@ else:
         validate_api_contract(result)
         assert result["success"] is True
 
-        output = result["data"]["result"]["stdout"]
+        output = result["data"]["stdout"]
         assert filename in output
         assert "Processing file:" in output
 
@@ -1064,7 +1234,7 @@ class TestPerformanceBenchmarks:
             ), f"Execution {i+1} failed: {result.get('error', 'Unknown error')}"
 
             # Verify output contains expected content (more flexible matching)
-            output = result["data"]["result"]["stdout"]
+            output = result["data"]["stdout"]
             expected_content = [
                 "Execution 1",
                 "Execution 2",
