@@ -121,7 +121,7 @@ class TestFileManagementEnhancements:
         # Clear uploaded files via API
         try:
             clear_response = self.session.post(
-                f"{Config.BASE_URL}/api/clear-all-files",
+                f"{Config.BASE_URL}{Config.ENDPOINTS['clear_all_files']}",
                 timeout=Config.TIMEOUTS["api_request"]
             )
             # Don't assert here as cleanup should be resilient
@@ -289,7 +289,7 @@ class TestFileManagementEnhancements:
         API Endpoints Tested:
         - POST /api/upload (file upload)
         - GET /api/uploaded-files (file listing)
-        - POST /api/clear-all-files (file cleanup)
+        - POST {Config.ENDPOINTS['clear_all_files']} (file cleanup)
         
         Expected Behavior:
         - Files are successfully uploaded and visible in listings
@@ -323,7 +323,7 @@ class TestFileManagementEnhancements:
         
         # When: Clear all files operation is performed
         clear_response = self.session.post(
-            f"{Config.BASE_URL}/api/clear-all-files",
+            f"{Config.BASE_URL}{Config.ENDPOINTS['clear_all_files']}",
             timeout=Config.TIMEOUTS["api_request"]
         )
         clear_data = self._validate_api_contract(clear_response)
@@ -364,7 +364,7 @@ class TestFileManagementEnhancements:
         
         API Endpoints Tested:
         - POST /api/execute-raw (Python code execution)
-        - POST /api/clear-all-files (file cleanup)
+        - POST {Config.ENDPOINTS['clear_all_files']} (file cleanup)
         
         Python Code Patterns:
         - pathlib for cross-platform file operations
@@ -410,7 +410,7 @@ print(json.dumps(result))
         
         # When: Clear all files operation is performed
         clear_response = self.session.post(
-            f"{Config.BASE_URL}/api/clear-all-files",
+            f"{Config.BASE_URL}{Config.ENDPOINTS['clear_all_files']}",
             timeout=Config.TIMEOUTS["api_request"]
         )
         clear_data = self._validate_api_contract(clear_response)
@@ -458,7 +458,7 @@ print(json.dumps(result))
         API Endpoints Tested:
         - POST /api/execute-raw (Python execution and verification)
         - POST /api/reset (environment variable reset)
-        - POST /api/clear-all-files (file system cleanup)
+        - POST {Config.ENDPOINTS['clear_all_files']} (file system cleanup)
         
         Test Pattern:
         1. Setup: Create variables and files
@@ -522,7 +522,7 @@ print(json.dumps(setup_status))
         
         # And: File clearing is performed
         clear_response = self.session.post(
-            f"{Config.BASE_URL}/api/clear-all-files",
+            f"{Config.BASE_URL}{Config.ENDPOINTS['clear_all_files']}",
             timeout=Config.TIMEOUTS["api_request"]
         )
         clear_data = self._validate_api_contract(clear_response)
@@ -606,7 +606,7 @@ print(json.dumps(verification_results))
         # Given: Server is running (implicit from test setup)
         # When: Clear all files endpoint is called
         response = self.session.post(
-            f"{Config.BASE_URL}/api/clear-all-files",
+            f"{Config.BASE_URL}{Config.ENDPOINTS['clear_all_files']}",
             timeout=Config.TIMEOUTS["api_request"]
         )
         
@@ -719,7 +719,7 @@ print("Files created via Python")
         
         # Clear all files
         clear_response = self.session.post(
-            f"{Config.BASE_URL}/api/clear-all-files",
+            f"{Config.BASE_URL}{Config.ENDPOINTS['clear_all_files']}",
             timeout=Config.TIMEOUTS["api_request"]
         )
         clear_data = self._validate_api_contract(clear_response)

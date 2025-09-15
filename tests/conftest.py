@@ -55,7 +55,8 @@ class Config:
         "install_package": "/api/install-package",
         "uploaded_files": "/api/uploaded-files",
         "upload": "/api/upload",
-        "plots_extract": "/api/plots/extract",
+        "plots_extract": "/api/extract-plots",
+        "clear_all_files": "/api/clear-all-files",
     }
     
     # Request headers
