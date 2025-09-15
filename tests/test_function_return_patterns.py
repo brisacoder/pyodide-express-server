@@ -35,8 +35,6 @@ from typing import Any, Dict
 import pytest
 import requests
 
-from conftest import Config, execute_python_code, validate_api_contract
-
 
 class TestFunctionReturnPatternsBDD:
     """
@@ -95,8 +93,8 @@ print(json.dumps(result))
         
         # When: We execute the function via the execute-raw endpoint
         response = requests.post(
-            f"{base_url}{Config.ENDPOINTS['execute_raw']}",
-            headers=Config.HEADERS["execute_raw"],
+            f"{base_url}/api/execute-raw",
+            headers={"Content-Type": "text/plain"},
             data=code,
             timeout=api_timeout,
         )
@@ -192,8 +190,8 @@ print(json.dumps(result))
         
         # When: We execute the numpy analysis function
         response = requests.post(
-            f"{base_url}{Config.ENDPOINTS['execute_raw']}",
-            headers=Config.HEADERS["execute_raw"],
+            f"{base_url}/api/execute-raw",
+            headers={"Content-Type": "text/plain"},
             data=code,
             timeout=api_timeout,
         )
@@ -298,8 +296,8 @@ print(json.dumps(result))
         
         # When: We execute the DataFrame processing function
         response = requests.post(
-            f"{base_url}{Config.ENDPOINTS['execute_raw']}",
-            headers=Config.HEADERS["execute_raw"],
+            f"{base_url}/api/execute-raw",
+            headers={"Content-Type": "text/plain"},
             data=code,
             timeout=api_timeout,
         )
@@ -434,8 +432,8 @@ print(json.dumps(result))
         
         # When: We execute the matplotlib plotting function
         response = requests.post(
-            f"{base_url}{Config.ENDPOINTS['execute_raw']}",
-            headers=Config.HEADERS["execute_raw"],
+            f"{base_url}/api/execute-raw",
+            headers={"Content-Type": "text/plain"},
             data=code,
             timeout=api_timeout,
         )
@@ -610,8 +608,8 @@ print(json.dumps(result))
         
         # When: We execute the filesystem testing function
         response = requests.post(
-            f"{base_url}{Config.ENDPOINTS['execute_raw']}",
-            headers=Config.HEADERS["execute_raw"],
+            f"{base_url}/api/execute-raw",
+            headers={"Content-Type": "text/plain"},
             data=code,
             timeout=api_timeout,
         )
@@ -791,8 +789,8 @@ print(json.dumps(result))
         
         # When: We execute the main function workflow
         response = requests.post(
-            f"{base_url}{Config.ENDPOINTS['execute_raw']}",
-            headers=Config.HEADERS["execute_raw"],
+            f"{base_url}/api/execute-raw",
+            headers={"Content-Type": "text/plain"},
             data=code,
             timeout=api_timeout,
         )
