@@ -209,8 +209,10 @@ router.delete('/uploaded-files/:filename', async (req, res) => {
         },
       });
     } else {
-      // Handle specific error cases
-      if (result.error && result.error.includes('not found')) {
+      // Handle specific error cases - check for not found flag or message
+      if (result.notFound || 
+          (result.error && result.error.includes('not found')) ||
+          (result.message && result.message.includes('not found'))) {
         return res.status(404).json({
           success: false,
           data: null,
