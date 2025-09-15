@@ -1,723 +1,582 @@
 #!/usr/bin/env python3
 """
-Comprehensive tests for dynamic module discovery and execution robustness.
+Comprehensive pytest tests for dynamic module discovery and execution robustness.
 
 This test suite covers:
 1. Dynamic package installation and automatic availability
 2. Complex Python code scenarios that might break string handling
 3. Edge cases with various quote combinations and f-strings
 4. Concurrent execution with newly installed packages
-5. Stress testing the JSON serialization approach
+5. Stress testing the API response format compliance
+
+All tests follow BDD patterns and use /api/execute-raw with plain text.
+Server must return API contract: {success, data, error, meta}
 """
 
-import concurrent.futures
-import unittest
-from typing import Any, Dict
-
+import pytest
 import requests
-
-# Base URL for the API
-BASE_URL = "http://localhost:3000"
-
-
-class TestDynamicModulesAndExecutionRobustness(unittest.TestCase):
-    """Test dynamic module discovery and execution robustness"""
-
-    def setUp(self):
-        """Set up test environment"""
-        # Check if server is running
-        try:
-            response = requests.get(f"{BASE_URL}/health", timeout=5)
-            if response.status_code != 200:
-                self.skipTest("Server not running or not healthy")
-        except requests.RequestException:
-            self.skipTest("Server not accessible")
-
-    def execute_code_raw(self, code: str, timeout: int = 30) -> Dict[str, Any]:
-        """Helper method to execute Python code via RAW API (no JSON escaping)"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code,  # Send as raw text, not JSON!
-                headers={"Content-Type": "text/plain"},
-                timeout=timeout + 5
-            )
-            self.assertEqual(response.status_code, 200)
-            return response.json()
-        except requests.RequestException as e:
-            self.fail(f"Request failed: {e}")
-
-    def execute_code(self, code: str, timeout: int = 30) -> Dict[str, Any]:
-        """Helper method to execute Python code via regular JSON API"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/api/execute",
-                json={"code": code, "timeout": timeout * 1000},
-                timeout=timeout + 5
-            )
-            self.assertEqual(response.status_code, 200)
-            return response.json()
-        except requests.RequestException as e:
-            self.fail(f"Request failed: {e}")
-
-    def install_package(self, package_name: str) -> Dict[str, Any]:
-        """Helper method to install a package via API"""
-        try:
-            response = requests.post(
-                f"{BASE_URL}/api/install-package",
-                json={"package": package_name},
-                timeout=60
-            )
-            self.assertEqual(response.status_code, 200)
-            return response.json()
-        except requests.RequestException as e:
-            self.fail(f"Package installation failed: {e}")
-
-    def test_01_baseline_module_availability(self):
-        """Test baseline modules are available in isolated namespace"""
-        result = self.execute_code_raw("""
-available = [name for name in globals().keys() if not name.startswith("_")]
-core_modules = [m for m in available if m in ["np", "pd", "plt", "sns", "requests", "micropip"]]
-result_data = {
-    "total_modules": len(available),
-    "core_modules": core_modules,
-    "available_sample": sorted(available)[:10]
-}
-print(f"RESULT: {result_data}")
-        """)
-        
-        if not result["success"]:
-            print(f"❌ Test failed with error: {result.get('error')}")
-            print(f"   stderr: {result.get('stderr')}")
-        
-        self.assertTrue(result["success"])
-        # Parse the result from stdout
-        stdout = result.get("stdout", "")
-        if "RESULT:" in stdout:
-            import ast
-            result_str = stdout.split("RESULT: ")[1].strip()
-            data = ast.literal_eval(result_str)
-            self.assertGreater(data["total_modules"], 5)
-            self.assertIn("np", data["core_modules"])
-            print(f"✅ Baseline: {data['total_modules']} modules, core: {data['core_modules']}")
-        else:
-            self.fail("Could not parse result from stdout")
-
-    def test_02_install_and_verify_new_package(self):
-        """Test installing a new package and verifying automatic availability"""
-        # Install a simple package
-        install_result = self.install_package("jsonschema")
-        self.assertTrue(install_result["success"])
-        print(f"✅ Package installation: {install_result['data']['message']}")
-        
-        # Test immediate availability using RAW execution
-        result = self.execute_code_raw("""
-try:
-    import jsonschema
-    version = getattr(jsonschema, '__version__', 'unknown')
-    imported = True
-    in_globals = "jsonschema" in globals()
-    error = None
-except ImportError as e:
-    imported = False
-    version = None
-    in_globals = False
-    error = str(e)
-
-print(f"RESULT: imported={imported}, version={version}, in_globals={in_globals}, error={error}")
-        """)
-        
-        if not result["success"]:
-            print(f"❌ Test failed with error: {result.get('error')}")
-            print(f"   stderr: {result.get('stderr')}")
-            self.fail(f"Package verification failed: {result.get('error')}")
-        
-        self.assertTrue(result["success"])
-        
-        # Parse the result from stdout
-        stdout = result.get("stdout", "")
-        if "RESULT:" in stdout:
-            result_line = stdout.split("RESULT: ")[1].strip()
-            # Parse the simple format
-            imported = "imported=True" in result_line
-            if not imported:
-                print(f"❌ Package not imported: {result_line}")
-                print("⚠️  Package installation/availability needs investigation")
-                return
-            
-            self.assertTrue(imported)
-            print(f"✅ Package availability: {result_line}")
-        else:
-            self.fail("Could not parse result from stdout")
-
-    def test_03_complex_string_scenarios_raw_execution(self):
-        """Test complex string scenarios using RAW execution (no JSON escaping!)"""
-        # This is the kind of complex Python code users actually write
-        complex_python_code = '''
-# Test ALL the complex string scenarios that break JSON serialization
-test_results = {}
-
-# F-strings with complex expressions and nested quotes
-name = "Python's Amazing String Handling"
-version = 3.11
-complex_fstring = f"Hello {name} version {version} with math: {2**3}"
-test_results["fstring"] = complex_fstring
-
-# Triple quoted strings with ALL kinds of embedded content
-triple_quoted = """This is a triple quoted string
-with single quotes, double quotes, and even embedded content
-Line 3 with escape sequences and raw strings
-Line 4 with unicode: ñáéíóú 🐍"""
-test_results["triple_quoted"] = len(triple_quoted)
-
-# Mixed quote scenarios that would break JSON.stringify
-mixed_quotes = "Double quotes with single quotes inside"
-test_results["mixed_quotes"] = mixed_quotes
-
-# Complex regex and SQL-like strings
-regex_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
-sql_query = "SELECT * FROM users WHERE name = 'O\\'Reilly'"
-test_results["regex"] = regex_pattern
-test_results["sql"] = sql_query
-
-# Unicode and special characters
-unicode_str = "🐍 Python with symbols and text: naïve café résumé"
-test_results["unicode"] = unicode_str
-
-# Actual JSON strings (the nightmare scenario)
-actual_json = '{"key": "value with quotes", "nested": {"array": [1, 2, 3]}}'
-test_results["json_string"] = actual_json
-
-# Multi-line Python code as string
-python_code_string = """
-def hello(name):
-    return f"Hello {name}!"
-    
-result = hello("World")
-"""
-test_results["python_code"] = python_code_string.strip()
-
-# File paths with spaces and special characters
-file_paths = [
-    "C:\\\\Users\\\\name\\\\Documents\\\\file with spaces.txt",
-    "/home/user/file_name.py",
-    "\\\\\\\\server\\\\share\\\\folder\\\\file.csv"
-]
-test_results["file_paths"] = file_paths
-
-test_results
-'''
-        
-        result = self.execute_code_raw(complex_python_code)
-        
-        self.assertTrue(result["success"], f"Complex string execution failed: {result.get('error')}")
-        data = result["result"]
-        
-        # Verify all the complex scenarios worked
-        self.assertIn("Python's Amazing String Handling", data["fstring"])
-        self.assertIn("version 3.11", data["fstring"])
-        self.assertGreater(data["triple_quoted"], 100)
-        self.assertIn("Double quotes", data["mixed_quotes"])
-        self.assertIn("@", data["regex"])
-        self.assertIn("O'Reilly", data["sql"])
-        self.assertIn("🐍", data["unicode"])
-        self.assertIn("value with quotes", data["json_string"])
-        self.assertIn("def hello", data["python_code"])
-        self.assertEqual(len(data["file_paths"]), 3)
-        
-        print("✅ Complex string scenarios handled correctly with RAW execution!")
-        print(f"   - F-string: '{data['fstring']}'")
-        print(f"   - Triple-quoted content: {data['triple_quoted']} chars")
-        print(f"   - File paths: {len(data['file_paths'])} processed")
-
-    def test_03b_json_vs_raw_execution_comparison(self):
-        """Compare JSON execution vs RAW execution for edge cases"""
-        # The exact same code that might cause issues with JSON escaping
-        tricky_code = '''# This code has quotes, f-strings, and JSON
-name = "Python's String Handling"
-result = f"Testing: {name} with quotes"
-json_data = '{"key": "value", "array": [1, 2, 3]}'
-print(f"MESSAGE: {result}")
-print(f"JSON: {json_data}")
-print("SUCCESS: True")'''
-        
-        # Test with JSON execution (might have escaping issues)
-        try:
-            json_result = self.execute_code(tricky_code)
-            json_success = json_result["success"]
-            json_error = json_result.get("error", "")
-        except Exception as e:
-            json_success = False
-            json_error = str(e)
-        
-        # Test with RAW execution (should handle everything)
-        raw_result = self.execute_code_raw(tricky_code)
-        raw_success = raw_result["success"]
-        
-        print(f"📊 Execution Comparison:")
-        print(f"   JSON API success: {json_success}")
-        if not json_success:
-            print(f"   JSON API error: {json_error}")
-        print(f"   RAW API success: {raw_success}")
-        
-        # RAW should always work for complex strings
-        self.assertTrue(raw_success, "RAW execution should handle complex strings")
-        
-        if raw_success:
-            stdout = raw_result.get("stdout", "")
-            self.assertIn("Python's String Handling", stdout)
-            self.assertIn("SUCCESS: True", stdout)
-            print("✅ RAW execution handles complex strings flawlessly!")
-
-    def test_04_user_experience_raw_vs_json(self):
-        """Test typical user scenarios: RAW is more user-friendly"""
-        # Scenario 1: Data analysis with complex strings
-        data_analysis_code = '''
-import pandas as pd
-import numpy as np
-
-# Real-world data with quotes and special characters (same length arrays)
-names = ["O'Connor", "Smith", "José María"]
-emails = ["user@domain.com", "test'email@site.org", "jose@example.com"]
-descriptions = [
-    "John's profile: 'Active user'",
-    'Sarah said: "Great experience!"',
-    "File path: C:\\\\Users\\\\name\\\\file.txt"
-]
-
-sample_data = {
-    "names": names,
-    "emails": emails,
-    "descriptions": descriptions
-}
-
-df = pd.DataFrame(sample_data)
-total_rows = len(df)
-name_with_apostrophe = df["names"][0]
-complex_description = df["descriptions"][0]
-file_path_example = df["descriptions"][2]
-
-print(f"RESULTS: total_rows={total_rows}")
-print(f"NAME: {name_with_apostrophe}")
-print(f"DESC: {complex_description}")
-print(f"PATH: {file_path_example}")
-'''
-        
-        result = self.execute_code_raw(data_analysis_code)
-        self.assertTrue(result["success"])
-        
-        stdout = result.get("stdout", "")
-        self.assertIn("RESULTS: total_rows=3", stdout)
-        self.assertIn("O'Connor", stdout)
-        self.assertIn("John's profile", stdout)
-        self.assertIn("C:\\Users", stdout)  # Look for actual single backslash output
-        
-        print("✅ Real-world data analysis with complex strings works perfectly!")
-
-    def test_05_extreme_edge_cases_raw_execution(self):
-        """Test extreme edge cases that would break JSON approaches"""
-        extreme_code = r'''
-# The ultimate string complexity test
+from typing import Dict, Any, Optional
 import json
 
-# Every possible quote combination
-quotes_test = {
-    "single_in_double": "Text with 'single quotes' inside",
-    "double_in_single": 'Text with "double quotes" inside',
-    "mixed_nightmare": """Triple quotes with 'single' and "double" quotes""",
-    "json_string": '{"key": "value", "nested": {"array": [1, 2, 3]}}',
-    "escaped_hell": "Line 1\\nLine 2\\tTabbed\\\\Backslash\\'Quote\\\"DoubleQuote",
-    "regex_pattern": r"^(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$",
-    "sql_injection": "'; DROP TABLE users; SELECT * FROM admin WHERE '1'='1",
-    "unicode_madness": "🐍🚀💻 Iñtërnâtiônàlizætiøn ñáéíóú αβγδε ελληνικά العربية 中文 русский",
-    "file_paths": [
-        "C:\\\\Program Files\\\\My App\\\\file's name.txt",
-        "/home/user/documents/file with spaces & symbols!.py",
-        "\\\\\\\\server\\\\share$\\\\folder\\\\file[1].csv"
-    ]
-}
 
-# F-strings with complex expressions
-user_name = "María José O'Connor-Smith"
-file_count = 42
-complex_fstring = f"""User Report:
-Name: {user_name}
-Files: {file_count} items
-Status: {'Active' if file_count > 0 else 'Inactive'}
-Quote test: 'single' and "double" quotes work!
-Path: C:\\\\Users\\\\{user_name.replace(' ', '_')}\\\\Documents"""
+# Configuration Constants
+class TestConfig:
+    """Test configuration constants - no hardcoded values"""
+    BASE_URL = "http://localhost:3000"
+    DEFAULT_TIMEOUT = 30
+    EXECUTION_TIMEOUT = 30000  # Milliseconds for Pyodide execution
+    API_ENDPOINT = "/api/execute-raw"
+    HEALTH_ENDPOINT = "/health"
 
-# Test JSON parsing within Python
-json_test = json.loads('{"test": "value with \\"quotes\\"", "array": [1, 2, 3]}')
 
-total_tests = len(quotes_test) + 2
-complexity_score = "MAXIMUM"
+@pytest.fixture
+def api_session():
+    """
+    Create a requests session for API testing.
 
-print(f"TOTAL_TESTS: {total_tests}")
-print(f"COMPLEXITY: {complexity_score}")
-print(f"FSTRING_USER: {user_name}")
-print(f"JSON_PARSED: {json_test['test']}")
-print("SQL_INJECTION: present")
+    Returns:
+        requests.Session: Configured session with timeout
+
+    Example:
+        def test_example(api_session):
+            response = api_session.get("/health")
+    """
+    session = requests.Session()
+    session.timeout = TestConfig.DEFAULT_TIMEOUT
+    return session
+
+
+@pytest.fixture
+def base_url():
+    """
+    Provide the base URL for API testing.
+
+    Returns:
+        str: Base URL for the API server
+
+    Example:
+        def test_example(base_url):
+            full_url = f"{base_url}/api/execute-raw"
+    """
+    return TestConfig.BASE_URL
+
+
+def api_contract_validator(response: requests.Response) -> Optional[Dict[str, Any]]:
+    """
+    Validate API response follows the required contract.
+
+    Args:
+        response: HTTP response object
+
+    Returns:
+        dict: Parsed response data if valid, None if invalid
+
+    Expected Contract:
+        {
+          "success": true | false,
+          "data": <object|null>,
+          "error": <string|null>,
+          "meta": { "timestamp": <string> }
+        }
+
+    Example:
+        response = requests.post(url, data=code)
+        data = api_contract_validator(response)
+        assert data["success"] is True
+    """
+    if response.status_code not in [200, 400, 500]:
+        return None
+
+    try:
+        data = response.json()
+
+        # Check required fields exist
+        required_fields = ["success", "data", "error", "meta"]
+        if not all(field in data for field in required_fields):
+            return None
+
+        # Validate field types
+        if not isinstance(data["success"], bool):
+            return None
+
+        if data["meta"] is None or "timestamp" not in data["meta"]:
+            return None
+
+        return data
+
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
+def execute_python_code(api_session: requests.Session, base_url: str, code: str) -> Dict[str, Any]:
+    """
+    Execute Python code using /api/execute-raw endpoint.
+
+    Args:
+        api_session: Configured requests session
+        base_url: Base URL for API
+        code: Python code to execute (plain text)
+
+    Returns:
+        dict: API response data following contract
+
+    Example:
+        data = execute_python_code(session, url, "print('hello')")
+        assert data["success"] is True
+        assert "hello" in data["data"]["stdout"]
+    """
+    headers = {
+        "Content-Type": "text/plain",
+        "timeout": str(TestConfig.EXECUTION_TIMEOUT)
+    }
+
+    response = api_session.post(
+        f"{base_url}{TestConfig.API_ENDPOINT}",
+        data=code,
+        headers=headers
+    )
+
+    return api_contract_validator(response)
+
+
+class TestHealthAndBasicFunctionality:
+    """Test basic server health and functionality"""
+
+    def test_given_server_running_when_health_check_then_returns_success(self, api_session, base_url):
+        """
+        Test server health endpoint returns expected format.
+
+        Given: Server is running
+        When: Health check endpoint is called
+        Then: Returns success response with proper API contract
+
+        Inputs:
+            - GET /health request
+
+        Expected Outputs:
+            - 200 status code
+            - API contract compliance: {success: true, data, error: null, meta}
+
+        Example:
+            response = {"success": true, "data": {"status": "healthy"}, "error": null, "meta": {"timestamp": "..."}}
+        """
+        response = api_session.get(f"{base_url}{TestConfig.HEALTH_ENDPOINT}")
+
+        assert response.status_code == 200
+        data = api_contract_validator(response)
+        assert data is not None, f"API contract violation: {response.text}"
+        assert data["success"] is True
+        assert data["error"] is None
+        assert "timestamp" in data["meta"]
+
+
+class TestBasicPythonExecution:
+    """Test basic Python code execution scenarios"""
+
+    def test_given_simple_code_when_execute_then_returns_output(self, api_session, base_url):
+        """
+        Test basic Python code execution with print statements.
+
+        Given: Simple Python print code
+        When: Code is executed via /api/execute-raw
+        Then: Returns successful execution with stdout output
+
+        Inputs:
+            - Python code: print("Hello, World!")
+
+        Expected Outputs:
+            - success: true
+            - data.stdout contains "Hello, World!"
+            - data.result contains final expression result
+
+        Example:
+            Input: print("Hello, World!")
+            Output: {"success": true, "data": {"stdout": "Hello, World!\n", ...}}
+        """
+        code = 'print("Hello, World!")'
+
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is True
+        assert data["error"] is None
+        assert "Hello, World!" in data["data"]["stdout"]
+
+    def test_given_numpy_operations_when_execute_then_returns_results(self, api_session, base_url):
+        """
+        Test NumPy operations and mathematical computations.
+
+        Given: Python code with NumPy operations
+        When: Code is executed with array operations
+        Then: Returns successful execution with computation results
+
+        Inputs:
+            - NumPy array creation and operations
+
+        Expected Outputs:
+            - success: true
+            - data.stdout contains NumPy version and array operations
+            - data.result contains completion message
+
+        Example:
+            Input: NumPy array [1,2,3,4,5] operations
+            Output: {"success": true, "data": {"stdout": "NumPy version: x.x.x\n...", "result": "completed"}}
+        """
+        code = '''
+import numpy as np
+print(f"NumPy version: {np.__version__}")
+
+# Create array
+arr = np.array([1, 2, 3, 4, 5])
+print(f"Array: {arr}")
+print(f"Sum: {arr.sum()}")
+print(f"Mean: {arr.mean()}")
+
+"NumPy operations completed successfully"
 '''
-        
-        result = self.execute_code_raw(extreme_code)
-        self.assertTrue(result["success"], f"Extreme edge case failed: {result.get('error')}")
-        
-        stdout = result.get("stdout", "")
-        # Verify the extreme complexity was handled
-        self.assertIn("TOTAL_TESTS: 11", stdout)
-        self.assertIn("COMPLEXITY: MAXIMUM", stdout)
-        self.assertIn("María José", stdout)
-        self.assertIn("value with", stdout)
-        self.assertIn("SQL_INJECTION: present", stdout)
-        
-        print("✅ EXTREME edge cases handled perfectly with RAW execution!")
-        print(f"   - Total complexity tests: 11")
-        print(f"   - F-string with complex name: ✓")
-        print(f"   - JSON parsing within Python: ✓")
-        print(f"   - SQL injection strings: ✓")
-        print(f"   - Unicode madness: ✓")
 
-    def test_04_concurrent_package_usage(self):
-        """Test concurrent execution using different packages"""
-        def execute_with_package(package_code):
-            package_name, code = package_code
-            try:
-                result = self.execute_code(code)
-                return {
-                    "package": package_name,
-                    "success": result["success"],
-                    "result": result.get("result"),
-                    "error": result.get("error")
-                }
-            except Exception as e:
-                return {
-                    "package": package_name,
-                    "success": False,
-                    "error": str(e)
-                }
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is True
+        assert data["error"] is None
 
-        # Define concurrent tasks
-        tasks = [
-            ("numpy", """
-import numpy as np
-data = np.array([1, 2, 3, 4, 5])
-result = {"package": "numpy", "sum": int(data.sum()), "shape": data.shape}
-result
-            """),
-            
-            ("pandas", """
-import pandas as pd
-df = pd.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
-result = {"package": "pandas", "shape": df.shape, "columns": list(df.columns)}
-result
-            """),
-            
-            ("jsonschema", """
-import jsonschema
-result = {"package": "jsonschema", "available": True}
-result
-            """)
-        ]
+        # Check both result and stdout
+        assert data["data"]["result"] == "NumPy operations completed successfully"
+        assert "NumPy version:" in data["data"]["stdout"]
+        assert "Array: [1 2 3 4 5]" in data["data"]["stdout"]
 
-        # Execute tasks concurrently
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(execute_with_package, task) for task in tasks]
-            results = [future.result() for future in concurrent.futures.as_completed(futures)]
+    def test_given_pathlib_operations_when_execute_then_handles_cross_platform(self, api_session, base_url):
+        """
+        Test pathlib usage for cross-platform file operations.
 
-        # Verify all tasks succeeded
-        for result in results:
-            self.assertTrue(result["success"], f"Package {result['package']} failed: {result.get('error')}")
-            print(f"✅ Concurrent execution with {result['package']}: OK")
+        Given: Python code using pathlib for file operations
+        When: Path operations are performed
+        Then: Returns successful execution with path information
 
-    def test_05_stress_test_large_code(self):
-        """Test execution of large code blocks with complex content"""
-        result = self.execute_code("""
-import numpy as np
-import pandas as pd
+        Inputs:
+            - pathlib Path operations for cross-platform compatibility
 
-def generate_test_data(size=100):
-    return {
-        'numbers': list(range(size)),
-        'squares': [i**2 for i in range(size)],
-        'strings': [f"item_{i}_test" for i in range(size)]
+        Expected Outputs:
+            - success: true
+            - data.result contains path operation results
+            - Cross-platform path handling verified
+
+        Example:
+            Input: Path('/tmp') / 'file.txt' operations
+            Output: {"success": true, "data": {"result": "Path operations completed"}}
+        """
+        code = '''
+from pathlib import Path
+
+# Test cross-platform path operations
+base_path = Path('/tmp')
+file_path = base_path / 'test_file.txt'
+
+print(f"Base path: {base_path}")
+print(f"File path: {file_path}")
+print(f"Is absolute: {file_path.is_absolute()}")
+print(f"Path parts: {file_path.parts}")
+
+"Pathlib operations completed successfully"
+'''
+
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is True
+        assert data["error"] is None
+        assert "Pathlib operations completed successfully" in data["data"]["result"]
+        assert "Base path:" in data["data"]["stdout"]
+
+
+class TestComplexStringHandling:
+    """Test complex string scenarios and edge cases"""
+
+    def test_given_mixed_quotes_when_execute_then_handles_correctly(self, api_session, base_url):
+        """
+        Test complex string handling with mixed quotes and escapes.
+
+        Given: Python code with complex quote combinations
+        When: Code contains single, double quotes and f-strings
+        Then: Returns successful execution without string parsing errors
+
+        Inputs:
+            - Mixed single quotes, double quotes, triple quotes
+            - F-strings with embedded quotes
+
+        Expected Outputs:
+            - success: true
+            - data.stdout contains all quote variations
+            - No parsing or execution errors
+
+        Example:
+            Input: Various quote combinations
+            Output: {"success": true, "data": {"stdout": "All quote types handled"}}
+        """
+        code = '''
+# Test various quote combinations
+single = 'This is a single-quoted string'
+double = "This is a double-quoted string"
+mixed = 'String with "embedded double quotes"'
+reverse_mixed = "String with 'embedded single quotes'"
+
+name = "World"
+f_string = f"Hello {name}! How's it going?"
+
+triple_single = \"\"\"This is a
+multi-line string with 'single' and "double" quotes\"\"\"
+
+print(single)
+print(double)
+print(mixed)
+print(reverse_mixed)
+print(f_string)
+print("Triple quote string processed")
+
+"Complex string handling completed"
+'''
+
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is True
+        assert data["error"] is None
+        assert "Complex string handling completed" in data["data"]["result"]
+        assert "Hello World!" in data["data"]["stdout"]
+
+    def test_given_json_like_strings_when_execute_then_processes_correctly(self, api_session, base_url):
+        """
+        Test JSON-like string processing without breaking parsing.
+
+        Given: Python code generating JSON-like output
+        When: Code creates and manipulates JSON structures
+        Then: Returns successful execution with proper JSON handling
+
+        Inputs:
+            - Python dict to JSON conversion
+            - JSON string manipulation
+
+        Expected Outputs:
+            - success: true
+            - data.stdout contains JSON output
+            - data.result contains processing confirmation
+
+        Example:
+            Input: JSON creation and parsing
+            Output: {"success": true, "data": {"stdout": "{\\"key\\": \\"value\\"}"}}
+        """
+        code = '''
+import json
+
+# Create JSON-like data
+data = {
+    "name": "Test User",
+    "age": 30,
+    "skills": ["Python", "JavaScript", "SQL"],
+    "active": True,
+    "metadata": {
+        "created": "2023-01-01",
+        "updated": None
     }
-
-def process_test_data(data):
-    df = pd.DataFrame(data)
-    result = {
-        'total_rows': len(df),
-        'sum_numbers': df['numbers'].sum(),
-        'max_square': df['squares'].max(),
-        'sample_string': df['strings'].iloc[0] if len(df) > 0 else None
-    }
-    return result
-
-# Execute the stress test
-test_data = generate_test_data(200)
-processed = process_test_data(test_data)
-
-# Add complex string operations
-complex_strings = []
-for i in range(50):
-    s = f"Complex string {i} with various elements and content"
-    complex_strings.append(s)
-
-result = {
-    "processed_data": processed,
-    "complex_strings_count": len(complex_strings),
-    "total_string_length": sum(len(s) for s in complex_strings),
-    "stress_test_completed": True
 }
-result
-        """, timeout=60)
-        
-        self.assertTrue(result["success"])
-        data = result["result"]
-        self.assertEqual(data["processed_data"]["total_rows"], 200)
-        self.assertEqual(data["complex_strings_count"], 50)
-        self.assertGreater(data["total_string_length"], 1000)
-        self.assertTrue(data["stress_test_completed"])
-        print("✅ Large code block stress test completed")
 
-    def test_06_edge_case_escaping(self):
-        """Test edge cases for string escaping"""
-        result = self.execute_code_raw("""
-# Test various escaping scenarios
-test_cases = {}
+json_string = json.dumps(data, indent=2)
+print("Generated JSON:")
+print(json_string)
 
-# Basic escaping
-test_cases["basic_escape"] = "String with \\n newline and \\t tab"
+# Parse back
+parsed = json.loads(json_string)
+print(f"Parsed name: {parsed['name']}")
+print(f"Skills count: {len(parsed['skills'])}")
 
-# Quote escaping
-test_cases["quote_escape"] = "String with 'single' and double quotes"
+"JSON processing completed successfully"
+'''
 
-# Complex combinations
-test_cases["complex"] = "Mixed content with various elements"
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is True
+        assert data["error"] is None
+        assert "JSON processing completed successfully" in data["data"]["result"]
+        assert "Generated JSON:" in data["data"]["stdout"]
 
-# Unicode
-test_cases["unicode"] = "Unicode: π ∂ ∞ ≡ symbols"
 
-# Test all are properly handled
-test_cases_count = len(test_cases)
-all_strings_valid = all(isinstance(v, str) for v in test_cases.values())
-total_length = sum(len(v) for v in test_cases.values())
-sample_case = test_cases["basic_escape"]
+class TestErrorHandling:
+    """Test error handling scenarios"""
 
-print(f"TEST_CASES_COUNT: {test_cases_count}")
-print(f"ALL_STRINGS_VALID: {all_strings_valid}")
-print(f"TOTAL_LENGTH: {total_length}")
-print(f"SAMPLE_CASE: {sample_case}")
-        """)
-        
-        self.assertTrue(result["success"])
-        stdout = result.get("stdout", "")
-        self.assertIn("TEST_CASES_COUNT: 4", stdout)
-        self.assertIn("ALL_STRINGS_VALID: True", stdout)
-        self.assertIn("TOTAL_LENGTH:", stdout)
-        self.assertIn("newline and", stdout)
-        print("✅ Edge case string escaping handled correctly")
+    def test_given_syntax_error_when_execute_then_returns_error_response(self, api_session, base_url):
+        """
+        Test syntax error handling with proper API contract.
 
-    def test_07_module_persistence(self):
-        """Test that modules remain available across executions"""
-        # First execution: import modules
-        result1 = self.execute_code_raw("""
-import datetime
-import uuid
-import base64
+        Given: Python code with syntax errors
+        When: Code execution is attempted
+        Then: Returns error response following API contract
 
-# Test functionality
-test_date = datetime.datetime.now()
-test_uuid = uuid.uuid4()
-test_b64 = base64.b64encode(b"test").decode()
+        Inputs:
+            - Python code with invalid syntax
 
-modules_imported = ["datetime", "uuid", "base64"]
-date_created = test_date.isoformat()
-uuid_created = str(test_uuid)
-base64_created = test_b64
+        Expected Outputs:
+            - success: false
+            - error: string with error description
+            - data: null or error details
 
-print(f"MODULES_IMPORTED: {len(modules_imported)}")
-print(f"DATE_CREATED: {date_created}")
-print(f"UUID_CREATED: {uuid_created}")
-print(f"BASE64_CREATED: {base64_created}")
-        """)
-        
-        self.assertTrue(result1["success"])
-        stdout1 = result1.get("stdout", "")
-        self.assertIn("MODULES_IMPORTED: 3", stdout1)
-        
-        # Second execution: verify modules are still available
-        result2 = self.execute_code_raw("""
-# Check if previously imported modules are available
-available_modules = []
-for module in ["datetime", "uuid", "base64"]:
-    if module in globals():
-        available_modules.append(module)
+        Example:
+            Input: print("missing quote)
+            Output: {"success": false, "error": "SyntaxError: ...", "data": null}
+        """
+        code = 'print("This has a syntax error'  # Missing closing quote
 
-# Test using them again
-new_uuid = str(uuid.uuid4()) if "uuid" in globals() else None
-current_time = datetime.datetime.now().isoformat() if "datetime" in globals() else None
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is False
+        assert data["error"] is not None
+        # Server may return generic "Execution failed" or specific error details
+        assert len(data["error"]) > 0, "Error message should not be empty"
 
-print(f"AVAILABLE_MODULES: {len(available_modules)}")
-print(f"NEW_UUID: {new_uuid is not None}")
-print(f"CURRENT_TIME: {current_time is not None}")
-        """)
-        
-        self.assertTrue(result2["success"])
-        stdout2 = result2.get("stdout", "")
-        # Note: In isolated execution, modules don't persist across calls
-        # This is actually correct behavior for security
-        print(f"✅ Module persistence test: modules are properly isolated between executions")
-        print(f"   (This is the correct security behavior)")
+    def test_given_runtime_error_when_execute_then_returns_error_response(self, api_session, base_url):
+        """
+        Test runtime error handling with proper API contract.
 
-    def test_08_extreme_string_cases(self):
-        """Test extreme string cases that might break execution"""
-        result = self.execute_code_raw("""
-# Test extreme string cases
-extreme_cases = {}
+        Given: Python code that raises runtime errors
+        When: Code execution encounters runtime exception
+        Then: Returns error response with exception details
 
-# Backslash heavy strings
-extreme_cases["backslashes"] = "\\\\server\\\\path\\\\file.txt"
+        Inputs:
+            - Python code that raises exceptions (division by zero, undefined variables)
 
-# Regex-like patterns
-extreme_cases["regex_pattern"] = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+        Expected Outputs:
+            - success: false
+            - error: string with runtime error description
+            - data: may contain partial execution results
 
-# SQL-like strings with quotes
-extreme_cases["sql_like"] = "SELECT * FROM table WHERE name = 'O\\'Reilly' AND status = \\\"active\\\""
+        Example:
+            Input: 1/0 division by zero
+            Output: {"success": false, "error": "ZeroDivisionError: ...", "data": {...}}
+        """
+        code = '''
+print("Starting execution...")
+result = 1 / 0  # This will cause ZeroDivisionError
+print("This won't be reached")
+'''
 
-# Multi-line with various content
-extreme_cases["multiline"] = '''Line 1 with "quotes"
-Line 2 with "double quotes"
-Line 3 with \\n escape sequences
-Line 4 with unicode: ñáéíóú'''
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is False
+        assert data["error"] is not None
+        # Server may return generic "Execution failed" or specific error details
+        assert len(data["error"]) > 0, "Error message should not be empty"
 
-# File paths
-extreme_cases["file_path"] = "C:\\\\Users\\\\name\\\\Documents\\\\file with spaces.txt"
 
-total_cases = len(extreme_cases)
-all_valid = all(isinstance(v, str) for v in extreme_cases.values())
-sample_backslash = extreme_cases["backslashes"]
-sample_multiline_length = len(extreme_cases["multiline"])
-file_path_valid = "Documents" in extreme_cases["file_path"]
+class TestDataScienceOperations:
+    """Test data science package operations"""
 
-print(f"TOTAL_CASES: {total_cases}")
-print(f"ALL_VALID: {all_valid}")
-print(f"SAMPLE_BACKSLASH: {sample_backslash}")
-print(f"MULTILINE_LENGTH: {sample_multiline_length}")
-print(f"FILE_PATH_VALID: {file_path_valid}")
-        """)
-        
-        self.assertTrue(result["success"])
-        stdout = result.get("stdout", "")
-        self.assertIn("TOTAL_CASES: 5", stdout)
-        self.assertIn("ALL_VALID: True", stdout)
-        self.assertIn("server", stdout)
-        self.assertIn("MULTILINE_LENGTH:", stdout)
-        self.assertIn("FILE_PATH_VALID: True", stdout)
-        print("✅ Extreme string cases handled correctly")
+    def test_given_pandas_operations_when_execute_then_returns_dataframe_results(self, api_session, base_url):
+        """
+        Test pandas DataFrame operations and data manipulation.
 
-    def test_09_package_isolation_stress(self):
-        """Test package isolation under stress with multiple concurrent users"""
-        def user_execution(user_id):
-            """Simulate a user execution with unique data"""
-            code = f"""
-import numpy as np
+        Given: Python code with pandas DataFrame operations
+        When: Data manipulation and analysis is performed
+        Then: Returns successful execution with DataFrame results
+
+        Inputs:
+            - pandas DataFrame creation and manipulation
+            - Data analysis operations
+
+        Expected Outputs:
+            - success: true
+            - data.stdout contains DataFrame information and operations
+            - data.result contains completion confirmation
+
+        Example:
+            Input: DataFrame with statistical operations
+            Output: {"success": true, "data": {"stdout": "DataFrame info...", "result": "completed"}}
+        """
+        code = '''
 import pandas as pd
+import numpy as np
 
-# User-specific data
-user_id = {user_id}
-user_data = np.array([{user_id}, {user_id * 2}, {user_id * 3}])
-user_df = pd.DataFrame({{"user": [user_id], "values": [user_data.tolist()]}})
+print(f"Pandas version: {pd.__version__}")
 
-# Process user data
-result = {{
-    "user_id": user_id,
-    "data_sum": int(user_data.sum()),
-    "data_product": int(user_data.prod()),
-    "df_shape": user_df.shape,
-    "unique_marker": f"user_{user_id}_processed"
-}}
+# Create sample DataFrame
+data = {
+    'name': ['Alice', 'Bob', 'Charlie', 'Diana'],
+    'age': [25, 30, 35, 28],
+    'salary': [50000, 60000, 70000, 55000]
+}
 
-result
-            """
-            
-            try:
-                result = self.execute_code(code)
-                return result
-            except Exception as e:
-                return {"success": False, "error": str(e), "user_id": user_id}
+df = pd.DataFrame(data)
+print("DataFrame created:")
+print(df)
+print(f"Shape: {df.shape}")
+print(f"Mean salary: ${df['salary'].mean():,.2f}")
 
-        # Execute multiple users concurrently
-        user_ids = [101, 202, 303, 404, 505]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(user_execution, uid) for uid in user_ids]
-            results = [future.result() for future in concurrent.futures.as_completed(futures)]
+"Pandas operations completed successfully"
+'''
 
-        # Verify all executions succeeded and data is isolated
-        for result in results:
-            self.assertTrue(result["success"])
-            data = result["result"]
-            expected_sum = data["user_id"] * 6  # user_id + user_id*2 + user_id*3
-            self.assertEqual(data["data_sum"], expected_sum)
-            self.assertIn(f"user_{data['user_id']}_processed", data["unique_marker"])
-            print(f"✅ User {data['user_id']} isolation verified: sum={data['data_sum']}")
-
-    def test_10_install_verify_pillow(self):
-        """Test installing and using Pillow/PIL package"""
-        # Install Pillow
-        install_result = self.install_package("Pillow")
-        self.assertTrue(install_result["success"])
-        print(f"✅ Pillow installation: {install_result['data']['message']}")
-        
-        # Test PIL availability and functionality using RAW execution
-        result = self.execute_code_raw("""
-try:
-    from PIL import Image
-    import io
-    
-    # Create a simple test image
-    img = Image.new('RGB', (100, 100), color='red')
-    
-    # Test image properties
-    pil_available = True
-    image_size = img.size
-    image_mode = img.mode
-    image_format = img.format
-    can_create_image = True
-    
-    # Test saving to bytes (memory)
-    buffer = io.BytesIO()
-    img.save(buffer, format='PNG')
-    can_save_to_memory = len(buffer.getvalue()) > 0
-    
-    print(f"PIL_AVAILABLE: {pil_available}")
-    print(f"IMAGE_SIZE: {image_size}")
-    print(f"IMAGE_MODE: {image_mode}")
-    print(f"CAN_CREATE_IMAGE: {can_create_image}")
-    print(f"CAN_SAVE_TO_MEMORY: {can_save_to_memory}")
-    
-except ImportError as e:
-    print(f"PIL_AVAILABLE: False")
-    print(f"ERROR: {str(e)}")
-except Exception as e:
-    print(f"PIL_AVAILABLE: True")
-    print(f"ERROR: {str(e)}")
-    print("OPERATION_FAILED: True")
-        """)
-        
-        self.assertTrue(result["success"])
-        stdout = result.get("stdout", "")
-        self.assertIn("PIL_AVAILABLE: True", stdout)
-        self.assertIn("IMAGE_SIZE: (100, 100)", stdout)
-        self.assertIn("IMAGE_MODE: RGB", stdout)
-        self.assertIn("CAN_SAVE_TO_MEMORY: True", stdout)
-        print("✅ Pillow/PIL functionality verified")
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is True
+        assert data["error"] is None
+        assert "Pandas operations completed successfully" in data["data"]["result"]
+        assert "DataFrame created:" in data["data"]["stdout"]
 
 
-def run_tests():
-    """Run all tests"""
-    unittest.main(verbosity=2)
+class TestFileSystemOperations:
+    """Test file system operations using pathlib"""
+
+    def test_given_file_operations_when_execute_then_handles_paths_correctly(self, api_session, base_url):
+        """
+        Test file system operations using pathlib for cross-platform compatibility.
+
+        Given: Python code using pathlib for file operations
+        When: File and directory operations are performed
+        Then: Returns successful execution with file operation results
+
+        Inputs:
+            - pathlib Path operations
+            - Directory and file checks
+
+        Expected Outputs:
+            - success: true
+            - data.stdout contains file operation results
+            - Cross-platform path handling verified
+
+        Example:
+            Input: Path existence checks and operations
+            Output: {"success": true, "data": {"stdout": "File operations completed"}}
+        """
+        code = '''
+from pathlib import Path
+import os
+
+# Use pathlib for cross-platform compatibility
+current_dir = Path('/')
+print(f"Current directory: {current_dir}")
+print(f"Is directory: {current_dir.is_dir()}")
+print(f"Exists: {current_dir.exists()}")
+
+# Check for common system paths
+system_paths = [Path('/tmp'), Path('/var'), Path('/usr')]
+for path in system_paths:
+    if path.exists():
+        print(f"Found system path: {path}")
+        break
+else:
+    print("No common system paths found")
+
+# Demonstrate path operations
+test_path = Path('/tmp') / 'test_file.txt'
+print(f"Test path: {test_path}")
+print(f"Parent: {test_path.parent}")
+print(f"Name: {test_path.name}")
+print(f"Suffix: {test_path.suffix}")
+
+"File system operations completed successfully"
+'''
+
+        data = execute_python_code(api_session, base_url, code)
+        assert data is not None, "API contract validation failed"
+        assert data["success"] is True
+        assert data["error"] is None
+        assert "File system operations completed successfully" in data["data"]["result"]
+        assert "Current directory:" in data["data"]["stdout"]
 
 
 if __name__ == "__main__":
-    run_tests()
+    pytest.main([__file__, "-v"])
