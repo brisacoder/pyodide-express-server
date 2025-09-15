@@ -319,6 +319,12 @@ def cleanup_uploads(request):
             pass
 
 
+@pytest.fixture
+def api_contract_validator():
+    """Provide API contract validation function as a pytest fixture."""
+    return validate_api_contract
+
+
 def validate_api_contract(response_data: Dict[str, Any]) -> None:
     """
     Validate API response follows the expected contract format.
