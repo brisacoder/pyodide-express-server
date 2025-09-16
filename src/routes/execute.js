@@ -295,14 +295,16 @@ router.get('/packages', async (req, res) => {
 router.post('/reset', async (req, res) => {
   try {
     // Reset interpreter state to a clean slate.
-    await pyodideService.reset();
-    logger.info('Pyodide environment reset successfully');
-    res.json({
-      success: true,
-      data: { message: 'Pyodide environment reset successfully' },
-      error: null,
-      meta: { timestamp: new Date().toISOString() }
-    });
+    const result = await pyodideService.reset();
+    
+    // The service now returns proper API contract format
+    if (result.success) {
+      logger.info('Pyodide environment reset successfully');
+      res.json(result);
+    } else {
+      logger.error('Reset operation failed:', result.error);
+      res.status(500).json(result);
+    }
   } catch (error) {
     logger.error('Reset endpoint error:', error);
     res.status(500).json({

@@ -1,9 +1,9 @@
 """
 Test Function Return Patterns in Pyodide - Pytest BDD Implementation
 
-This test suite demonstrates best practices for returning values from Pyodide 
-code execution using function patterns. Tests are implemented using pytest 
-with BDD (Behavior-Driven Development) patterns and comprehensive API contract 
+This test suite demonstrates best practices for returning values from Pyodide
+code execution using function patterns. Tests are implemented using pytest
+with BDD (Behavior-Driven Development) patterns and comprehensive API contract
 validation.
 
 Key Features:
@@ -28,9 +28,6 @@ Adapted from: test_return_data_types.py, test_matplotlib_filesystem.py, test_vir
 """
 
 import json
-import time
-from pathlib import Path
-from typing import Any, Dict
 
 import pytest
 import requests
@@ -39,8 +36,8 @@ import requests
 class TestFunctionReturnPatternsBDD:
     """
     Test function return patterns adapted from existing test suites using BDD.
-    
-    This test class validates various Python function return patterns when 
+
+    This test class validates various Python function return patterns when
     executed through the Pyodide environment via the /api/execute-raw endpoint.
     All tests follow BDD patterns and validate API contract compliance.
     """
@@ -50,20 +47,20 @@ class TestFunctionReturnPatternsBDD:
     ):
         """
         Test returning basic Python data types using functions.
-        
+
         Description:
-            Validates that basic Python data types (string, int, float, bool, None, 
+            Validates that basic Python data types (string, int, float, bool, None,
             list, dict) can be properly returned from Pyodide function execution
             and serialized correctly through the API.
-        
+
         Input:
             - Python function returning various basic data types
             - Nested data structures (lists, dictionaries)
-        
+
         Output:
             - Validated API response with structured data
             - All data types preserved through serialization
-        
+
         Example:
             Function returns: {"string": "hello", "integer": 42, "list": [1,2,3]}
             API response: {success: true, data: {result: {...}}}
@@ -90,7 +87,7 @@ import json
 result = get_basic_types()
 print(json.dumps(result))
 '''
-        
+
         # When: We execute the function via the execute-raw endpoint
         response = requests.post(
             f"{base_url}/api/execute-raw",
@@ -98,18 +95,18 @@ print(json.dumps(result))
             data=code,
             timeout=api_timeout,
         )
-        
+
         # Then: The response should follow API contract and contain correct data
         response.raise_for_status()
         api_response = response.json()
         api_contract_validator(api_response)
-        
+
         assert api_response["success"] is True
         assert api_response["data"]["result"] is not None
-        
+
         # Parse the returned data from stdout
         data = json.loads(api_response["data"]["stdout"].strip())
-        
+
         # Verify all basic data types are correctly returned
         assert data["string"] == "hello world"
         assert data["integer"] == 42
@@ -127,22 +124,22 @@ print(json.dumps(result))
     ):
         """
         Test returning numpy array analysis using functions.
-        
+
         Description:
             Validates that numpy arrays can be created, analyzed, and returned
             through function patterns with proper data type conversions for
             JSON serialization.
-        
+
         Input:
             - NumPy arrays (1D, 2D, float arrays)
             - Statistical operations (sum, mean, std, etc.)
             - Array manipulations (transpose, dot product)
-        
+
         Output:
             - JSON-serializable analysis results
             - Array data converted to lists
             - Statistical measures as floats
-        
+
         Example:
             Input: numpy.array([1,2,3,4,5])
             Output: {"arrays": {"1d_array": [1,2,3,4,5]}, "statistics": {"mean": 3.0}}
@@ -187,7 +184,7 @@ import json
 result = analyze_numpy_data()
 print(json.dumps(result))
 '''
-        
+
         # When: We execute the numpy analysis function
         response = requests.post(
             f"{base_url}/api/execute-raw",
@@ -195,28 +192,28 @@ print(json.dumps(result))
             data=code,
             timeout=api_timeout,
         )
-        
+
         # Then: The response should contain valid numpy analysis results
         response.raise_for_status()
         api_response = response.json()
         api_contract_validator(api_response)
-        
+
         assert api_response["success"] is True
-        
+
         # Parse the JSON output from the Python execution
         data = json.loads(api_response["data"]["stdout"].strip())
-        
+
         # Verify arrays are correctly converted
         assert data["arrays"]["1d_array"] == [1, 2, 3, 4, 5]
         assert data["arrays"]["2d_array"] == [[1, 2, 3], [4, 5, 6]]
-        
+
         # Verify statistics calculations
         assert data["statistics"]["1d_sum"] == 15.0
         assert data["statistics"]["1d_mean"] == 3.0
         assert data["statistics"]["2d_shape"] == [2, 3]
         assert data["statistics"]["2d_max"] == 6.0
         assert data["statistics"]["2d_min"] == 1.0
-        
+
         # Verify operations
         assert data["operations"]["squared"] == [1, 4, 9, 16, 25]
         assert data["operations"]["dot_product"] == 55.0
@@ -227,23 +224,23 @@ print(json.dumps(result))
     ):
         """
         Test returning pandas DataFrame analysis using functions.
-        
+
         Description:
             Validates that pandas DataFrames can be created, processed, and
             analyzed through function patterns with proper data serialization
             for complex data structures.
-        
+
         Input:
             - Pandas DataFrame with mixed data types
             - Statistical analysis operations
             - Groupby operations and aggregations
-        
+
         Output:
             - DataFrame metadata (shape, columns, dtypes)
             - Statistical summaries (mean, max, min)
             - Grouped analysis results
             - Sample records in dictionary format
-        
+
         Example:
             Input: DataFrame with columns [name, age, salary, department]
             Output: {"basic_info": {"shape": [5,4]}, "statistics": {"mean_age": 30.0}}
@@ -293,7 +290,7 @@ import json
 result = process_dataframe()
 print(json.dumps(result))
 '''
-        
+
         # When: We execute the DataFrame processing function
         response = requests.post(
             f"{base_url}/api/execute-raw",
@@ -301,33 +298,38 @@ print(json.dumps(result))
             data=code,
             timeout=api_timeout,
         )
-        
+
         # Then: The response should contain valid DataFrame analysis
         response.raise_for_status()
         api_response = response.json()
         api_contract_validator(api_response)
-        
+
         assert api_response["success"] is True
-        
+
         # Parse the JSON output from the Python execution
         data = json.loads(api_response["data"]["stdout"].strip())
-        
+
         # Verify basic DataFrame info
         assert data["basic_info"]["shape"] == [5, 4]
-        assert set(data["basic_info"]["columns"]) == {"name", "age", "salary", "department"}
-        
+        assert set(data["basic_info"]["columns"]) == {
+            "name",
+            "age",
+            "salary",
+            "department",
+        }
+
         # Verify statistical calculations
         assert data["statistics"]["mean_age"] == 30.0
         assert data["statistics"]["mean_salary"] == 60000.0
         assert data["statistics"]["max_salary"] == 70000.0
         assert data["statistics"]["min_age"] == 25.0
-        
+
         # Verify department analysis
         assert "Engineering" in data["department_analysis"]["unique_departments"]
         assert "Sales" in data["department_analysis"]["unique_departments"]
         assert "Marketing" in data["department_analysis"]["unique_departments"]
         assert data["department_analysis"]["department_counts"]["Engineering"] == 2
-        
+
         # Verify sample records structure
         assert len(data["sample_records"]) == 3
         assert all("name" in record for record in data["sample_records"])
@@ -337,23 +339,23 @@ print(json.dumps(result))
     ):
         """
         Test creating matplotlib plots using functions with cross-platform paths.
-        
+
         Description:
             Validates that matplotlib plots can be created and saved using
             pathlib for cross-platform compatibility, with comprehensive
             analysis data returned through function patterns.
-        
+
         Input:
             - Mathematical functions (sin, cos) for plotting
             - Pathlib-based file path construction
             - Plot styling and metadata
-        
+
         Output:
             - Plot saved to filesystem with timestamp
             - Plot metadata (path, existence, timestamp)
             - Data analysis (ranges, statistics)
             - Cross-platform path handling verification
-        
+
         Example:
             Input: x = np.linspace(0, 2*pi, 100); y = np.sin(x)
             Output: {"plot_info": {"created": true, "path": "/plots/matplotlib/..."}}
@@ -429,7 +431,7 @@ import json
 result = create_analysis_plot()
 print(json.dumps(result))
 '''
-        
+
         # When: We execute the matplotlib plotting function
         response = requests.post(
             f"{base_url}/api/execute-raw",
@@ -437,58 +439,60 @@ print(json.dumps(result))
             data=code,
             timeout=api_timeout,
         )
-        
+
         # Then: The response should confirm plot creation and provide analysis
         response.raise_for_status()
         api_response = response.json()
         api_contract_validator(api_response)
-        
+
         assert api_response["success"] is True
-        
+
         # Parse the JSON output from the Python execution
         data = json.loads(api_response["data"]["stdout"].strip())
-        
+
         # Verify plot creation
         assert data["plot_info"]["created"] is True
         assert data["plot_info"]["exists"] is True
         assert data["plot_info"]["cross_platform_path"] is True
         assert "function_return_test_" in data["plot_info"]["filename"]
         assert data["plot_info"]["path"].startswith("/plots/matplotlib/")
-        
+
         # Verify data analysis
         assert data["data_analysis"]["data_points"] == 100
         assert abs(data["data_analysis"]["x_range"][0] - 0.0) < 0.01
         assert abs(data["data_analysis"]["x_range"][1] - (2 * 3.14159)) < 0.01
         assert abs(data["data_analysis"]["sin_range"][0] - (-1.0)) < 0.01
         assert abs(data["data_analysis"]["sin_range"][1] - 1.0) < 0.01
-        
+
         # Verify trigonometric statistics (sin/cos means should be close to 0)
         assert abs(data["statistics"]["sin_mean"]) < 0.1
         assert abs(data["statistics"]["cos_mean"]) < 0.1
-        assert abs(data["statistics"]["correlation"]) < 0.1  # sin and cos should be uncorrelated
+        assert (
+            abs(data["statistics"]["correlation"]) < 0.1
+        )  # sin and cos should be uncorrelated
 
     def test_given_virtual_filesystem_operations_when_executed_via_function_then_should_test_cross_platform_paths(
         self, server_ready, base_url, api_timeout, api_contract_validator
     ):
         """
         Test virtual filesystem operations using functions with pathlib.
-        
+
         Description:
             Validates that filesystem operations work correctly across platforms
             using pathlib for path manipulation and file operations. Tests
             various filesystem paths and writability.
-        
+
         Input:
             - Various filesystem paths (/plots, /uploads, etc.)
             - Cross-platform path operations using pathlib
             - File creation and cleanup operations
-        
+
         Output:
             - Path existence and properties for each tested path
             - Writability test results
             - Environment information (cwd, path separator)
             - Cross-platform compatibility validation
-        
+
         Example:
             Input: test_paths = ['/home/pyodide/plots', '/home/pyodide/uploads', '/plots/matplotlib']
             Output: {"path_details": {"/plots": {"exists": true, "writable": true}}}
@@ -605,7 +609,7 @@ import json
 result = test_filesystem_operations()
 print(json.dumps(result))
 '''
-        
+
         # When: We execute the filesystem testing function
         response = requests.post(
             f"{base_url}/api/execute-raw",
@@ -613,43 +617,49 @@ print(json.dumps(result))
             data=code,
             timeout=api_timeout,
         )
-        
+
         # Then: The response should contain comprehensive filesystem analysis
         response.raise_for_status()
         api_response = response.json()
         api_contract_validator(api_response)
-        
+
         assert api_response["success"] is True
-        
+
         # Parse the JSON output from the Python execution
         data = json.loads(api_response["data"]["stdout"].strip())
-        
+
         # Verify filesystem test structure
         assert "filesystem_test" in data
         assert "path_details" in data
         assert "environment" in data
         assert "pathlib_features" in data
-        
+
         # Verify cross-platform pathlib usage
         assert data["filesystem_test"]["cross_platform"] is True
         assert data["environment"]["pathlib_usage"] is True
         assert data["pathlib_features"]["cross_platform_joining"] is True
-        
+
         # Verify key paths are tested
         path_details = data["path_details"]
         assert "/plots" in path_details
         assert "/plots/matplotlib" in path_details
-        
+
         # Verify at least some paths are writable and properly tested
         writable_count = data["filesystem_test"]["writable_paths"]
         existing_count = data["filesystem_test"]["existing_paths"]
-        assert writable_count > 0, "No writable paths found - filesystem may not be properly mounted"
-        assert existing_count > 0, "No existing paths found - basic filesystem paths missing"
-        
+        assert (
+            writable_count > 0
+        ), "No writable paths found - filesystem may not be properly mounted"
+        assert (
+            existing_count > 0
+        ), "No existing paths found - basic filesystem paths missing"
+
         # Verify pathlib features are working
         for path_str, path_info in path_details.items():
             if path_info.get("exists"):
-                assert path_info.get("is_absolute"), f"Path {path_str} should be absolute when using pathlib"
+                assert path_info.get(
+                    "is_absolute"
+                ), f"Path {path_str} should be absolute when using pathlib"
                 assert "absolute_path" in path_info
                 assert "parent" in path_info
 
@@ -658,24 +668,24 @@ print(json.dumps(result))
     ):
         """
         Test using main() function pattern for complex workflows.
-        
+
         Description:
             Demonstrates complex workflow orchestration using a main() function
             that coordinates multiple helper functions, performs statistical
             analysis, and returns comprehensive results. This pattern is ideal
             for complex data analysis workflows.
-        
+
         Input:
             - Multiple helper functions (data generation, statistics calculation)
             - Main function coordinating workflow
             - Statistical comparisons and analysis
-        
+
         Output:
             - Comprehensive analysis results from coordinated workflow
             - Statistical comparisons between datasets
             - Workflow metadata and conclusions
             - Demonstration of function composition patterns
-        
+
         Example:
             Input: main() -> [generate_data(), calculate_stats(), compare_results()]
             Output: {"analysis_info": {...}, "datasets": {...}, "conclusions": {...}}
@@ -786,7 +796,7 @@ import json
 result = main()
 print(json.dumps(result))
 '''
-        
+
         # When: We execute the main function workflow
         response = requests.post(
             f"{base_url}/api/execute-raw",
@@ -794,49 +804,51 @@ print(json.dumps(result))
             data=code,
             timeout=api_timeout,
         )
-        
+
         # Then: The response should contain comprehensive workflow analysis
         response.raise_for_status()
         api_response = response.json()
         api_contract_validator(api_response)
-        
+
         assert api_response["success"] is True
-        
+
         # Parse the JSON output from the Python execution
         data = json.loads(api_response["data"]["stdout"].strip())
-        
+
         # Verify workflow structure and metadata
         assert "workflow_info" in data
         assert "datasets" in data
         assert "comparisons" in data
         assert "conclusions" in data
-        
+
         # Verify workflow execution details
         workflow_info = data["workflow_info"]
         assert workflow_info["datasets_analyzed"] == 3
         assert workflow_info["total_data_points"] == 1250  # 50 + 1000 + 200
         assert workflow_info["workflow_pattern"] == "main_function_orchestration"
         assert len(workflow_info["helper_functions_used"]) == 3
-        
+
         # Verify dataset analysis
         datasets = data["datasets"]
         assert datasets["small_dataset"]["size"] == 50
         assert datasets["large_dataset"]["size"] == 1000
         assert datasets["different_dataset"]["size"] == 200
-        
+
         # Verify statistics are present for each dataset
         for dataset_name in ["small_dataset", "large_dataset", "different_dataset"]:
             stats = datasets[dataset_name]["statistics"]
             required_stats = ["mean", "std", "min", "max", "median", "variance"]
             for stat in required_stats:
                 assert stat in stats, f"Missing statistic {stat} in {dataset_name}"
-                assert isinstance(stats[stat], (int, float)), f"Statistic {stat} should be numeric"
-        
+                assert isinstance(
+                    stats[stat], (int, float)
+                ), f"Statistic {stat} should be numeric"
+
         # Verify comparisons are logical
         comparisons = data["comparisons"]
         assert "small_vs_large" in comparisons
         assert "large_vs_different" in comparisons
-        
+
         # Verify conclusions
         conclusions = data["conclusions"]
         assert conclusions["workflow_successful"] is True

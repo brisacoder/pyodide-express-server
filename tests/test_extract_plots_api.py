@@ -20,7 +20,7 @@ API Contract:
   "data": {
     "result": <any>,
     "stdout": <string>,
-    "stderr": <string>, 
+    "stderr": <string>,
     "executionTime": <number>
   },
   "error": <string|null>,
@@ -34,10 +34,7 @@ Test Categories:
 - error_handling: Tests for error conditions and edge cases
 """
 
-import json
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 import pytest
 import requests
@@ -52,7 +49,7 @@ except ImportError:
 
 class TestConfig:
     """Test-specific configuration constants."""
-    
+
     # Plot creation settings
     PLOT_SETTINGS = {
         "default_dpi": 100,
@@ -60,27 +57,27 @@ class TestConfig:
         "timeout_seconds": 45,
         "max_plots_per_test": 10,
     }
-    
+
     # Directory paths for testing (all use pathlib for portability)
     TEST_DIRECTORIES = [
-        '/home/pyodide/plots',
+        "/home/pyodide/plots",
         "/plots/matplotlib",
-        "/plots/seaborn", 
+        "/plots/seaborn",
         "/plots/test_extract",
         "/plots/custom",
     ]
-    
+
     # Non-plots directories for negative testing
     NON_PLOTS_DIRECTORIES = [
         "/tmp/test_plots",
-        "/data/plots", 
+        "/data/plots",
         "/custom/plots",
     ]
-    
+
     # Plot file patterns for testing
     PLOT_PATTERNS = {
         "simple_line": "simple_line_plot",
-        "scatter": "scatter_plot", 
+        "scatter": "scatter_plot",
         "histogram": "histogram_plot",
         "multi_subplot": "subplot_demo",
     }
@@ -90,22 +87,23 @@ class TestConfig:
 def server_ready():
     """
     Ensure server is running and ready for plot creation tests.
-    
+
     This session-scoped fixture validates that the Pyodide Express Server
     is available and can execute Python code for plot creation.
-    
+
     Returns:
         None: Fixture validates server availability
-        
+
     Raises:
         pytest.skip: If server is not available within timeout period
-        
+
     Example:
         >>> def test_something(server_ready):
         ...     # Server is guaranteed to be ready here
         ...     response = requests.get(f"{Config.BASE_URL}/health")
         ...     assert response.status_code == 200
     """
+
     def wait_for_server_ready(url: str, timeout: int) -> None:
         """Wait for server to become available."""
         start = time.time()
@@ -118,7 +116,7 @@ def server_ready():
                 pass
             time.sleep(1)
         pytest.skip(f"Server at {url} not available within {timeout}s")
-    
+
     # Check server health
     health_url = f"{Config.BASE_URL}{Config.ENDPOINTS['health']}"
     wait_for_server_ready(health_url, Config.TIMEOUTS["server_health"])
@@ -128,10 +126,10 @@ def server_ready():
 def plot_timeout():
     """
     Provide timeout for plot creation operations.
-    
+
     Returns:
         int: Timeout in seconds for plot creation
-        
+
     Example:
         >>> def test_plot_creation(plot_timeout):
         ...     # Use plot_timeout for code execution
@@ -144,10 +142,10 @@ def plot_timeout():
 def test_directories():
     """
     Provide list of directories for plot testing.
-    
+
     Returns:
         List[str]: Directory paths to test for plot creation
-        
+
     Example:
         >>> def test_directory_creation(test_directories):
         ...     for directory in test_directories:
@@ -161,10 +159,10 @@ def test_directories():
 def non_plots_directories():
     """
     Provide list of non-plots directories for negative testing.
-    
+
     Returns:
         List[str]: Directory paths outside /plots for testing
-        
+
     Example:
         >>> def test_non_plots_behavior(non_plots_directories):
         ...     for directory in non_plots_directories:
@@ -178,13 +176,13 @@ def non_plots_directories():
 def cleanup_plots():
     """
     Cleanup fixture to remove test plots after each test.
-    
+
     This fixture provides a list to track created plot files and
     automatically cleans them up after test completion.
-    
+
     Yields:
         List[str]: List to append created plot file paths
-        
+
     Example:
         >>> def test_plot_creation(cleanup_plots):
         ...     # Create plot and track for cleanup
@@ -194,7 +192,7 @@ def cleanup_plots():
     """
     created_plots = []
     yield created_plots
-    
+
     # Cleanup created plots
     if created_plots:
         cleanup_code = f"""
@@ -232,30 +230,30 @@ result
 class TestPlotDirectoryBehavior:
     """
     BDD tests for plot directory creation and filesystem behavior.
-    
+
     This test class validates that the Pyodide filesystem can properly
     create directories and store plot files using pathlib for portability.
     """
-    
+
     def test_given_plots_directories_when_creating_then_all_should_be_writable(
         self, server_ready, test_directories, plot_timeout
     ):
         """
         Test that all standard plots directories can be created and are writable.
-        
+
         Given: A list of standard plots directories
         When: Attempting to create directories and test files in each
         Then: All directories should be successfully created and writable
-        
+
         Args:
             server_ready: Server readiness fixture
             test_directories: List of directories to test
             plot_timeout: Timeout for operations
-            
+
         Example:
             This test validates directories like:
             - /plots
-            - /plots/matplotlib  
+            - /plots/matplotlib
             - /plots/seaborn
             - /plots/test_extract
         """
@@ -326,52 +324,65 @@ for directory_path in test_directories:
 results["success_rate"] = results["total_success"] / results["total_tested"] if results["total_tested"] > 0 else 0
 results
         """
-        
+
         # When: Executing directory tests
         result = execute_python_code(code, timeout=plot_timeout)
-        
+
         # Then: Validate API contract and results
         validate_api_contract(result)
-        assert result["success"], f"Directory test execution failed: {result.get('error')}"
-        
+        assert result[
+            "success"
+        ], f"Directory test execution failed: {result.get('error')}"
+
         test_results = result["data"]["result"]
         assert isinstance(test_results, dict), "Results should be a dictionary"
-        assert "directory_tests" in test_results, "Results should contain directory_tests"
-        
+        assert (
+            "directory_tests" in test_results
+        ), "Results should contain directory_tests"
+
         # Validate each directory was tested
         directory_tests = test_results["directory_tests"]
-        assert len(directory_tests) == len(test_directories), f"Expected {len(test_directories)} tests, got {len(directory_tests)}"
-        
+        assert len(directory_tests) == len(
+            test_directories
+        ), f"Expected {len(test_directories)} tests, got {len(directory_tests)}"
+
         # All directories should be successfully created and writable
         failed_directories = []
         for test in directory_tests:
-            if not (test.get("created_successfully", False) and test.get("is_writable", False)):
-                failed_directories.append({
-                    "path": test.get("path"),
-                    "created": test.get("created_successfully", False), 
-                    "writable": test.get("is_writable", False),
-                    "error": test.get("error")
-                })
-        
+            if not (
+                test.get("created_successfully", False)
+                and test.get("is_writable", False)
+            ):
+                failed_directories.append(
+                    {
+                        "path": test.get("path"),
+                        "created": test.get("created_successfully", False),
+                        "writable": test.get("is_writable", False),
+                        "error": test.get("error"),
+                    }
+                )
+
         assert len(failed_directories) == 0, f"Failed directories: {failed_directories}"
-        assert test_results["success_rate"] == 1.0, f"Expected 100% success rate, got {test_results['success_rate']}"
+        assert (
+            test_results["success_rate"] == 1.0
+        ), f"Expected 100% success rate, got {test_results['success_rate']}"
 
     def test_given_non_plots_directories_when_creating_plots_then_should_work_but_be_outside_plots(
         self, server_ready, non_plots_directories, plot_timeout, cleanup_plots
     ):
         """
         Test that plots can be created outside /plots but are distinguishable.
-        
+
         Given: Directories outside the standard /plots structure
-        When: Creating plot files in these directories  
+        When: Creating plot files in these directories
         Then: Files should be created successfully but clearly outside /plots
-        
+
         Args:
             server_ready: Server readiness fixture
             non_plots_directories: List of non-plots directories
             plot_timeout: Timeout for operations
             cleanup_plots: Cleanup tracking list
-            
+
         Example:
             This test creates plots in directories like:
             - /tmp/test_plots
@@ -436,8 +447,8 @@ for directory_path in non_plots_directories:
     results["non_plots_tests"].append(test_result)
 
 # Then: Categorize results
-plots_files = [f for f in results["files_created"] if "/plots/" in f]
-non_plots_files = [f for f in results["files_created"] if "/plots/" not in f]
+plots_files = [f for f in results["files_created"] if f.startswith("/plots/")]
+non_plots_files = [f for f in results["files_created"] if not f.startswith("/plots/")]
 
 results["plots_vs_non_plots"] = {{
     "plots_directory_files": plots_files,
@@ -448,34 +459,46 @@ results["plots_vs_non_plots"] = {{
 
 results
         """
-        
+
         # When: Executing non-plots directory tests
         result = execute_python_code(code, timeout=plot_timeout)
-        
+
         # Then: Validate API contract and results
         validate_api_contract(result)
-        assert result["success"], f"Non-plots directory test failed: {result.get('error')}"
-        
+        assert result[
+            "success"
+        ], f"Non-plots directory test failed: {result.get('error')}"
+
         test_results = result["data"]["result"]
         assert isinstance(test_results, dict), "Results should be a dictionary"
-        
+
         # Track created files for cleanup
         if "files_created" in test_results:
             cleanup_plots.extend(test_results["files_created"])
-        
+
         # Validate non-plots behavior
         non_plots_tests = test_results.get("non_plots_tests", [])
-        assert len(non_plots_tests) == len(non_plots_directories), f"Expected {len(non_plots_directories)} tests"
-        
+        assert len(non_plots_tests) == len(
+            non_plots_directories
+        ), f"Expected {len(non_plots_directories)} tests"
+
         # All directories should be created successfully
         for test in non_plots_tests:
-            assert not test.get("is_plots_directory", True), f"Directory {test['path']} should not be a plots directory"
-            assert test.get("created_successfully", False), f"Directory {test['path']} should be created successfully"
-            
+            assert not test.get(
+                "is_plots_directory", True
+            ), f"Directory {test['path']} should not be a plots directory"
+            assert test.get(
+                "created_successfully", False
+            ), f"Directory {test['path']} should be created successfully"
+
         # Validate categorization
         categorization = test_results.get("plots_vs_non_plots", {})
-        assert categorization["total_non_plots_files"] > 0, "Should have created files outside /plots"
-        assert categorization["total_plots_files"] == 0, "Should not have created files in /plots directory"
+        assert (
+            categorization["total_non_plots_files"] > 0
+        ), "Should have created files outside /plots"
+        assert (
+            categorization["total_plots_files"] == 0
+        ), "Should not have created files in /plots directory"
 
 
 @pytest.mark.matplotlib
@@ -483,30 +506,30 @@ results
 class TestPlotCreationWorkflows:
     """
     BDD tests for comprehensive plot creation workflows.
-    
+
     This test class validates end-to-end plot creation scenarios including
     multiple plot types, complex visualizations, and error handling.
     """
-    
+
     def test_given_matplotlib_available_when_creating_multiple_plot_types_then_all_should_succeed(
         self, server_ready, plot_timeout, cleanup_plots
     ):
         """
         Test creation of multiple plot types using matplotlib.
-        
+
         Given: Matplotlib is available in the Pyodide environment
         When: Creating various plot types (line, scatter, histogram, subplots)
         Then: All plot types should be created successfully with proper file sizes
-        
+
         Args:
             server_ready: Server readiness fixture
             plot_timeout: Timeout for plot operations
             cleanup_plots: Cleanup tracking list
-            
+
         Example:
             Creates and validates:
             - Line plots
-            - Scatter plots  
+            - Scatter plots
             - Histograms
             - Multi-subplot figures
         """
@@ -644,35 +667,47 @@ results["average_file_size"] = results["total_size_bytes"] / results["total_file
 
 results
         """
-        
+
         # When: Creating multiple plot types
         result = execute_python_code(code, timeout=plot_timeout)
-        
+
         # Then: Validate API contract and results
         validate_api_contract(result)
-        assert result["success"], f"Plot creation workflow failed: {result.get('error')}"
-        
+        assert result[
+            "success"
+        ], f"Plot creation workflow failed: {result.get('error')}"
+
         plot_results = result["data"]["result"]
         assert isinstance(plot_results, dict), "Results should be a dictionary"
-        
+
         # Track created files for cleanup
         if "plots_created" in plot_results:
             cleanup_plots.extend(plot_results["plots_created"])
-        
+
         # Validate plot creation success
         plot_types = plot_results.get("plot_types", [])
         assert len(plot_types) == 4, "Should have tested 4 plot types"
-        
+
         # All plots should be created successfully
         failed_plots = [p for p in plot_types if not p.get("created", False)]
-        assert len(failed_plots) == 0, f"Failed to create plots: {[p['type'] for p in failed_plots]}"
-        
+        assert (
+            len(failed_plots) == 0
+        ), f"Failed to create plots: {[p['type'] for p in failed_plots]}"
+
         # Validate file properties
-        assert plot_results.get("total_files", 0) == 4, "Should have created 4 plot files"
-        assert plot_results.get("success_rate", 0) == 1.0, "Should have 100% success rate"
-        assert plot_results.get("total_size_bytes", 0) > 0, "Plot files should have content"
-        assert plot_results.get("average_file_size", 0) > 1000, "Plot files should be reasonably sized (>1KB)"
-        
+        assert (
+            plot_results.get("total_files", 0) == 4
+        ), "Should have created 4 plot files"
+        assert (
+            plot_results.get("success_rate", 0) == 1.0
+        ), "Should have 100% success rate"
+        assert (
+            plot_results.get("total_size_bytes", 0) > 0
+        ), "Plot files should have content"
+        assert (
+            plot_results.get("average_file_size", 0) > 1000
+        ), "Plot files should be reasonably sized (>1KB)"
+
         # Validate no errors occurred
         errors = plot_results.get("errors", [])
         assert len(errors) == 0, f"Unexpected errors during plot creation: {errors}"
@@ -683,15 +718,15 @@ results
     ):
         """
         Test error handling for invalid plot operations.
-        
+
         Given: Invalid plot operations and error conditions
         When: Attempting to create plots with errors
         Then: Should handle errors gracefully without crashing
-        
+
         Args:
             server_ready: Server readiness fixture
             plot_timeout: Timeout for plot operations
-            
+
         Example:
             Tests error conditions like:
             - Invalid directory paths
@@ -798,33 +833,41 @@ results["crash_rate"] = results["unexpected_crashes"] / results["total_tests"] i
 
 results
         """
-        
+
         # When: Testing error scenarios
         result = execute_python_code(code, timeout=plot_timeout)
-        
+
         # Then: Validate API contract and error handling
         validate_api_contract(result)
         # Note: We expect this to succeed even if individual plot operations fail
-        assert result["success"], f"Error handling test framework failed: {result.get('error')}"
-        
+        assert result[
+            "success"
+        ], f"Error handling test framework failed: {result.get('error')}"
+
         error_results = result["data"]["result"]
         assert isinstance(error_results, dict), "Results should be a dictionary"
-        
+
         # Validate error handling behavior
         error_tests = error_results.get("error_tests", [])
         assert len(error_tests) >= 3, "Should have tested multiple error scenarios"
-        
+
         # System should handle errors gracefully (no crashes)
         crash_rate = error_results.get("crash_rate", 1.0)
-        assert crash_rate == 0.0, f"System should not crash on errors, crash rate: {crash_rate}"
-        
+        assert (
+            crash_rate == 0.0
+        ), f"System should not crash on errors, crash rate: {crash_rate}"
+
         # Most errors should be handled gracefully
         graceful_rate = error_results.get("graceful_handling_rate", 0.0)
-        assert graceful_rate >= 0.8, f"Should handle at least 80% of errors gracefully, got {graceful_rate}"
-        
+        assert (
+            graceful_rate >= 0.8
+        ), f"Should handle at least 80% of errors gracefully, got {graceful_rate}"
+
         # Validate individual error test results
         for test in error_tests:
-            assert test.get("handled_gracefully", False), f"Error test '{test.get('name')}' was not handled gracefully"
+            assert test.get(
+                "handled_gracefully", False
+            ), f"Error test '{test.get('name')}' was not handled gracefully"
 
 
 if __name__ == "__main__":

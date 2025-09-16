@@ -413,6 +413,155 @@ print(f"MESSAGE: {message}")
   }
 
   /**
+   * Reset the Pyodide environment by clearing user-defined variables
+   * 
+   * This method clears all user-defined variables from the Python environment
+   * while preserving system modules and built-in functions. It uses garbage
+   * collection to free up memory after variable deletion.
+   * 
+   * @returns {Promise<Object>} Reset result following API contract
+   *   - success: boolean indicating if reset completed successfully
+   *   - data: object containing reset details (stdout, stderr, result)
+   *   - error: string with error message if failed, null if successful
+   *   - meta: object with timestamp
+   * 
+   * @example
+   * const result = await pyodideService.reset();
+   * // Returns: {
+   * //   success: true,
+   * //   data: { 
+   * //     result: "Environment reset complete",
+   * //     stdout: "Cleared 5 user variables...",
+   * //     stderr: null
+   * //   },
+   * //   error: null,
+   * //   meta: { timestamp: "2025-09-16T00:15:00.000Z" }
+   * // }
+   */
+  async reset() {
+    await this.initialize();
+    
+    if (!this.isReady) {
+      throw new Error('Pyodide service not ready');
+    }
+
+    try {
+      logger.info('Resetting Pyodide environment', {
+        component: 'pyodide-service',
+        action: 'reset'
+      });
+
+      // Use robust Python code for resetting environment
+      const resetCode = `import gc
+import sys
+
+# Initialize counters
+cleared_count = 0
+errors = []
+
+try:
+    # Get current globals before we start clearing
+    current_globals = list(globals().keys())
+
+    # Define essential variables to preserve (modules and built-ins)
+    preserved_vars = {
+        '__name__', '__doc__', '__package__', '__loader__', '__spec__',
+        '__annotations__', '__builtins__',
+        # Standard library modules
+        'sys', 'os', 'json', 'io', 'gc', 'time', 'math', 'random',
+        'pathlib', 'Path',
+        # Core data science packages
+        'numpy', 'np', 'pandas', 'pd', 'matplotlib', 'plt', 
+        'seaborn', 'sns', 'sklearn', 'scipy',
+        # Pyodide specific
+        'pyodide', 'micropip', 'js',
+        # Internal variables for this reset operation
+        'cleared_count', 'errors', 'current_globals', 'preserved_vars'
+    }
+
+    # Clear user-defined variables with robust error handling
+    for var_name in current_globals:
+        if not var_name.startswith('_') and var_name not in preserved_vars:
+            try:
+                # First check if variable still exists
+                if var_name in globals():
+                    del globals()[var_name]
+                    cleared_count += 1
+            except (KeyError, AttributeError, NameError):
+                # Variable already deleted or doesn't exist
+                pass
+            except Exception as e:
+                # Log other errors but continue
+                errors.append(f"Could not delete {var_name}: {str(e)}")
+
+    # Force garbage collection
+    gc.collect()
+
+    # Report results
+    result_message = f"Environment reset complete. Cleared {cleared_count} user variables."
+    if errors:
+        result_message += f" {len(errors)} variables could not be cleared."
+
+    print(result_message)
+    
+except Exception as e:
+    print(f"Reset operation failed: {str(e)}")
+    # Even if there were issues, try garbage collection
+    try:
+        gc.collect()
+        print("Garbage collection completed despite errors.")
+    except:
+        pass`;
+
+      const result = await this.executeCode(resetCode, {}, 10000);
+      
+      if (!result.success) {
+        logger.error('Failed to reset Pyodide environment', {
+          component: 'pyodide-service',
+          action: 'reset',
+          error: result.error
+        });
+        
+        return {
+          success: false,
+          data: null,
+          error: `Reset failed: ${result.error}`,
+          meta: { timestamp: new Date().toISOString() }
+        };
+      }
+
+      logger.info('Pyodide environment reset successfully', {
+        component: 'pyodide-service',
+        action: 'reset',
+        output: result.stdout
+      });
+
+        return {
+          success: true,
+          data: {
+            result: 'Pyodide environment reset successfully',
+            stdout: result.stdout || '',
+            stderr: result.stderr || null
+          },
+          error: null,
+          meta: { timestamp: new Date().toISOString() }
+        };    } catch (error) {
+      logger.error('Failed to reset Pyodide environment', {
+        component: 'pyodide-service',
+        action: 'reset',
+        error: error.message
+      });
+      
+      return {
+        success: false,
+        data: null,
+        error: `Reset failed: ${error.message}`,
+        meta: { timestamp: new Date().toISOString() }
+      };
+    }
+  }
+
+  /**
    * Shutdown the service and cleanup resources
    */
   async shutdown() {

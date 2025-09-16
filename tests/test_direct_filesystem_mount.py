@@ -1508,7 +1508,7 @@ with open(text_file, "w") as f:
 results.append({{"type": "text", "path": text_file, "created": True}})
 
 # 2. Create a JSON file
-json_file = f"/plots/seaborn/data_{timestamp}.json"
+json_file = f"/home/pyodide/plots/seaborn/data_{timestamp}.json"
 with open(json_file, "w") as f:
     json.dump({{"test": "data", "timestamp": "{timestamp}"}}, f)
 results.append({{"type": "json", "path": json_file, "created": True}})

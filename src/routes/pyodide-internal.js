@@ -312,9 +312,25 @@ router.post('/clear-all-files', async (req, res) => {
       const files = fs.readdirSync(UPLOAD_DIR);
       for (const file of files) {
         const filePath = path.join(UPLOAD_DIR, file);
-        if (fs.statSync(filePath).isFile()) {
-          fs.unlinkSync(filePath);
-          uploadedFilesCleared++;
+        try {
+          const stats = fs.statSync(filePath);
+          if (stats.isFile()) {
+            fs.unlinkSync(filePath);
+            uploadedFilesCleared++;
+          } else if (stats.isDirectory()) {
+            // Remove directory and its contents
+            fs.rmSync(filePath, { recursive: true, force: true });
+            uploadedFilesCleared++;
+          } else {
+            // Handle symlinks, junctions, and other file types
+            fs.unlinkSync(filePath);
+            uploadedFilesCleared++;
+          }
+        } catch (error) {
+          logger.warn('Failed to delete file/directory', {
+            file: filePath,
+            error: error.message
+          });
         }
       }
     }

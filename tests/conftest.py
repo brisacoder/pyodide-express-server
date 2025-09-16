@@ -68,8 +68,8 @@ class Config:
     
     # File and directory settings
     PATHS = {
-        "plots_dir": "/plots/matplotlib",
-        "uploads_dir": "/uploads",
+        "plots_dir": "/home/pyodide/plots/matplotlib",
+        "uploads_dir": "/home/pyodide/uploads",
         "temp_dir": "/tmp",
         "test_data_dir": "/test_data",
     }
