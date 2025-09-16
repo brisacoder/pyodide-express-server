@@ -54,13 +54,14 @@ LARGE_OUTPUT_LINE_COUNT: int = 1000
 OUTPUT_SIZE_LIMIT_BYTES: int = 1_000_000
 
 # File operation constants
-PNG_HEADER_BYTES: bytes = b'\x89PNG\r\n\x1a\n'
+PNG_HEADER_BYTES: bytes = b"\x89PNG\r\n\x1a\n"
 MINIMUM_PNG_SIZE_BYTES: int = 1000
 
 
 # =============================================================================
 # PYTEST FIXTURES
 # =============================================================================
+
 
 @pytest.fixture(scope="session")
 def api_client():
@@ -117,7 +118,7 @@ def project_directories():
     project_root = Path(__file__).parent.parent
     directories = {
         "plots": project_root / "plots" / "matplotlib",
-        "seaborn": project_root / "plots" / "seaborn"
+        "seaborn": project_root / "plots" / "seaborn",
     }
 
     # Ensure directories exist
@@ -131,10 +132,11 @@ def project_directories():
 # HELPER FUNCTIONS
 # =============================================================================
 
+
 def execute_python_code_via_api(
     code: str,
     timeout_ms: int = PYTHON_EXECUTION_TIMEOUT_MS,
-    api_client: requests.Session = None
+    api_client: requests.Session = None,
 ) -> Dict[str, Any]:
     """
     Execute Python code using the /api/execute-raw endpoint.
@@ -167,11 +169,12 @@ def execute_python_code_via_api(
         f"{API_BASE_URL}{EXECUTE_RAW_ENDPOINT}",
         data=code,
         headers={"Content-Type": "text/plain"},
-        timeout=HTTP_REQUEST_TIMEOUT_SECONDS
+        timeout=HTTP_REQUEST_TIMEOUT_SECONDS,
     )
 
-    assert response.status_code == 200, \
-        f"API request failed with status {response.status_code}: {response.text}"
+    assert (
+        response.status_code == 200
+    ), f"API request failed with status {response.status_code}: {response.text}"
 
     result = response.json()
 
@@ -193,7 +196,9 @@ def execute_python_code_via_api(
         assert "executionTime" in result["data"], "data must contain executionTime"
     else:
         assert result["data"] is None, "data must be null when success is false"
-        assert result["error"] is not None, "error must not be null when success is false"
+        assert (
+            result["error"] is not None
+        ), "error must not be null when success is false"
 
     return result
 
@@ -201,6 +206,7 @@ def execute_python_code_via_api(
 # =============================================================================
 # TEST CLASS
 # =============================================================================
+
 
 class TestFilesystemOperations:
     """
@@ -224,10 +230,7 @@ class TestFilesystemOperations:
     # =========================================================================
 
     def test_given_pyodide_environment_when_creating_simple_text_file_then_file_exists_in_virtual_filesystem(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test basic text file creation in Pyodide's virtual filesystem.
@@ -245,10 +248,12 @@ class TestFilesystemOperations:
         """
         # Given: Generate unique filename to avoid conflicts
         test_filename = f"test_simple_file_{unique_timestamp}.txt"
-        expected_content = "Hello from Pyodide virtual filesystem! Test content for file operations."
+        expected_content = (
+            "Hello from Pyodide virtual filesystem! Test content for file operations."
+        )
 
         # When: Python creates file in virtual filesystem
-        create_file_code = f'''
+        create_file_code = f"""
 from pathlib import Path
 import json
 
@@ -269,12 +274,14 @@ result = {{
 }}
 
 print(json.dumps(result))
-'''
+"""
 
         response = execute_python_code_via_api(create_file_code, api_client=api_client)
 
         # Then: Verify file creation was successful
-        assert response["success"] is True, f"File creation failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"File creation failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         # Parse creation result from stdout
@@ -286,11 +293,12 @@ print(json.dumps(result))
         # Verify file exists in virtual filesystem
         assert creation_result["file_exists"] is True, "File should exist in VFS"
         assert creation_result["file_size"] > 0, "File should have content"
-        assert creation_result["file_size"] == creation_result["content_length"], \
-            "File size should match content length"
+        assert (
+            creation_result["file_size"] == creation_result["content_length"]
+        ), "File size should match content length"
 
         # Then: Verify file content can be read back
-        read_file_code = f'''
+        read_file_code = f"""
 from pathlib import Path
 import json
 
@@ -308,9 +316,11 @@ else:
     result = {{"file_exists": False, "error": "File not found"}}
 
 print(json.dumps(result))
-'''
+"""
 
-        read_response = execute_python_code_via_api(read_file_code, api_client=api_client)
+        read_response = execute_python_code_via_api(
+            read_file_code, api_client=api_client
+        )
         assert read_response["success"] is True, "File read operation should succeed"
 
         read_output = read_response["data"]["stdout"]
@@ -320,10 +330,7 @@ print(json.dumps(result))
         assert read_result["content_matches"] is True, "Content should match exactly"
 
     def test_given_matplotlib_when_creating_plot_then_png_file_exists_in_virtual_filesystem(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test matplotlib plot creation and persistence in virtual filesystem.
@@ -343,7 +350,7 @@ print(json.dumps(result))
         plot_filename = f"test_matplotlib_plot_{unique_timestamp}.png"
 
         # When: Create matplotlib plot in virtual filesystem
-        create_plot_code = f'''
+        create_plot_code = f"""
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
@@ -381,16 +388,18 @@ result = {{
 }}
 
 print(json.dumps(result))
-'''
+"""
 
         response = execute_python_code_via_api(
             create_plot_code,
             timeout_ms=MATPLOTLIB_EXECUTION_TIMEOUT_MS,
-            api_client=api_client
+            api_client=api_client,
         )
 
         # Then: Verify plot creation was successful
-        assert response["success"] is True, f"Plot creation failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Plot creation failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         # Parse plot creation result
@@ -401,11 +410,12 @@ print(json.dumps(result))
 
         # Verify plot file exists in virtual filesystem
         assert plot_result["file_exists"] is True, "Plot file should exist in VFS"
-        assert plot_result["file_size"] > MINIMUM_PNG_SIZE_BYTES, \
-            f"Plot file should be reasonably sized (>{MINIMUM_PNG_SIZE_BYTES} bytes)"
+        assert (
+            plot_result["file_size"] > MINIMUM_PNG_SIZE_BYTES
+        ), f"Plot file should be reasonably sized (>{MINIMUM_PNG_SIZE_BYTES} bytes)"
 
         # Then: Verify PNG file format and properties
-        verify_png_code = f'''
+        verify_png_code = f"""
 from pathlib import Path
 import json
 
@@ -427,16 +437,20 @@ else:
     result = {{"file_exists": False, "error": "Plot file not found"}}
 
 print(json.dumps(result))
-'''
+"""
 
-        verify_response = execute_python_code_via_api(verify_png_code, api_client=api_client)
+        verify_response = execute_python_code_via_api(
+            verify_png_code, api_client=api_client
+        )
         assert verify_response["success"] is True, "PNG verification should succeed"
 
         verify_output = verify_response["data"]["stdout"]
         verify_result = json.loads(verify_output.strip())
 
         assert verify_result["file_exists"] is True, "Plot file should still exist"
-        assert verify_result["is_valid_png"] is True, "File should have valid PNG header"
+        assert (
+            verify_result["is_valid_png"] is True
+        ), "File should have valid PNG header"
         assert verify_result["file_readable"] is True, "PNG file should be readable"
 
     # =========================================================================
@@ -444,10 +458,7 @@ print(json.dumps(result))
     # =========================================================================
 
     def test_given_virtual_filesystem_when_creating_nested_directory_structure_then_all_directories_and_files_exist(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test nested directory creation and file placement in virtual filesystem.
@@ -468,13 +479,17 @@ print(json.dumps(result))
 
         directory_structure = {
             "level1/data.txt": "Level 1 data file content",
-            "level1/level2/config.json": {"setting": "test_value", "nested": True, "id": unique_timestamp},
+            "level1/level2/config.json": {
+                "setting": "test_value",
+                "nested": True,
+                "id": unique_timestamp,
+            },
             "level1/level2/level3/deep_file.txt": "Deep nested file content - third level",
-            "level1/analysis/results.csv": "name,value\ntest1,100\ntest2,200"
+            "level1/analysis/results.csv": "name,value\ntest1,100\ntest2,200",
         }
 
         # When: Create complete nested structure in virtual filesystem
-        create_structure_code = f'''
+        create_structure_code = f"""
 import json
 from pathlib import Path
 
@@ -521,12 +536,16 @@ summary = {{
 }}
 
 print(json.dumps(summary))
-'''
+"""
 
-        response = execute_python_code_via_api(create_structure_code, api_client=api_client)
+        response = execute_python_code_via_api(
+            create_structure_code, api_client=api_client
+        )
 
         # Then: Verify directory structure creation
-        assert response["success"] is True, f"Structure creation failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Structure creation failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         structure_output = response["data"]["stdout"]
@@ -534,16 +553,24 @@ print(json.dumps(summary))
 
         # Verify all files were created successfully
         assert structure_result["total_files"] == 4, "Should attempt to create 4 files"
-        assert structure_result["successful_files"] == 4, "All files should be created successfully"
+        assert (
+            structure_result["successful_files"] == 4
+        ), "All files should be created successfully"
 
         # Verify each file exists and has correct properties
         for file_info in structure_result["files"]:
-            assert file_info["exists"] is True, f"File {file_info['relative_path']} should exist"
-            assert file_info["parent_exists"] is True, f"Parent directory should exist for {file_info['relative_path']}"
-            assert file_info["size"] > 0, f"File {file_info['relative_path']} should have content"
+            assert (
+                file_info["exists"] is True
+            ), f"File {file_info['relative_path']} should exist"
+            assert (
+                file_info["parent_exists"] is True
+            ), f"Parent directory should exist for {file_info['relative_path']}"
+            assert (
+                file_info["size"] > 0
+            ), f"File {file_info['relative_path']} should have content"
 
         # Then: Verify content integrity of created files
-        verify_content_code = f'''
+        verify_content_code = f"""
 import json
 from pathlib import Path
 
@@ -583,30 +610,39 @@ if deep_file.exists():
     }}
 
 print(json.dumps(content_verification))
-'''
+"""
 
-        verify_response = execute_python_code_via_api(verify_content_code, api_client=api_client)
+        verify_response = execute_python_code_via_api(
+            verify_content_code, api_client=api_client
+        )
         assert verify_response["success"] is True, "Content verification should succeed"
 
         verify_output = verify_response["data"]["stdout"]
         verify_result = json.loads(verify_output.strip())
 
         # Verify content integrity
-        assert verify_result["text_file"]["content_matches"] is True, "Text file content should match"
-        assert verify_result["json_file"]["content_matches"] is True, "JSON file content should match"
-        assert verify_result["json_file"]["has_expected_keys"] is True, "JSON should have all expected keys"
-        assert verify_result["deep_file"]["content_matches"] is True, "Deep nested file content should match"
-        assert verify_result["deep_file"]["directory_depth"] >= 3, "Deep file should be at least 3 levels nested"
+        assert (
+            verify_result["text_file"]["content_matches"] is True
+        ), "Text file content should match"
+        assert (
+            verify_result["json_file"]["content_matches"] is True
+        ), "JSON file content should match"
+        assert (
+            verify_result["json_file"]["has_expected_keys"] is True
+        ), "JSON should have all expected keys"
+        assert (
+            verify_result["deep_file"]["content_matches"] is True
+        ), "Deep nested file content should match"
+        assert (
+            verify_result["deep_file"]["directory_depth"] >= 3
+        ), "Deep file should be at least 3 levels nested"
 
     # =========================================================================
     # DATA SCIENCE INTEGRATION TESTS
     # =========================================================================
 
     def test_given_pandas_dataframe_when_saving_and_loading_csv_then_data_preserved_correctly(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test pandas DataFrame CSV operations in virtual filesystem.
@@ -626,7 +662,7 @@ print(json.dumps(content_verification))
         csv_filename = f"pandas_test_{unique_timestamp}.csv"
 
         # When: Create and save DataFrame, then read it back
-        pandas_operations_code = f'''
+        pandas_operations_code = f"""
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -691,12 +727,16 @@ else:
     }}
 
 print(json.dumps(result))
-'''
+"""
 
-        response = execute_python_code_via_api(pandas_operations_code, api_client=api_client)
+        response = execute_python_code_via_api(
+            pandas_operations_code, api_client=api_client
+        )
 
         # Then: Verify pandas operations were successful
-        assert response["success"] is True, f"Pandas operations failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Pandas operations failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         pandas_output = response["data"]["stdout"]
@@ -705,24 +745,36 @@ print(json.dumps(result))
         # Verify CSV file operations
         assert pandas_result["file_exists"] is True, "CSV file should be created"
         assert pandas_result["file_size"] > 0, "CSV file should have content"
-        assert pandas_result["original_shape"] == [5, 5], "Original DataFrame should have 5 rows, 5 columns"
-        assert pandas_result["loaded_shape"] == [5, 5], "Loaded DataFrame should maintain shape"
-        assert pandas_result["columns_match"] is True, "Column names should be preserved"
-        assert pandas_result["row_count_matches"] is True, "Row count should be preserved"
-        assert pandas_result["data_preserved_exactly"] is True, "All data should be preserved exactly"
+        assert pandas_result["original_shape"] == [
+            5,
+            5,
+        ], "Original DataFrame should have 5 rows, 5 columns"
+        assert pandas_result["loaded_shape"] == [
+            5,
+            5,
+        ], "Loaded DataFrame should maintain shape"
+        assert (
+            pandas_result["columns_match"] is True
+        ), "Column names should be preserved"
+        assert (
+            pandas_result["row_count_matches"] is True
+        ), "Row count should be preserved"
+        assert (
+            pandas_result["data_preserved_exactly"] is True
+        ), "All data should be preserved exactly"
 
         # Verify specific column data preservation
         for column, comparison in pandas_result["sample_comparison"].items():
-            assert comparison["values_match"] is True, f"Values in column '{column}' should match exactly"
+            assert (
+                comparison["values_match"] is True
+            ), f"Values in column '{column}' should match exactly"
 
     # =========================================================================
     # ERROR HANDLING TESTS
     # =========================================================================
 
     def test_given_invalid_python_code_when_executing_then_proper_error_response_returned(
-        self,
-        api_client,
-        unique_timestamp
+        self, api_client, unique_timestamp
     ):
         """
         Test error handling for various types of invalid Python code.
@@ -741,56 +793,78 @@ print(json.dumps(result))
         error_test_cases = [
             {
                 "name": "syntax_error",
-                "code": '''
+                "code": """
 def broken_function(
     print("Missing closing parenthesis")
-                ''',
+                """,
                 "expected_error_keywords": [
-                    "SyntaxError", "syntax", "was never closed",
-                    "never closed", "PythonError", "invalid syntax"
-                ]
+                    "SyntaxError",
+                    "syntax",
+                    "was never closed",
+                    "never closed",
+                    "PythonError",
+                    "invalid syntax",
+                ],
             },
             {
                 "name": "runtime_error_division_by_zero",
-                "code": '''
+                "code": """
 x = 10
 y = 0
 result = x / y
 print(f"Result: {result}")
-                ''',
+                """,
                 "expected_error_keywords": [
-                    "ZeroDivisionError", "division", "PythonError", "zero"
-                ]
+                    "ZeroDivisionError",
+                    "division",
+                    "PythonError",
+                    "zero",
+                ],
             },
             {
                 "name": "import_error_nonexistent_module",
-                "code": '''
+                "code": """
 import this_module_definitely_does_not_exist_anywhere
 print("Should not reach this line")
-                ''',
+                """,
                 "expected_error_keywords": [
-                    "ModuleNotFoundError", "No module", "import", "PythonError"
-                ]
+                    "ModuleNotFoundError",
+                    "No module",
+                    "import",
+                    "PythonError",
+                ],
             },
             {
                 "name": "name_error_undefined_variable",
-                "code": '''
+                "code": """
 print(f"Value of undefined variable: {undefined_variable_name}")
-                ''',
-                "expected_error_keywords": ["NameError", "not defined", "PythonError"]
-            }
+                """,
+                "expected_error_keywords": ["NameError", "not defined", "PythonError"],
+            },
         ]
 
         for test_case in error_test_cases:
             # When: Execute invalid code
-            response = execute_python_code_via_api(test_case["code"], api_client=api_client)
+            response = execute_python_code_via_api(
+                test_case["code"], api_client=api_client
+            )
 
             # Then: Verify error response follows API contract
-            assert response["success"] is False, f"{test_case['name']}: Should fail for invalid code"
-            assert response["data"] is None, f"{test_case['name']}: Data should be None on error"
-            assert response["error"] is not None, f"{test_case['name']}: Error message should be present"
-            assert "meta" in response, f"{test_case['name']}: Meta field should be present"
-            assert "timestamp" in response["meta"], f"{test_case['name']}: Timestamp should be in meta"
+            assert (
+                response["success"] is False
+            ), f"{test_case['name']}: Should fail for invalid code"
+            assert (
+                response["data"] is None
+            ), f"{test_case['name']}: Data should be None on error"
+            assert (
+                response["error"] is not None
+            ), f"{test_case['name']}: Error message should be present"
+            assert (
+                "meta" in response
+            ), f"{test_case['name']}: Meta field should be present"
+            assert (
+                "timestamp" in response["meta"]
+            ), f"{test_case['name']}: Timestamp should be in meta"
 
             # Verify error message contains expected keywords
             error_message = response["error"].lower()
@@ -798,18 +872,17 @@ print(f"Value of undefined variable: {undefined_variable_name}")
                 keyword.lower() in error_message
                 for keyword in test_case["expected_error_keywords"]
             )
-            assert found_expected_keyword, \
-                f"{test_case['name']}: Error message should contain one of " \
+            assert found_expected_keyword, (
+                f"{test_case['name']}: Error message should contain one of "
                 f"{test_case['expected_error_keywords']}, got: {response['error']}"
+            )
 
     # =========================================================================
     # PERFORMANCE AND EDGE CASE TESTS
     # =========================================================================
 
     def test_given_large_output_generation_when_executing_then_handled_gracefully_without_server_issues(
-        self,
-        api_client,
-        unique_timestamp
+        self, api_client, unique_timestamp
     ):
         """
         Test handling of large output from Python code execution.
@@ -825,7 +898,7 @@ print(f"Value of undefined variable: {undefined_variable_name}")
             unique_timestamp: Unique identifier for test isolation
         """
         # Given: Code that generates large but controlled output
-        large_output_code = f'''
+        large_output_code = f"""
 import sys
 
 # Generate substantial output but within reasonable limits
@@ -839,7 +912,7 @@ for i in range({LARGE_OUTPUT_LINE_COUNT}):
 print(f"\\nSUMMARY: Generated {{len(output_lines)}} lines of output")
 print(f"Test ID: {unique_timestamp}")
 print("Large output test completed successfully")
-'''
+"""
 
         # When: Execute code that generates large output
         response = execute_python_code_via_api(large_output_code, api_client=api_client)
@@ -850,24 +923,24 @@ print("Large output test completed successfully")
 
         stdout_content = response["data"]["stdout"]
         assert len(stdout_content) > 0, "Should capture generated output"
-        assert "Large output test completed successfully" in stdout_content, \
-            "Should include completion message"
+        assert (
+            "Large output test completed successfully" in stdout_content
+        ), "Should include completion message"
         assert unique_timestamp in stdout_content, "Should include test identifier"
 
         # Verify output is within reasonable limits (not truncated unexpectedly)
-        assert len(stdout_content) < OUTPUT_SIZE_LIMIT_BYTES, \
-            "Output should be within reasonable size limits"
+        assert (
+            len(stdout_content) < OUTPUT_SIZE_LIMIT_BYTES
+        ), "Output should be within reasonable size limits"
 
         # Verify output contains expected number of lines
         line_count = stdout_content.count("Output line")
-        assert line_count == LARGE_OUTPUT_LINE_COUNT, \
-            f"Should contain {LARGE_OUTPUT_LINE_COUNT} output lines, found {line_count}"
+        assert (
+            line_count == LARGE_OUTPUT_LINE_COUNT
+        ), f"Should contain {LARGE_OUTPUT_LINE_COUNT} output lines, found {line_count}"
 
     def test_given_file_overwrite_operations_when_updating_existing_files_then_content_updated_correctly(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test file overwriting behavior in virtual filesystem.
@@ -887,7 +960,7 @@ print("Large output test completed successfully")
         test_filename = f"overwrite_test_{unique_timestamp}.txt"
 
         # When: Perform multiple overwrite operations
-        overwrite_operations_code = f'''
+        overwrite_operations_code = f"""
 from pathlib import Path
 import json
 
@@ -939,27 +1012,42 @@ result = {{
 }}
 
 print(json.dumps(result))
-'''
+"""
 
-        response = execute_python_code_via_api(overwrite_operations_code, api_client=api_client)
+        response = execute_python_code_via_api(
+            overwrite_operations_code, api_client=api_client
+        )
 
         # Then: Verify overwrite operations were successful
-        assert response["success"] is True, f"Overwrite operations failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Overwrite operations failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         overwrite_output = response["data"]["stdout"]
         import json as json_module
+
         overwrite_result = json_module.loads(overwrite_output.strip())
 
         # Verify all operations completed
-        assert overwrite_result["operations_completed"] == 3, "Should complete 3 operations"
-        assert overwrite_result["file_exists"] is True, "File should exist after all operations"
-        assert overwrite_result["final_content_matches"] is True, "Final content should match last write"
+        assert (
+            overwrite_result["operations_completed"] == 3
+        ), "Should complete 3 operations"
+        assert (
+            overwrite_result["file_exists"] is True
+        ), "File should exist after all operations"
+        assert (
+            overwrite_result["final_content_matches"] is True
+        ), "Final content should match last write"
 
         # Verify each operation was successful
         for operation in overwrite_result["operations"]:
-            assert operation["exists"] is True, f"File should exist after {operation['operation']}"
-            assert operation["size"] > 0, f"File should have content after {operation['operation']}"
+            assert (
+                operation["exists"] is True
+            ), f"File should exist after {operation['operation']}"
+            assert (
+                operation["size"] > 0
+            ), f"File should have content after {operation['operation']}"
 
         # Verify size changes appropriately
         sizes = [op["size"] for op in overwrite_result["operations"]]
@@ -967,10 +1055,7 @@ print(json.dumps(result))
         assert sizes[2] < sizes[1], "Third version should be smaller than second"
 
     def test_given_multiple_file_operations_when_creating_files_then_all_exist_in_virtual_filesystem(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test multiple file creation operations in VFS.
@@ -990,11 +1075,11 @@ print(json.dumps(result))
         test_files = [
             f"multi_test_{unique_timestamp}_1.txt",
             f"multi_test_{unique_timestamp}_2.json",
-            f"multi_test_{unique_timestamp}_3.csv"
+            f"multi_test_{unique_timestamp}_3.csv",
         ]
 
         # When: Create multiple files with different content
-        code = f'''
+        code = f"""
 import json
 import csv
 from pathlib import Path
@@ -1052,30 +1137,41 @@ summary = {{
 }}
 
 print(json.dumps(summary))
-'''
+"""
 
         response = execute_python_code_via_api(code, api_client=api_client)
 
         # Then: Verify multiple file creation
-        assert response["success"] is True, f"Multiple file creation failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Multiple file creation failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         creation_output = response["data"]["stdout"]
         import json as json_module
+
         creation_result = json_module.loads(creation_output.strip())
 
         # Verify all files were created successfully
         assert creation_result["total_files"] == 3, "Should attempt to create 3 files"
-        assert creation_result["successful_files"] == 3, "All files should be created successfully"
+        assert (
+            creation_result["successful_files"] == 3
+        ), "All files should be created successfully"
 
         # Verify each file
         for file_result in creation_result["results"]:
-            assert file_result["exists"] is True, f"File {file_result['filename']} should exist"
-            assert file_result["size"] > 0, f"File {file_result['filename']} should have content"
-            assert file_result["readable"] is True, f"File {file_result['filename']} should be readable"
+            assert (
+                file_result["exists"] is True
+            ), f"File {file_result['filename']} should exist"
+            assert (
+                file_result["size"] > 0
+            ), f"File {file_result['filename']} should have content"
+            assert (
+                file_result["readable"] is True
+            ), f"File {file_result['filename']} should be readable"
 
         # When: Create multiple files with different content
-        code = f'''
+        code = f"""
 import json
 import csv
 from pathlib import Path
@@ -1140,29 +1236,38 @@ summary = {{
 }}
 
 print(json.dumps(summary))
-'''
+"""
 
         response = execute_python_code_via_api(code, api_client=api_client)
 
         # Then: Verify multiple file creation
-        assert response["success"] is True, f"Multiple file creation failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Multiple file creation failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         creation_output = response["data"]["stdout"]
         import json as json_module
+
         creation_result = json_module.loads(creation_output.strip())
 
         # Verify all files were created successfully
         assert creation_result["total_files"] == 3, "Should attempt to create 3 files"
-        assert creation_result["successful_files"] == 3, "All files should be created successfully"
+        assert (
+            creation_result["successful_files"] == 3
+        ), "All files should be created successfully"
 
         # Verify each file
         for file_result in creation_result["files"]:
-            assert file_result["exists"] is True, f"File {file_result['filename']} should exist"
-            assert file_result["size"] > 0, f"File {file_result['filename']} should have content"
+            assert (
+                file_result["exists"] is True
+            ), f"File {file_result['filename']} should exist"
+            assert (
+                file_result["size"] > 0
+            ), f"File {file_result['filename']} should have content"
 
         # Then: Verify each file exists and has correct content in VFS
-        verify_code = f'''
+        verify_code = f"""
 import json
 import csv
 from pathlib import Path
@@ -1202,34 +1307,44 @@ if csv_path.exists():
     }}
 
 print(json.dumps(results))
-'''
+"""
 
-        verify_response = execute_python_code_via_api(verify_code, api_client=api_client)
+        verify_response = execute_python_code_via_api(
+            verify_code, api_client=api_client
+        )
         assert verify_response["success"] is True, "Verification should succeed"
 
         verify_output = verify_response["data"]["stdout"]
         import json as json_module
+
         verify_results = json_module.loads(verify_output.strip())
 
         # Verify text file
         assert verify_results["text_file"]["exists"] is True, "Text file should exist"
-        assert verify_results["text_file"]["has_expected_content"] is True, "Text content should match"
+        assert (
+            verify_results["text_file"]["has_expected_content"] is True
+        ), "Text content should match"
 
         # Verify JSON file
         assert verify_results["json_file"]["exists"] is True, "JSON file should exist"
-        assert verify_results["json_file"]["valid_structure"] is True, "JSON structure should be valid"
+        assert (
+            verify_results["json_file"]["valid_structure"] is True
+        ), "JSON structure should be valid"
 
         # Verify CSV file
         assert verify_results["csv_file"]["exists"] is True, "CSV file should exist"
-        assert verify_results["csv_file"]["has_header"] is True, "CSV should have header"
-        assert verify_results["csv_file"]["has_alice"] is True, "CSV should contain Alice row"
-        assert verify_results["csv_file"]["has_bob"] is True, "CSV should contain Bob row"
+        assert (
+            verify_results["csv_file"]["has_header"] is True
+        ), "CSV should have header"
+        assert (
+            verify_results["csv_file"]["has_alice"] is True
+        ), "CSV should contain Alice row"
+        assert (
+            verify_results["csv_file"]["has_bob"] is True
+        ), "CSV should contain Bob row"
 
     def test_given_subdirectories_when_creating_nested_files_then_structure_exists_in_vfs(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test nested directory creation and file placement in VFS.
@@ -1250,11 +1365,11 @@ print(json.dumps(results))
         nested_structure = {
             "level1/data.txt": "Level 1 data file",
             "level1/level2/config.json": {"setting": "value", "nested": True},
-            "level1/level2/level3/deep.txt": "Deep nested file content"
+            "level1/level2/level3/deep.txt": "Deep nested file content",
         }
 
         # When: Create nested directory structure
-        code = f'''
+        code = f"""
 import json
 from pathlib import Path
 
@@ -1300,12 +1415,14 @@ summary = {{
 }}
 
 print(json.dumps(summary))
-'''
+"""
 
         response = execute_python_code_via_api(code, api_client=api_client)
 
         # Then: Verify API response
-        assert response["success"] is True, f"Code execution failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Code execution failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
 
         # Parse the output
@@ -1313,13 +1430,14 @@ print(json.dumps(summary))
         assert output, "Expected output from code execution"
 
         import json
+
         summary = json.loads(output.strip())
 
         # Verify all files were created in VFS
         assert summary["files_created"] == 3, "All nested files should be created"
 
         # Then: Verify complete directory structure exists in VFS
-        verify_structure_code = f'''
+        verify_structure_code = f"""
 import json
 from pathlib import Path
 
@@ -1358,22 +1476,27 @@ summary = {{
 }}
 
 print(json.dumps(summary))
-'''
+"""
 
-        verify_response = execute_python_code_via_api(verify_structure_code, api_client=api_client)
-        assert verify_response["success"] is True, "Structure verification should succeed"
+        verify_response = execute_python_code_via_api(
+            verify_structure_code, api_client=api_client
+        )
+        assert (
+            verify_response["success"] is True
+        ), "Structure verification should succeed"
 
         verify_output = verify_response["data"]["stdout"]
         verify_summary = json.loads(verify_output.strip())
 
-        assert verify_summary["all_exist"] is True, "All files should exist in nested structure"
-        assert verify_summary["all_content_matches"] is True, "All file contents should match"
+        assert (
+            verify_summary["all_exist"] is True
+        ), "All files should exist in nested structure"
+        assert (
+            verify_summary["all_content_matches"] is True
+        ), "All file contents should match"
 
     def test_given_existing_file_when_overwriting_then_content_updated_in_vfs(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test file overwriting behavior in VFS.
@@ -1393,7 +1516,7 @@ print(json.dumps(summary))
         test_filename = f"overwrite_test_{unique_timestamp}.txt"
 
         # Create initial file in VFS
-        create_code = f'''
+        create_code = f"""
 from pathlib import Path
 import json
 
@@ -1411,13 +1534,17 @@ result = {{
 }}
 
 print(json.dumps(result))
-'''
+"""
 
-        create_response = execute_python_code_via_api(create_code, api_client=api_client)
-        assert create_response["success"] is True, "Initial file creation should succeed"
+        create_response = execute_python_code_via_api(
+            create_code, api_client=api_client
+        )
+        assert (
+            create_response["success"] is True
+        ), "Initial file creation should succeed"
 
         # When: Overwrite file from Python
-        overwrite_code = f'''
+        overwrite_code = f"""
 from pathlib import Path
 import json
 
@@ -1444,32 +1571,39 @@ result = {{
 }}
 
 print(json.dumps(result))
-'''
+"""
 
         response = execute_python_code_via_api(overwrite_code, api_client=api_client)
 
         # Then: Verify overwrite was successful
-        assert response["success"] is True, f"Overwrite operation failed: {response.get('error')}"
+        assert (
+            response["success"] is True
+        ), f"Overwrite operation failed: {response.get('error')}"
 
         output = response["data"]["stdout"]
         result = json.loads(output.strip())
 
         # Verify initial content was correct
-        assert result["initial_content"] == "Initial content before overwrite", "Initial content should match"
+        assert (
+            result["initial_content"] == "Initial content before overwrite"
+        ), "Initial content should match"
 
         # Verify file was overwritten
-        expected_new_content = "New content after overwrite\nThis replaces the original content completely"
-        assert result["new_content"] == expected_new_content, "File content should be updated"
+        expected_new_content = (
+            "New content after overwrite\nThis replaces the original content completely"
+        )
+        assert (
+            result["new_content"] == expected_new_content
+        ), "File content should be updated"
         assert result["overwrite_successful"] is True, "Overwrite should be successful"
 
         # Verify size changed
-        assert result["new_size"] > result["initial_size"], "File size should increase after overwrite"
+        assert (
+            result["new_size"] > result["initial_size"]
+        ), "File size should increase after overwrite"
 
     def test_given_files_in_vfs_when_using_extract_api_then_files_can_be_retrieved(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test file extraction via API after creation in VFS.
@@ -1487,7 +1621,7 @@ print(json.dumps(result))
         # Given: Create multiple types of files in VFS
         timestamp = str(int(time.time() * 1000))
 
-        create_files_code = f'''
+        create_files_code = f"""
 import json
 import matplotlib
 matplotlib.use('Agg')
@@ -1524,10 +1658,12 @@ plt.close()
 results.append({{"type": "plot", "path": plot_file, "created": True}})
 
 print(json.dumps({{"files_created": len(results), "files": results}}))
-'''
+"""
 
         # When: Create files in VFS
-        create_response = execute_python_code_via_api(create_files_code, api_client=api_client)
+        create_response = execute_python_code_via_api(
+            create_files_code, api_client=api_client
+        )
         assert create_response["success"] is True, "File creation should succeed"
 
         # Parse creation results
@@ -1536,16 +1672,20 @@ print(json.dumps({{"files_created": len(results), "files": results}}))
         assert creation_result["files_created"] == 3, "Should create 3 files"
 
         # Then: Use extract API to retrieve files (POST request)
-        extract_response = requests.post(f"{API_BASE_URL}/api/extract-plots", timeout=HTTP_REQUEST_TIMEOUT_SECONDS)
-        
+        extract_response = requests.post(
+            f"{API_BASE_URL}/api/extract-plots", timeout=HTTP_REQUEST_TIMEOUT_SECONDS
+        )
+
         # Note: The extract API may not be fully implemented and could return 500
         # This is expected behavior if the extractAllPlotFiles method is not available
         if extract_response.status_code == 500:
             # Skip this test if the API is not implemented
             pytest.skip("Extract API not implemented (returns 500)")
             return
-        
-        assert extract_response.status_code == 200, f"Extract API failed: {extract_response.status_code}"
+
+        assert (
+            extract_response.status_code == 200
+        ), f"Extract API failed: {extract_response.status_code}"
 
         extract_data = extract_response.json()
 
@@ -1566,15 +1706,14 @@ print(json.dumps({{"files_created": len(results), "files": results}}))
             assert "timestamp" in extract_data, "Response should have timestamp"
         else:
             # Alternative: check if files are returned in a data wrapper following standard contract
-            assert "data" in extract_data, "Response should have data field if not using extracted_files"
+            assert (
+                "data" in extract_data
+            ), "Response should have data field if not using extracted_files"
             assert "error" in extract_data, "Response should have error field"
             assert "meta" in extract_data, "Response should have meta field"
 
     def test_given_pandas_dataframe_when_saving_csv_then_readable_in_vfs(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test pandas DataFrame CSV operations in VFS.
@@ -1591,7 +1730,7 @@ print(json.dumps({{"files_created": len(results), "files": results}}))
         """
         csv_filename = f"dataframe_test_{unique_timestamp}.csv"
 
-        code = f'''
+        code = f"""
 import pandas as pd
 import json
 from pathlib import Path
@@ -1629,28 +1768,29 @@ else:
     result = {{"file_exists": False}}
 
 print(json.dumps(result))
-'''
+"""
 
         response = execute_python_code_via_api(code, api_client=api_client)
         assert response["success"] is True, "DataFrame operations should succeed"
 
         output = response["data"]["stdout"]
         import json as json_module
+
         result = json_module.loads(output.strip())
 
         # Verify CSV operations
         assert result["file_exists"] is True, "CSV file should be created"
         assert result["file_size"] > 0, "CSV file should have content"
-        assert result["original_shape"] == [4, 4], "Original DataFrame should have 4 rows, 4 columns"
+        assert result["original_shape"] == [
+            4,
+            4,
+        ], "Original DataFrame should have 4 rows, 4 columns"
         assert result["read_shape"] == [4, 4], "Read DataFrame should maintain shape"
         assert result["columns_match"] is True, "Columns should be preserved"
         assert result["data_matches"] is True, "Data should be preserved exactly"
 
     def test_given_error_in_code_when_executing_then_proper_error_response(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test error handling for invalid Python code.
@@ -1667,10 +1807,10 @@ print(json.dumps(result))
             test_file_cleanup: List to track files for cleanup
         """
         # Test 1: Syntax error
-        syntax_error_code = '''
+        syntax_error_code = """
 def broken_function(
     print("Missing closing parenthesis")
-'''
+"""
 
         response = execute_python_code_via_api(syntax_error_code, api_client=api_client)
 
@@ -1678,10 +1818,12 @@ def broken_function(
         assert response["success"] is False, "Syntax error should fail"
         assert response["data"] is None, "Data should be None on error"
         assert response["error"] is not None, "Error message should be present"
-        assert "meta" in response and "timestamp" in response["meta"], "Meta with timestamp required"
+        assert (
+            "meta" in response and "timestamp" in response["meta"]
+        ), "Meta with timestamp required"
 
         # Test 2: Runtime error
-        runtime_error_code = '''
+        runtime_error_code = """
 import json
 
 # This will cause a division by zero error
@@ -1689,35 +1831,38 @@ x = 10
 y = 0
 result = x / y
 print(json.dumps({"result": result}))
-'''
+"""
 
-        response = execute_python_code_via_api(runtime_error_code, api_client=api_client)
+        response = execute_python_code_via_api(
+            runtime_error_code, api_client=api_client
+        )
 
         assert response["success"] is False, "Runtime error should fail"
         assert response["error"] is not None, "Error message should be present"
         error_lower = response["error"].lower()
-        assert any(keyword in error_lower for keyword in ["zerodivisionerror", "division", "zero", "pythonerror"]), \
-            f"Error message should indicate division by zero, got: {response['error']}"
+        assert any(
+            keyword in error_lower
+            for keyword in ["zerodivisionerror", "division", "zero", "pythonerror"]
+        ), f"Error message should indicate division by zero, got: {response['error']}"
 
         # Test 3: Import error for non-existent module
-        import_error_code = '''
+        import_error_code = """
 import this_module_does_not_exist
 print("Should not reach here")
-'''
+"""
 
         response = execute_python_code_via_api(import_error_code, api_client=api_client)
 
         assert response["success"] is False, "Import error should fail"
         assert response["error"] is not None, "Error message should be present"
         error_msg = response["error"]
-        assert any(keyword in error_msg for keyword in ["ModuleNotFoundError", "No module", "PythonError", "import"]), \
-            f"Error message should indicate module not found, got: {response['error']}"
+        assert any(
+            keyword in error_msg
+            for keyword in ["ModuleNotFoundError", "No module", "PythonError", "import"]
+        ), f"Error message should indicate module not found, got: {response['error']}"
 
     def test_given_large_output_when_executing_then_handled_gracefully(
-        self,
-        api_client,
-        unique_timestamp,
-        test_file_cleanup
+        self, api_client, unique_timestamp, test_file_cleanup
     ):
         """
         Test handling of large output from code execution.
@@ -1732,13 +1877,13 @@ print("Should not reach here")
             unique_timestamp: Unique identifier for test isolation
             test_file_cleanup: List to track files for cleanup
         """
-        code = '''
+        code = """
 # Generate large output
 for i in range(1000):
     print(f"Line {i}: " + "x" * 100)
 
 print("\\nCompleted large output test")
-'''
+"""
 
         response = execute_python_code_via_api(code, api_client=api_client)
 

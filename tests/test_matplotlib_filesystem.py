@@ -32,13 +32,21 @@ class TestMatplotlibFilesystemIntegration:
 
     def _parse_execute_raw_response(self, response):
         """
-        Parse response from execute-raw endpoint to extract JSON from stdout.
+        Parse response from execute-raw endpoint following API contract.
 
         Args:
             response: Response object from requests
 
         Returns:
             dict: Parsed JSON result from Python code execution
+            
+        Expected API contract:
+            {
+                "success": true|false,
+                "data": {"result": "output_text"},
+                "error": null|string,
+                "meta": {"timestamp": "ISO_string"}
+            }
         """
         assert (
             response.status_code == 200
@@ -50,13 +58,13 @@ class TestMatplotlibFilesystemIntegration:
             response_data.get("success") is True
         ), f"API execution failed: {response_data}"
 
-        # Get stdout from the result
-        stdout = response_data.get("data", {}).get("result", {}).get("stdout", "")
-
-        # Parse the JSON result from stdout
-        stdout_lines = stdout.strip().split("\n")
-        json_line = next((line for line in stdout_lines if line.startswith("{")), None)
-        assert json_line is not None, f"No JSON result found in stdout: {stdout}"
+        # Get the result from data.result
+        result_text = response_data.get("data", {}).get("result", "")
+        
+        # Parse the JSON result from the output text
+        result_lines = result_text.strip().split("\n")
+        json_line = next((line for line in result_lines if line.startswith("{")), None)
+        assert json_line is not None, f"No JSON result found in output: {result_text}"
 
         return json.loads(json_line)
 
@@ -216,7 +224,7 @@ print(json.dumps(result))"""
         assert result["file_size"] > 0, "Plot file has zero size"
         assert result["plot_type"] == "direct_save_basic"
         assert result["filename"].startswith(
-            "/plots/matplotlib/"
+            "/home/pyodide/plots/matplotlib/"
         ), "File not saved in correct directory"
         assert result["filename"].endswith(".png"), "File should have .png extension"
 
@@ -338,7 +346,7 @@ print(json.dumps(result))
         assert result["data_points"] == 1000, "Incorrect data point count"
         assert result["subplot_count"] == 4, "Incorrect subplot count"
         assert result["filename"].startswith(
-            "/plots/matplotlib/"
+            "/home/pyodide/plots/matplotlib/"
         ), "File not saved in correct directory"
         assert result["filename"].endswith(".png"), "File should have .png extension"
 
@@ -533,7 +541,7 @@ print(json.dumps({{"plots": results, "total_count": len(results)}}))
             assert plot["exists"] is True, f"Plot {plot['plot_number']} was not saved"
             assert plot["size"] > 0, f"Plot {plot['plot_number']} has zero size"
             assert plot["filename"].startswith(
-                "/plots/matplotlib/"
+                "/home/pyodide/plots/matplotlib/"
             ), f"Plot {plot['plot_number']} not in correct directory"
             assert plot["filename"].endswith(
                 ".png"
