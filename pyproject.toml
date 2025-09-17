@@ -5,11 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "httpx>=0.28.1",
     "ipykernel>=6.30.1",
     "matplotlib>=3.10.6",
     "numpy>=2.3.3",
     "pandas>=2.3.2",
+    "psutil>=7.0.0",
     "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
     "pytest-mock>=3.15.0",
     "requests>=2.32.5",
 ]
@@ -42,7 +45,13 @@ markers = [
     "environment: marks tests that check environment configuration",
     "error_handling: marks tests that validate error conditions",
     "performance: marks tests that check performance characteristics",
-    "telemetry: marks tests that involve automotive telemetry data analysis"
+    "telemetry: marks tests that involve automotive telemetry data analysis",
+    "filesystem: marks tests that involve filesystem operations",
+    "virtual: marks tests that use virtual filesystem",
+    "operations: marks tests that perform file or directory operations",
+    "seaborn: marks tests that use seaborn statistical plotting",
+    "correlation: marks tests that perform correlation analysis",
+    "asyncio: marks tests as asynchronous tests using asyncio"
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

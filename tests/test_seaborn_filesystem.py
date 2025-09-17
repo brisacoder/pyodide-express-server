@@ -197,19 +197,17 @@ def seaborn_environment(
         >>> def test_example(seaborn_environment):
         ...     assert seaborn_environment['seaborn_available'] is True
     """
-    # Ensure seaborn and matplotlib are available using execute-raw endpoint
+    # Verify seaborn and required packages are available (should be global now)
     install_code = '''
-import micropip
 import sys
 
-# Install required packages
-packages_to_install = ["matplotlib", "seaborn"]
+# Verify required packages are available globally
+packages_to_verify = ["matplotlib", "seaborn", "statsmodels"]
 installation_results = {}
 
-for package in packages_to_install:
+for package in packages_to_verify:
     try:
-        await micropip.install(package)
-        # Test import to verify installation
+        # Test import to verify availability
         if package == "matplotlib":
             import matplotlib
             import matplotlib.pyplot as plt
@@ -217,6 +215,9 @@ for package in packages_to_install:
         elif package == "seaborn":
             import seaborn as sns
             installation_results[package] = {"status": "success", "version": sns.__version__}
+        elif package == "statsmodels":
+            import statsmodels
+            installation_results[package] = {"status": "success", "version": statsmodels.__version__}
         print(f"✅ {package} installed and verified successfully")
     except Exception as e:
         installation_results[package] = {"status": "failed", "error": str(e)}

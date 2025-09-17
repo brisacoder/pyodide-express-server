@@ -108,30 +108,20 @@ async function executeRaw(req, res) {
       });
     }
     // Format response according to API contract
-    // Handle both object and string results from the executor
-    let actualResult;
-    if (result.result === 'None' || result.result === 'null' || !result.result) {
-      // Use stdout if result is None/null/empty
-      actualResult = result.stdout || '';
-    } else if (typeof result.result === 'object') {
-      // If result is an object (like dict from Python), convert to JSON string for API contract
-      actualResult = JSON.stringify(result.result);
-    } else {
-      // String results (including already stringified JSON) - use as-is
-      actualResult = result.result || result.stdout || '';
-    }
+    // For plain text endpoint, pass through the result as-is (pyodide executor handles conversion)
+    let processedResult = result.result;
     
     res.json({
       success: result.success,
       data: result.success ? {
-        result: actualResult,
+        result: processedResult,
         stdout: result.stdout || '',
         stderr: result.stderr || '',
         executionTime: executionTime
       } : null,
       error: result.success ? null : result.error,
       meta: {
-        timestamp: result.timestamp || new Date().toISOString()
+        timestamp: new Date().toISOString()
       }
     });
   } catch (error) {

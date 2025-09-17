@@ -7,100 +7,8 @@ const express = require('express');
 const pyodideService = require('../services/pyodide-service');
 const { validateCode, validatePackage } = require('../middleware/validation');
 const logger = require('../utils/logger');
-const { executeCode } = require('../controllers/executeController');
 const router = express.Router();
-/**
- * @swagger
- * /api/execute:
- *   post:
- *     summary: Execute Python code
- *     description: Execute Python code in the Pyodide environment with optional context variables and custom timeout
- *     tags: [Python Execution]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/ExecuteRequest'
- *           examples:
- *             simple_calculation:
- *               summary: Simple calculation
- *               value:
- *                 code: |
- *                   result = 2 + 2
- *                   print(f"2 + 2 = {result}")
- *                   result
- *             pandas_example:
- *               summary: Pandas data analysis
- *               value:
- *                 code: |
- *                   import pandas as pd
- *                   import numpy as np
- *
- *                   # Create sample dataset
- *                   data = {
- *                       'name': ['Alice', 'Bob', 'Charlie', 'Diana'],
- *                       'age': [25, 30, 35, 28],
- *                       'score': [85, 92, 78, 96]
- *                   }
- *                   df = pd.DataFrame(data)
- *
- *                   print("Dataset:")
- *                   print(df)
- *
- *                   # Calculate statistics
- *                   stats = {
- *                       'mean_age': df['age'].mean(),
- *                       'max_score': df['score'].max(),
- *                       'correlation': df[['age', 'score']].corr().iloc[0,1]
- *                   }
- *
- *                   print(f"\nStatistics: {stats}")
- *                   stats
- *             with_context:
- *               summary: Using context variables
- *               value:
- *                 code: |
- *                   print(f"Hello {name}!")
- *                   result = value * multiplier
- *                   print(f"{value} * {multiplier} = {result}")
- *                   result
- *                 context:
- *                   name: "Alice"
- *                   value: 42
- *                   multiplier: 2
- *     responses:
- *       200:
- *         description: Code execution completed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ExecuteResponse'
- *             examples:
- *               success:
- *                 summary: Successful execution
- *                 value:
- *                   success: true
- *                   result: 4
- *                   stdout: "2 + 2 = 4\n"
- *                   stderr: ""
- *                   timestamp: "2024-01-15T10:30:00.000Z"
- *               error:
- *                 summary: Execution error
- *                 value:
- *                   success: false
- *                   error: "NameError: name 'undefined_var' is not defined"
- *                   stdout: ""
- *                   stderr: "Traceback (most recent call last)..."
- *                   timestamp: "2024-01-15T10:30:00.000Z"
- *       400:
- *         $ref: '#/components/responses/BadRequest'
- *       500:
- *         $ref: '#/components/responses/InternalError'
- *       503:
- *         $ref: '#/components/responses/ServiceUnavailable'
- */
-router.post('/execute', validateCode, executeCode);
+
 /**
  * @swagger
  * /api/install-package:
@@ -315,6 +223,85 @@ router.post('/reset', async (req, res) => {
     });
   }
 });
+
+/**
+ * @swagger
+ * /api/cleanup-memory:
+ *   post:
+ *     summary: Force memory cleanup
+ *     description: Force garbage collection and memory cleanup in all Pyodide processes
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: Memory cleanup completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         $ref: '#/components/responses/InternalError'
+ */
+router.post('/cleanup-memory', async (req, res) => {
+  try {
+    await pyodideService.forceMemoryCleanup();
+    
+    logger.info('Memory cleanup completed successfully');
+    res.json({
+      success: true,
+      data: { message: 'Memory cleanup completed' },
+      error: null,
+      meta: { timestamp: new Date().toISOString() }
+    });
+  } catch (error) {
+    logger.error('Memory cleanup endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      data: null,
+      error: error.message,
+      meta: { timestamp: new Date().toISOString() }
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/recycle-processes:
+ *   post:
+ *     summary: Force recycle all processes
+ *     description: Force terminate and restart all Pyodide processes to free memory
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: Process recycling completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       500:
+ *         $ref: '#/components/responses/InternalError'
+ */
+router.post('/recycle-processes', async (req, res) => {
+  try {
+    await pyodideService.forceRecycleProcesses();
+    
+    logger.info('Process recycling completed successfully');
+    res.json({
+      success: true,
+      data: { message: 'All processes recycled successfully' },
+      error: null,
+      meta: { timestamp: new Date().toISOString() }
+    });
+  } catch (error) {
+    logger.error('Process recycle endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      data: null,
+      error: error.message,
+      meta: { timestamp: new Date().toISOString() }
+    });
+  }
+});
+
 /**
  * @swagger
  * /api/status:

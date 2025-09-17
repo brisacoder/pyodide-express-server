@@ -293,6 +293,7 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
                     assert field in data, f"data missing '{field}': {data}"
 
                 # Validate field types
+                # For execute-raw plain text endpoint, result is always a string
                 assert isinstance(data["result"], str), f"data.result must be str: {type(data['result'])}"
                 assert isinstance(data["stdout"], str), f"data.stdout must be str: {type(data['stdout'])}"
                 assert isinstance(data["stderr"], str), f"data.stderr must be str: {type(data['stderr'])}"
@@ -697,6 +698,9 @@ class TestPythonExecution:
 
         # Then: Response should be successful
         validate_api_contract(result)
+        if not result["success"]:
+            print(f"\nMatplotlib test failed with error: {result['error']}")
+            print(f"Full response: {result}")
         assert result["success"] is True
 
         # Validate plot creation output

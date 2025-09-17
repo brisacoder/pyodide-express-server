@@ -58,8 +58,8 @@ class TestMatplotlibFilesystemIntegration:
             response_data.get("success") is True
         ), f"API execution failed: {response_data}"
 
-        # Get the result from data.result
-        result_text = response_data.get("data", {}).get("result", "")
+        # Get the result from data.stdout (where print statements go)
+        result_text = response_data.get("data", {}).get("stdout", "")
         
         # Parse the JSON result from the output text
         result_lines = result_text.strip().split("\n")

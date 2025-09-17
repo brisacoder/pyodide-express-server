@@ -17,6 +17,7 @@ import json
 from typing import Any, Dict, Optional
 
 import pytest
+import requests
 import re
 # Configuration Constants
 class TestConfig:

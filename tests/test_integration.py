@@ -73,6 +73,25 @@ def execute_python_code(code: str) -> Dict:
     return {"success": True, "result": response.text.strip()}
 
 
+def execute_python_code_full_response(code: str) -> Dict:
+    """Execute Python code and return the full API response.
+    
+    This function returns the complete API response following the standard contract:
+    - success: bool
+    - data: dict with result, stdout, stderr, executionTime
+    - error: str or None
+    - meta: dict with timestamp
+    """
+    response = requests.post(
+        f"{BASE_URL}{ENDPOINTS['execute_raw']}",
+        data=code,
+        headers={"Content-Type": "text/plain"},
+        timeout=EXECUTE_TIMEOUT
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def delete_uploaded_file(filename: str) -> None:
     """Delete an uploaded file."""
     try:
@@ -417,11 +436,24 @@ class TestExecuteRawEndpoint:
         code = "print('Hello from execute-raw!')"
 
         # WHEN: Execute via execute-raw
-        exec_result = execute_python_code(code)
+        exec_result = execute_python_code_full_response(code)
 
-        # THEN: Verify correct output
-        assert exec_result["success"]
-        assert "Hello from execute-raw!" in exec_result["result"]
+        # THEN: Verify correct output following API contract
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "data" in exec_result
+        assert "meta" in exec_result
+        assert "timestamp" in exec_result["meta"]
+        
+        # Verify data structure
+        data = exec_result["data"]
+        assert "result" in data
+        assert "stdout" in data
+        assert "stderr" in data
+        assert "executionTime" in data
+        
+        # Check the stdout contains the printed message
+        assert "Hello from execute-raw!" in data["stdout"]
 
     def test_execute_raw_with_imports(self, server, base_url):
         """
@@ -441,10 +473,23 @@ print(json.dumps(data))
         # WHEN: Execute via execute-raw
         exec_result = execute_python_code(code)
 
-        # THEN: Verify successful execution
-        assert exec_result["success"]
+        # THEN: Verify successful execution follows API contract
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "data" in exec_result
+        assert "meta" in exec_result
+        assert "timestamp" in exec_result["meta"]
+        
+        # Verify data structure
+        data = exec_result["data"]
+        assert "result" in data
+        assert "stdout" in data
+        assert "stderr" in data
+        assert "executionTime" in data
+        
+        # Parse the stdout which contains the JSON output from print()
         import json
-        result_data = json.loads(exec_result["result"])
+        result_data = json.loads(data["stdout"])
         assert "value" in result_data
         assert abs(result_data["value"] - 3.14159) < 0.001
 
@@ -464,13 +509,27 @@ print("Final line")
         # WHEN: Execute via execute-raw
         exec_result = execute_python_code(code)
 
-        # THEN: Verify all output is captured
-        assert exec_result["success"]
-        result_lines = exec_result["result"].split('\n')
-        assert "Line 1" in result_lines
-        assert "Line 2" in result_lines
-        assert "Line 3" in result_lines
-        assert "Final line" in result_lines
+        # THEN: Verify all output is captured following API contract
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "data" in exec_result
+        assert "meta" in exec_result
+        assert "timestamp" in exec_result["meta"]
+        
+        # Verify data structure
+        data = exec_result["data"]
+        assert "result" in data
+        assert "stdout" in data
+        assert "stderr" in data
+        assert "executionTime" in data
+        
+        # Check stdout contains all the printed lines
+        stdout_lines = data["stdout"].strip().split('\n')
+        assert len(stdout_lines) == 4
+        assert stdout_lines[0] == "Line 1"
+        assert stdout_lines[1] == "Line 2"
+        assert stdout_lines[2] == "Line 3"
+        assert stdout_lines[3] == "Final line"
 
 
 if __name__ == "__main__":

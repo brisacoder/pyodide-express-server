@@ -1,3 +1,7 @@
+import requests
+
+# Get the matplotlib code from test_api.py
+matplotlib_code = """
 from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')  # Use non-GUI backend
@@ -29,3 +33,15 @@ plt.close()
 
 print(f'Plot saved successfully: {plot_file}')
 print(f'File exists: {plot_file.exists()}')
+""".strip()
+
+# Execute the code
+response = requests.post(
+    "http://localhost:3000/api/execute-raw",
+    headers={"Content-Type": "text/plain"},
+    data=matplotlib_code
+)
+
+# Print the full response
+import json
+print(json.dumps(response.json(), indent=2))
