@@ -30,11 +30,11 @@ MATPLOTLIB_BACKEND = "Agg"
 DEFAULT_PLOT_DPI = 100
 DEFAULT_FIGSIZE = (5, 3)
 
-# Plot directory paths
-PLOTS_ROOT = "/plots"
-PLOTS_MATPLOTLIB_DIR = "/plots/matplotlib"
-PLOTS_SEABORN_DIR = "/plots/seaborn"
-PLOTS_BASE64_DIR = "/plots/base64"
+# Plot directory paths - ALL FILES MUST BE SAVED IN VFS UNDER /home/pyodide/
+PLOTS_ROOT = "/home/pyodide/plots"
+PLOTS_MATPLOTLIB_DIR = "/home/pyodide/plots/matplotlib"
+PLOTS_SEABORN_DIR = "/home/pyodide/plots/seaborn"
+PLOTS_BASE64_DIR = "/home/pyodide/plots/base64"
 
 
 def wait_for_server(url: str, timeout: int = SERVER_WAIT_TIMEOUT) -> None:
@@ -323,13 +323,13 @@ print(json.dumps(result, indent=2))
     step3 = result.get("step3_list_directories", {})
     assert step3.get("plots_exists"), "/home/pyodide/plots directory should exist"
     assert step3.get("plots_matplotlib_exists"), (
-        "/plots/matplotlib should exist"
+        "/home/pyodide/plots/matplotlib should exist"
     )
 
     # Verify generated file appears in directory listing
     filename = step1.get("filename", "")
     assert filename in step3.get("plots_matplotlib_contents", []), (
-        f"Generated file {filename} should be in /plots/matplotlib directory"
+        f"Generated file {filename} should be in /home/pyodide/plots/matplotlib directory"
     )
 
     print("✅ Plot created successfully in virtual filesystem")

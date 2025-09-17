@@ -87,11 +87,12 @@ class TestConfig:
     ]
 
     # Virtual filesystem paths
+    # Filesystem paths that should exist in VFS (all under /home/pyodide/)
     FILESYSTEM_PATHS = [
         '/home/pyodide/plots',
         '/home/pyodide/uploads',
         "/logs",
-        "/plots/matplotlib",
+        "/home/pyodide/plots/matplotlib",  # FIXED: Must use VFS path
     ]
 
 

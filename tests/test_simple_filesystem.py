@@ -34,7 +34,7 @@ class TestFilesystemOperations:
             api_timeout: Default timeout for API requests
 
         Input:
-            - File creation in mounted directory /plots/matplotlib/
+            - File creation in mounted directory /home/pyodide/plots/matplotlib/
             - Text content written to file
             - pathlib-based file operations
 
@@ -68,7 +68,7 @@ class TestFilesystemOperations:
 from pathlib import Path
 
 # Create file in plots directory (should appear locally)
-plots_file = Path('/home/pyodide/plots/matplotlib/{filename}")
+plots_file = Path('/home/pyodide/plots/matplotlib/{filename}')
 plots_file.parent.mkdir(parents=True, exist_ok=True)
 
 # Write test content
@@ -101,7 +101,7 @@ print("Test completed successfully for {filename}")
         assert "timestamp" in result["meta"], f"Missing timestamp in meta: {result}"
 
         # Validate execution results
-        result_data = result["data"]["result"]
+        result_data = result["data"]
         assert "stdout" in result_data, f"Missing stdout in result: {result_data}"
         stdout = result_data["stdout"]
 
@@ -205,7 +205,7 @@ result
         assert "timestamp" in result["meta"], f"Missing timestamp in meta: {result}"
 
         # Validate execution results
-        result_data = result["data"]["result"]
+        result_data = result["data"]
         assert "stdout" in result_data, f"Missing stdout in result: {result_data}"
         stdout = result_data["stdout"]
 
@@ -259,7 +259,7 @@ result
 
         Example:
             Directory structure created:
-            /plots/
+            /home/pyodide/plots/
             ├── subdir1/
             │   └── file1.txt
             └── subdir2/
@@ -275,7 +275,7 @@ result
 from pathlib import Path
 
 # Create nested directory structure
-base_dir = Path('/home/pyodide/plots/filesystem_test_{timestamp}")
+base_dir = Path('/home/pyodide/plots/filesystem_test_{timestamp}')
 subdirs = [
     base_dir / "subdir1",
     base_dir / "subdir2",
@@ -332,7 +332,7 @@ structure_info
         assert "timestamp" in result["meta"], f"Missing timestamp in meta: {result}"
 
         # Validate execution results
-        result_data = result["data"]["result"]
+        result_data = result["data"]
         assert "stdout" in result_data, f"Missing stdout in result: {result_data}"
         stdout = result_data["stdout"]
 
@@ -416,7 +416,7 @@ from pathlib import Path
 import json
 
 # File operations test
-test_file = Path('/home/pyodide/plots/matplotlib/{filename}")
+test_file = Path('/home/pyodide/plots/matplotlib/{filename}')
 test_file.parent.mkdir(parents=True, exist_ok=True)
 
 operations = []
@@ -497,7 +497,7 @@ result
         assert "timestamp" in result["meta"], f"Missing timestamp in meta: {result}"
 
         # Validate execution results
-        result_data = result["data"]["result"]
+        result_data = result["data"]
         assert "stdout" in result_data, f"Missing stdout in result: {result_data}"
         stdout = result_data["stdout"]
 

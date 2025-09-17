@@ -53,12 +53,17 @@ print(f"Success: {result['success']}")
 if result['success']:
     print("\\n🚨 CRITICAL: Information disclosure successful!")
     print("--- EXPOSED INFORMATION ---")
-    print(result['stdout'])
+    # Follow API contract: data should be under result['data']
+    if result.get('data') and result['data'].get('stdout'):
+        print(result['data']['stdout'])
+    elif result.get('data') and result['data'].get('result'):
+        print(result['data']['result'])
     
-    if result['stderr']:
+    # Check stderr in data section
+    if result.get('data') and result['data'].get('stderr'):
         print("\\n--- STDERR ---")
-        print(result['stderr'])
+        print(result['data']['stderr'])
 else:
     print(f"\\n❌ Execution failed: {result.get('error')}")
-    if result.get('stderr'):
-        print(f"Stderr: {result['stderr']}")
+    if result.get('data') and result['data'].get('stderr'):
+        print(f"Stderr: {result['data']['stderr']}")

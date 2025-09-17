@@ -108,11 +108,23 @@ async function executeRaw(req, res) {
       });
     }
     // Format response according to API contract
-    // For execute-raw: data should contain result, stdout, stderr directly
+    // Handle both object and string results from the executor
+    let actualResult;
+    if (result.result === 'None' || result.result === 'null' || !result.result) {
+      // Use stdout if result is None/null/empty
+      actualResult = result.stdout || '';
+    } else if (typeof result.result === 'object') {
+      // If result is an object (like dict from Python), convert to JSON string for API contract
+      actualResult = JSON.stringify(result.result);
+    } else {
+      // String results (including already stringified JSON) - use as-is
+      actualResult = result.result || result.stdout || '';
+    }
+    
     res.json({
       success: result.success,
       data: result.success ? {
-        result: result.result || result.stdout || '',
+        result: actualResult,
         stdout: result.stdout || '',
         stderr: result.stderr || '',
         executionTime: executionTime

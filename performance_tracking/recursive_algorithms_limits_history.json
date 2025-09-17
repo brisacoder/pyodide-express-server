@@ -1,0 +1,36 @@
+[
+  {
+    "test_name": "recursive_algorithms_limits",
+    "timestamp": "2025-09-16T09:44:20.792572",
+    "success_count": 3,
+    "failure_count": 1,
+    "total_count": 4,
+    "success_rate": 0.75,
+    "execution_time_mean": 464.3333333333333,
+    "execution_time_median": 120,
+    "execution_time_max": 1263,
+    "execution_time_min": 10,
+    "execution_time_stdev": 693.8489268805806,
+    "response_time_mean": 468.61974398295087,
+    "response_time_median": 125.28467178344727,
+    "response_time_max": 1266.1402225494385,
+    "response_time_min": 14.434337615966797
+  },
+  {
+    "test_name": "recursive_algorithms_limits",
+    "timestamp": "2025-09-16T21:54:40.050251",
+    "success_count": 3,
+    "failure_count": 1,
+    "total_count": 4,
+    "success_rate": 0.75,
+    "execution_time_mean": 364,
+    "execution_time_median": 98,
+    "execution_time_max": 991,
+    "execution_time_min": 3,
+    "execution_time_stdev": 545.07155493568,
+    "response_time_mean": 366.73816045125324,
+    "response_time_median": 101.15933418273926,
+    "response_time_max": 993.7827587127686,
+    "response_time_min": 5.272388458251953
+  }
+]

@@ -1258,7 +1258,7 @@ file_size = output_path.stat().st_size if file_exists else 0
         filename = result.get("filename", "")
         assert filename, "No filename returned in result"
         assert filename.startswith(
-            "/plots/seaborn/direct_save_regression_"
+            "/home/pyodide/plots/seaborn/direct_save_regression_"
         ), "Incorrect filename format"
         assert filename.endswith(".png"), "File should have .png extension"
 
@@ -1521,7 +1521,7 @@ print(json_module.dumps(response, indent=2))
         filename = result.get("filename", "")
         assert filename, "No filename returned in result"
         assert filename.startswith(
-            "/plots/seaborn/advanced_dashboard_"
+            "/home/pyodide/plots/seaborn/advanced_dashboard_"
         ), "Incorrect filename format"
         assert filename.endswith(".png"), "File should have .png extension"
 

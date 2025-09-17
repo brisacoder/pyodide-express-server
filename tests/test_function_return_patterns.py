@@ -358,7 +358,7 @@ print(json.dumps(result))
 
         Example:
             Input: x = np.linspace(0, 2*pi, 100); y = np.sin(x)
-            Output: {"plot_info": {"created": true, "path": "/plots/matplotlib/..."}}
+            Output: {"plot_info": {"created": true, "path": "/home/pyodide/plots/matplotlib/..."}}
         """
         # Given: A function that creates matplotlib plots with pathlib for cross-platform compatibility
         code = '''

@@ -1,0 +1,36 @@
+[
+  {
+    "test_name": "data_processing_limits",
+    "timestamp": "2025-09-16T09:46:59.828157",
+    "success_count": 5,
+    "failure_count": 0,
+    "total_count": 5,
+    "success_rate": 1.0,
+    "execution_time_mean": 7362.8,
+    "execution_time_median": 100,
+    "execution_time_max": 36297,
+    "execution_time_min": 10,
+    "execution_time_stdev": 16175.324407875101,
+    "response_time_mean": 7369.514036178589,
+    "response_time_median": 103.37543487548828,
+    "response_time_max": 36312.185764312744,
+    "response_time_min": 15.375137329101562
+  },
+  {
+    "test_name": "data_processing_limits",
+    "timestamp": "2025-09-16T21:56:51.056541",
+    "success_count": 5,
+    "failure_count": 0,
+    "total_count": 5,
+    "success_rate": 1.0,
+    "execution_time_mean": 112.2,
+    "execution_time_median": 39,
+    "execution_time_max": 379,
+    "execution_time_min": 31,
+    "execution_time_stdev": 150.08231074980156,
+    "response_time_mean": 115.17224311828613,
+    "response_time_median": 41.61858558654785,
+    "response_time_max": 382.92527198791504,
+    "response_time_min": 34.073591232299805
+  }
+]

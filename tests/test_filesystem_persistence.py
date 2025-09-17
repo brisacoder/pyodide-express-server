@@ -25,6 +25,7 @@ Examples:
         $ uv run pytest tests/test_filesystem_persistence.py --cov=src --cov-report=term-missing
 """
 
+import json
 import time
 from typing import Dict, Any
 import requests
@@ -45,6 +46,33 @@ class TestConfig:
     API_HEALTH_ENDPOINT = "/health"
     API_INSTALL_PACKAGE_ENDPOINT = "/api/install-package"
     REQUIRED_PACKAGES = ["matplotlib"]
+
+
+def parse_result_data(response: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parse result data from server response, handling JSON string conversion.
+    
+    The server may return result data as a JSON string that needs to be parsed
+    back into a dictionary for proper assertion handling.
+    
+    Args:
+        response: Server response dictionary containing data.result
+        
+    Returns:
+        Parsed result data as dictionary
+        
+    Raises:
+        json.JSONDecodeError: If result data is malformed JSON
+        KeyError: If response structure is invalid
+    """
+    result_data = response["data"]["result"]
+    if isinstance(result_data, str):
+        try:
+            return json.loads(result_data)
+        except json.JSONDecodeError:
+            # If it's not valid JSON, return as-is 
+            return {"raw_result": result_data}
+    return result_data
 
 
 @pytest.fixture(scope="session")
@@ -291,7 +319,7 @@ result
         # Then: File creation should succeed and provide system information
         assert response["success"] is True, f"File creation failed: {response.get('error')}"
         
-        data = response["data"]["result"]
+        data = parse_result_data(response)
         assert data is not None, "Result should not be None"
         assert data.get("file_exists") is True, "File should exist after creation"
         assert data.get("file_content") == test_content, "File content should match"
@@ -345,7 +373,7 @@ result
         response = execute_python_code(http_session, base_url, create_code)
         assert response["success"] is True, "File creation should succeed"
         
-        creation_data = response["data"]["result"]
+        creation_data = parse_result_data(response)
         assert creation_data.get("file_created") is True, "File should be created"
         
         # When: Checking file in new execution context
@@ -370,7 +398,7 @@ result
         assert response["success"] is True, "Persistence check should succeed"
         
         # Then: Document the persistence behavior
-        persistence_data = response["data"]["result"]
+        persistence_data = parse_result_data(response)
         
         print(f"\\n📋 File exists in new execution context: {persistence_data.get('file_exists_in_new_context')}")
         print(f"📋 Content matches: {persistence_data.get('content_matches')}")
@@ -471,7 +499,7 @@ result
         # Then: Should provide comprehensive guidance
         assert response["success"] is True, f"Pattern test failed: {response.get('error')}"
         
-        data = response["data"]["result"]
+        data = parse_result_data(response)
         assert data is not None, "Pattern test result should not be None"
         
         print("\\n� RECOMMENDED PERSISTENCE PATTERNS:")
@@ -592,7 +620,7 @@ result
         # Then: Should document filesystem environment
         assert response["success"] is True, f"Filesystem detection failed: {response.get('error')}"
         
-        data = response["data"]["result"]
+        data = parse_result_data(response)
         assert data is not None, "Filesystem detection result should not be None"
         
         print("\\n🔍 FILESYSTEM ANALYSIS:")
@@ -705,7 +733,7 @@ result
         response = execute_python_code(http_session, base_url, code)
         assert response["success"] is True, "Guidance examples should work"
         
-        data = response["data"]["result"]
+        data = parse_result_data(response)
         assert data.get("guidance_examples_tested") is True, "Guidance examples should be tested"
         
         if data.get("plot_directory_accessible"):

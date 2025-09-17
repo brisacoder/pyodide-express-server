@@ -1,0 +1,36 @@
+[
+  {
+    "test_name": "matrix_operations_limits",
+    "timestamp": "2025-09-16T09:44:19.963667",
+    "success_count": 3,
+    "failure_count": 0,
+    "total_count": 3,
+    "success_rate": 1.0,
+    "execution_time_mean": 270,
+    "execution_time_median": 182,
+    "execution_time_max": 598,
+    "execution_time_min": 30,
+    "execution_time_stdev": 294.0476151918257,
+    "response_time_mean": 273.09290568033856,
+    "response_time_median": 184.88550186157227,
+    "response_time_max": 601.109504699707,
+    "response_time_min": 33.28371047973633
+  },
+  {
+    "test_name": "matrix_operations_limits",
+    "timestamp": "2025-09-16T21:54:39.320143",
+    "success_count": 3,
+    "failure_count": 0,
+    "total_count": 3,
+    "success_rate": 1.0,
+    "execution_time_mean": 233.66666666666666,
+    "execution_time_median": 147,
+    "execution_time_max": 526,
+    "execution_time_min": 28,
+    "execution_time_stdev": 260.0660172597207,
+    "response_time_mean": 236.76602045694986,
+    "response_time_median": 149.9612331390381,
+    "response_time_max": 529.1752815246582,
+    "response_time_min": 31.16154670715332
+  }
+]

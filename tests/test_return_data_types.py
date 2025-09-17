@@ -310,7 +310,8 @@ class TestBasicDataTypesReturn:
             # Then: Response should contain the expected numeric result
             assert response[Config.API_SUCCESS_FIELD] is True
             result = extract_python_result(response)
-            assert expected_str in result
+            # Result should be a string representation of the number
+            assert expected_str in str(result)
 
 
 class TestCollectionDataTypesReturn:
@@ -360,8 +361,9 @@ class TestCollectionDataTypesReturn:
             assert response[Config.API_SUCCESS_FIELD] is True
             result = extract_python_result(response)
 
-            # Verify list structure is represented
-            assert "[" in result and "]" in result
+            # Verify list structure is represented as a string
+            result_str = str(result)
+            assert "[" in result_str and "]" in result_str
 
 
 class TestDataScienceWorkflows:
@@ -427,7 +429,8 @@ results
         result = extract_python_result(response)
 
         # Verify NumPy processing completed
-        assert "array_data" in result or "statistics" in result
+        result_str = str(result)
+        assert "array_data" in result_str or "statistics" in result_str
 
     def test_given_pandas_workflow_when_executed_then_returns_dataframe_results(
         self, api_client, server_health_check
@@ -492,7 +495,8 @@ analysis
         result = extract_python_result(response)
 
         # Verify Pandas processing completed
-        assert "data_info" in result or "statistics" in result
+        result_str = str(result)
+        assert "data_info" in result_str or "statistics" in result_str
 
 
 class TestErrorHandlingScenarios:
@@ -539,7 +543,9 @@ except ZeroDivisionError as e:
         "recovery_action": "returned error information"
     }
     print(f"Handled error: {type(e).__name__}")
-    error_info
+
+# Return the error_info as the last expression
+error_info
         '''
 
         # Given: Code with exception handling
@@ -551,7 +557,8 @@ except ZeroDivisionError as e:
         result = extract_python_result(response)
 
         # Verify error handling information is present
-        assert "error_occurred" in result or "error" in result
+        result_str = str(result)
+        assert "error_occurred" in result_str or "error" in result_str
 
     def test_given_minimal_code_when_executed_then_handles_gracefully(
         self, api_client, server_health_check

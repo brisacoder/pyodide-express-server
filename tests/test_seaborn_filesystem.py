@@ -21,9 +21,38 @@ Requirements:
 import time
 from pathlib import Path
 from typing import Dict, Any
+import json
 
 import pytest
 import requests
+
+
+def parse_json_result(result_str: str) -> Dict[str, Any]:
+    """
+    Parse JSON result from string representation.
+
+    Description:
+        Converts string result from execute-raw API to Python dictionary.
+        Handles JSON parsing with proper error handling.
+
+    Input:
+        result_str: String representation of JSON result
+
+    Output:
+        Dict: Parsed JSON data
+
+    Example:
+        result_str = '{"file_saved": true, "plot_type": "regression"}'
+        parsed = parse_json_result(result_str)
+        assert "file_saved" in parsed
+
+    Raises:
+        ValueError: If JSON parsing fails
+    """
+    try:
+        return json.loads(result_str)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON result: {e}")
 
 
 # Test Configuration Constants
@@ -168,22 +197,48 @@ def seaborn_environment(
         >>> def test_example(seaborn_environment):
         ...     assert seaborn_environment['seaborn_available'] is True
     """
-    # Ensure seaborn and matplotlib are available (regular API endpoints)
-    for package in ["matplotlib", "seaborn"]:
-        try:
-            install_response = requests.post(
-                f"{verified_server}/api/install-package",
-                json={"package": package},
-                timeout=60,
-            )
-            if install_response.status_code == 200:
-                print(f"✅ {package} installed successfully")
-            else:
-                print(
-                    f"⚠️ Warning: {package} installation failed: {install_response.status_code}"
-                )
-        except requests.RequestException as e:
-            print(f"⚠️ Warning: {package} installation failed due to network error: {e}")
+    # Ensure seaborn and matplotlib are available using execute-raw endpoint
+    install_code = '''
+import micropip
+import sys
+
+# Install required packages
+packages_to_install = ["matplotlib", "seaborn"]
+installation_results = {}
+
+for package in packages_to_install:
+    try:
+        await micropip.install(package)
+        # Test import to verify installation
+        if package == "matplotlib":
+            import matplotlib
+            import matplotlib.pyplot as plt
+            installation_results[package] = {"status": "success", "version": matplotlib.__version__}
+        elif package == "seaborn":
+            import seaborn as sns
+            installation_results[package] = {"status": "success", "version": sns.__version__}
+        print(f"✅ {package} installed and verified successfully")
+    except Exception as e:
+        installation_results[package] = {"status": "failed", "error": str(e)}
+        print(f"⚠️ Warning: {package} installation failed: {e}")
+
+print("Package installation complete")
+installation_results
+'''
+    
+    try:
+        install_response = requests.post(
+            f"{verified_server}/api/execute-raw",
+            data=install_code,
+            headers={"Content-Type": "text/plain"},
+            timeout=60,
+        )
+        if install_response.status_code == 200:
+            print("✅ Package installation executed successfully")
+        else:
+            print(f"⚠️ Warning: Package installation failed: {install_response.status_code}")
+    except requests.RequestException as e:
+        print(f"⚠️ Warning: Package installation failed due to network error: {e}")
 
     return {
         "seaborn_available": True,
@@ -198,7 +253,7 @@ def clean_filesystem(verified_server: str, server_config: Dict[str, Any]):
     Function-scoped fixture to clean Pyodide virtual filesystem.
 
     Ensures each test starts with a clean virtual filesystem by removing
-    any existing plot files from the /plots/seaborn directory.
+    any existing plot files from the /home/pyodide/plots/seaborn directory.
 
     Args:
         verified_server: Base URL from verified_server fixture
@@ -285,7 +340,7 @@ class TestSeabornFilesystemOperations:
 
             Expected behavior:
             - Seaborn regression plot created with sample data
-            - Plot saved to /plots/seaborn/ directory
+            - Plot saved to /home/pyodide/plots/seaborn/ directory
             - Correlation coefficient calculated and validated
             - File metadata verified within Pyodide execution context
         """
@@ -313,6 +368,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import time
+import json
 
 print("Creating seaborn regression plot with filesystem verification...")
 
@@ -373,7 +429,7 @@ result = {{
 }}
 
 print(f"Regression plot saved successfully: {{output_file}}")
-result
+json.dumps(result)
 """
 
         response = requests.post(
@@ -401,8 +457,11 @@ result
         data = response_data.get("data", {})
         assert "result" in data, "Response data missing 'result' field"
 
-        result = data.get("result")
-        assert result is not None, f"API returned None result: {response_data}"
+        result_str = data.get("result")
+        assert result_str is not None, f"API returned None result: {response_data}"
+
+        # Parse JSON result from string
+        result = parse_json_result(result_str)
 
         # And: Plot should be saved with correct metadata
         assert (
@@ -429,7 +488,7 @@ result
 
         # And: Filename should be properly formatted with pathlib
         filename = result.get("filename", "")
-        assert filename.startswith("/plots/seaborn/"), "Incorrect file path"
+        assert "/home/pyodide/plots/seaborn/" in filename, "Incorrect file path"
         assert filename.endswith(".png"), "Incorrect file extension"
         assert "regression" in filename, "Plot type not in filename"
 
@@ -489,6 +548,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import time
+import json
 
 print("Creating comprehensive seaborn dashboard...")
 
@@ -611,7 +671,7 @@ result = {{
 }}
 
 print(f"Dashboard saved successfully: {{output_file}}")
-result
+json.dumps(result)
 """
 
         response = requests.post(
@@ -637,8 +697,11 @@ result
 
         # Validate data structure
         data = response_data.get("data", {})
-        result = data.get("result")
-        assert result is not None, f"API returned None result: {response_data}"
+        result_str = data.get("result")
+        assert result_str is not None, f"API returned None result: {response_data}"
+
+        # Parse JSON result from string
+        result = parse_json_result(result_str)
 
         # And: Dashboard should be saved successfully
         assert (

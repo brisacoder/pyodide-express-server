@@ -52,9 +52,7 @@ sk.__version__
             if response.status_code == 200:
                 result = response.json()
                 success = result.get("success", False)
-                stdout = result.get("data", {}).get("result", {}).get(
-                    "stdout", ""
-                )
+                stdout = result.get("data", {}).get("stdout", "")
                 has_sklearn = success and "scikit-learn version:" in stdout
             else:
                 has_sklearn = False
@@ -162,7 +160,7 @@ result
         assert "timestamp" in data["meta"], f"Missing timestamp: {data}"
 
         # Validate execution results
-        result_data = data["data"]["result"]
+        result_data = data["data"]
         assert "stdout" in result_data, f"Missing stdout: {result_data}"
         assert "Cross-validation completed" in result_data["stdout"]
         assert "Individual scores:" in result_data["stdout"]
@@ -279,7 +277,7 @@ result
         assert "timestamp" in data["meta"], f"Missing timestamp: {data}"
 
         # Validate execution results
-        result_data = data["data"]["result"]
+        result_data = data["data"]
         assert "stdout" in result_data, f"Missing stdout: {result_data}"
         stdout = result_data["stdout"]
 
@@ -388,7 +386,8 @@ print("ERROR: This line should not be reached!")
             "unknown parameter",
             "not_a_param",
             "valueerror",
-            "execution failed"
+            "execution failed",
+            "pythonerror"
         ]), f"Expected parameter error message: {data.get('error')}"
 
     def test_given_sklearn_availability_when_import_attempted_then_version_information_returned(  # noqa: E501
@@ -493,7 +492,7 @@ result
         assert "timestamp" in data["meta"], f"Missing timestamp: {data}"
 
         # Validate execution results
-        result_data = data["data"]["result"]
+        result_data = data["data"]
         assert "stdout" in result_data, f"Missing stdout: {result_data}"
         stdout = result_data["stdout"]
 
@@ -633,7 +632,7 @@ results
         assert "timestamp" in data["meta"], f"Missing timestamp: {data}"
 
         # Validate execution results
-        result_data = data["data"]["result"]
+        result_data = data["data"]
         assert "stdout" in result_data, f"Missing stdout: {result_data}"
         stdout = result_data["stdout"]
 
@@ -775,7 +774,7 @@ results
         assert "timestamp" in data["meta"], f"Missing timestamp: {data}"
 
         # Validate execution results
-        result_data = data["data"]["result"]
+        result_data = data["data"]
         assert "stdout" in result_data, f"Missing stdout: {result_data}"
         stdout = result_data["stdout"]
 

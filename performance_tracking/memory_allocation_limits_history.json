@@ -1,0 +1,53 @@
+[
+  {
+    "test_name": "memory_allocation_limits",
+    "timestamp": "2025-09-16T00:04:31.990590",
+    "success_count": 5,
+    "failure_count": 0,
+    "total_count": 5,
+    "success_rate": 1.0,
+    "execution_time_mean": 36.8,
+    "execution_time_median": 38,
+    "execution_time_max": 64,
+    "execution_time_min": 7,
+    "execution_time_stdev": 23.679104712805337,
+    "response_time_mean": 40.869903564453125,
+    "response_time_median": 41.71562194824219,
+    "response_time_max": 67.65031814575195,
+    "response_time_min": 10.355472564697266
+  },
+  {
+    "test_name": "memory_allocation_limits",
+    "timestamp": "2025-09-16T09:44:22.225945",
+    "success_count": 5,
+    "failure_count": 0,
+    "total_count": 5,
+    "success_rate": 1.0,
+    "execution_time_mean": 1829.8,
+    "execution_time_median": 60,
+    "execution_time_max": 8926,
+    "execution_time_min": 37,
+    "execution_time_stdev": 3966.92748862391,
+    "response_time_mean": 1833.922815322876,
+    "response_time_median": 63.11178207397461,
+    "response_time_max": 8929.896354675293,
+    "response_time_min": 41.56994819641113
+  },
+  {
+    "test_name": "memory_allocation_limits",
+    "timestamp": "2025-09-16T21:54:41.180955",
+    "success_count": 5,
+    "failure_count": 0,
+    "total_count": 5,
+    "success_rate": 1.0,
+    "execution_time_mean": 1351.4,
+    "execution_time_median": 56,
+    "execution_time_max": 6611,
+    "execution_time_min": 6,
+    "execution_time_stdev": 2940.283200645815,
+    "response_time_mean": 1354.2720317840576,
+    "response_time_median": 58.53724479675293,
+    "response_time_max": 6614.428281784058,
+    "response_time_min": 8.30984115600586
+  }
+]

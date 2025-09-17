@@ -41,7 +41,8 @@ markers = [
     "matplotlib: marks tests that use matplotlib plotting",
     "environment: marks tests that check environment configuration",
     "error_handling: marks tests that validate error conditions",
-    "performance: marks tests that check performance characteristics"
+    "performance: marks tests that check performance characteristics",
+    "telemetry: marks tests that involve automotive telemetry data analysis"
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

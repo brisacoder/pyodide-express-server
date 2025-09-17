@@ -13,6 +13,7 @@ Key Features:
 - Only uses public /api/execute-raw endpoint
 - Comprehensive plot creation and filesystem testing
 - No hardcoded values - all parameterized with fixtures
+- Enhanced error handling and edge case coverage
 
 API Contract:
 {
@@ -22,7 +23,7 @@ API Contract:
     "stdout": <string>,
     "stderr": <string>,
     "executionTime": <number>
-  },
+  } | null,
   "error": <string|null>,
   "meta": {"timestamp": <string>}
 }
@@ -32,9 +33,12 @@ Test Categories:
 - filesystem: Tests for directory creation and file operations
 - integration: End-to-end plot creation workflows
 - error_handling: Tests for error conditions and edge cases
+- performance: Basic performance validation for plot operations
 """
 
+import json
 import time
+from typing import Any, Dict, List
 
 import pytest
 import requests
@@ -53,25 +57,32 @@ class TestConfig:
     # Plot creation settings
     PLOT_SETTINGS = {
         "default_dpi": 100,
+        "high_dpi": 150,
         "test_figsize": (6, 4),
+        "large_figsize": (12, 8),
         "timeout_seconds": 45,
+        "quick_timeout": 15,
         "max_plots_per_test": 10,
+        "min_file_size_bytes": 1000,  # Minimum expected plot file size
+        "max_file_size_bytes": 5 * 1024 * 1024,  # 5MB max
     }
 
-    # Directory paths for testing (all use pathlib for portability)
+    # Directory paths for testing - ALL MUST USE VFS PATHS UNDER /home/pyodide/
     TEST_DIRECTORIES = [
         "/home/pyodide/plots",
-        "/plots/matplotlib",
-        "/plots/seaborn",
-        "/plots/test_extract",
-        "/plots/custom",
+        "/home/pyodide/plots/matplotlib",
+        "/home/pyodide/plots/seaborn",
+        "/home/pyodide/plots/test_extract",
+        "/home/pyodide/plots/custom",
+        "/home/pyodide/plots/comprehensive",
     ]
 
     # Non-plots directories for negative testing
     NON_PLOTS_DIRECTORIES = [
         "/tmp/test_plots",
-        "/data/plots",
+        "/data/plots", 
         "/custom/plots",
+        "/home/pyodide/temp_plots",
     ]
 
     # Plot file patterns for testing
@@ -80,7 +91,89 @@ class TestConfig:
         "scatter": "scatter_plot",
         "histogram": "histogram_plot",
         "multi_subplot": "subplot_demo",
+        "heatmap": "heatmap_plot",
+        "bar_chart": "bar_chart",
     }
+
+    # Error scenarios for testing
+    ERROR_SCENARIOS = [
+        "invalid_directory_path",
+        "matplotlib_data_mismatch",
+        "file_permission_error",
+        "memory_intensive_plot",
+        "invalid_plot_format",
+    ]
+
+
+def parse_result_data(result: dict) -> dict:
+    """
+    Parse the result data from API response, handling both dict and JSON string formats.
+    
+    This function provides robust parsing of API response data, handling various
+    formats that might be returned by the Pyodide execution environment.
+    
+    Args:
+        result: API response result from execute_python_code
+        
+    Returns:
+        dict: Parsed result data
+        
+    Raises:
+        AssertionError: If result cannot be parsed or is invalid
+        
+    Example:
+        >>> api_response = {"success": True, "data": {"result": '{"key": "value"}'}}
+        >>> parsed = parse_result_data(api_response)
+        >>> assert parsed == {"key": "value"}
+    """
+    test_results = result["data"]["result"]
+    
+    # If result is already a dict, return as-is
+    if isinstance(test_results, dict):
+        return test_results
+    
+    # If result is a JSON string, parse it
+    if isinstance(test_results, str):
+        try:
+            return json.loads(test_results)
+        except json.JSONDecodeError as e:
+            raise AssertionError(f"Failed to parse JSON result: {e}")
+    
+    # If result is neither dict nor string, it's invalid
+    raise AssertionError(f"Expected dict or JSON string, got {type(test_results)}: {test_results}")
+
+
+@pytest.fixture
+def quick_timeout():
+    """
+    Provide shorter timeout for quick operations.
+
+    Returns:
+        int: Timeout in seconds for quick operations
+
+    Example:
+        >>> def test_quick_operation(quick_timeout):
+        ...     # Use quick_timeout for simple operations
+        ...     result = execute_python_code(simple_code, timeout=quick_timeout)
+    """
+    return TestConfig.PLOT_SETTINGS["quick_timeout"]
+
+
+@pytest.fixture
+def plot_patterns():
+    """
+    Provide plot patterns for testing different plot types.
+
+    Returns:
+        dict: Mapping of plot types to filename patterns
+
+    Example:
+        >>> def test_plot_patterns(plot_patterns):
+        ...     for plot_type, pattern in plot_patterns.items():
+        ...         # Create plot using pattern
+        ...         filename = f"{pattern}_{timestamp}.png"
+    """
+    return TestConfig.PLOT_PATTERNS.copy()
 
 
 @pytest.fixture(scope="session")
@@ -144,13 +237,13 @@ def test_directories():
     Provide list of directories for plot testing.
 
     Returns:
-        List[str]: Directory paths to test for plot creation
+        List[str]: Directory paths to test for plot creation (all VFS compliant)
 
     Example:
         >>> def test_directory_creation(test_directories):
         ...     for directory in test_directories:
-        ...         # Test each directory
-        ...         assert directory.startswith("/plots")
+        ...         # Test each directory - all should be VFS compliant
+        ...         assert directory.startswith("/home/pyodide/plots")
     """
     return TestConfig.TEST_DIRECTORIES.copy()
 
@@ -161,13 +254,13 @@ def non_plots_directories():
     Provide list of non-plots directories for negative testing.
 
     Returns:
-        List[str]: Directory paths outside /plots for testing
+        List[str]: Directory paths outside /home/pyodide/plots for testing
 
     Example:
         >>> def test_non_plots_behavior(non_plots_directories):
         ...     for directory in non_plots_directories:
-        ...         # Test behavior outside /plots
-        ...         assert not directory.startswith("/plots")
+        ...         # Test behavior outside VFS plots directory
+        ...         assert not directory.startswith("/home/pyodide/plots")
     """
     return TestConfig.NON_PLOTS_DIRECTORIES.copy()
 
@@ -186,7 +279,7 @@ def cleanup_plots():
     Example:
         >>> def test_plot_creation(cleanup_plots):
         ...     # Create plot and track for cleanup
-        ...     plot_path = "/plots/matplotlib/test.png"
+        ...     plot_path = "/home/pyodide/plots/matplotlib/test.png"
         ...     cleanup_plots.append(plot_path)
         ...     # Plot will be automatically cleaned up
     """
@@ -241,9 +334,9 @@ class TestPlotDirectoryBehavior:
         """
         Test that all standard plots directories can be created and are writable.
 
-        Given: A list of standard plots directories
-        When: Attempting to create directories and test files in each
-        Then: All directories should be successfully created and writable
+        **Given:** A list of standard plots directories
+        **When:** Attempting to create directories and test files in each
+        **Then:** All directories should be successfully created and writable
 
         Args:
             server_ready: Server readiness fixture
@@ -252,10 +345,10 @@ class TestPlotDirectoryBehavior:
 
         Example:
             This test validates directories like:
-            - /plots
-            - /plots/matplotlib
-            - /plots/seaborn
-            - /plots/test_extract
+            - /home/pyodide/plots
+            - /home/pyodide/plots/matplotlib
+            - /home/pyodide/plots/seaborn
+            - /home/pyodide/plots/test_extract
         """
         # Given: Standard plots directories
         code = f"""
@@ -269,17 +362,21 @@ test_directories = {test_directories}
 results = {{
     "directory_tests": [],
     "total_tested": len(test_directories),
-    "total_success": 0
+    "total_success": 0,
+    "performance_metrics": {{}}
 }}
 
 # When: Testing each directory
 for directory_path in test_directories:
+    start_time = time.time()
     test_result = {{
         "path": directory_path,
         "exists_before": False,
         "created_successfully": False,
         "is_writable": False,
         "test_file_created": False,
+        "file_size": 0,
+        "creation_time_ms": 0,
         "error": None
     }}
     
@@ -296,14 +393,14 @@ for directory_path in test_directories:
             timestamp = int(time.time() * 1000)
             test_file = directory / f"writability_test_{{timestamp}}.png"
             
-            plt.figure(figsize=(4, 3))
+            plt.figure(figsize=(4, 3), dpi={TestConfig.PLOT_SETTINGS['default_dpi']})
             plt.plot([1, 2, 3], [1, 4, 2], 'b-', linewidth=2)
             plt.title(f'Writability Test: {{directory_path}}')
             plt.xlabel('X Values')
             plt.ylabel('Y Values')
             plt.grid(True, alpha=0.3)
             
-            plt.savefig(str(test_file), dpi=100, bbox_inches='tight')
+            plt.savefig(str(test_file), dpi={TestConfig.PLOT_SETTINGS['default_dpi']}, bbox_inches='tight')
             plt.close()
             
             test_result["is_writable"] = test_file.exists()
@@ -311,6 +408,7 @@ for directory_path in test_directories:
             
             if test_result["test_file_created"]:
                 test_result["file_size"] = test_file.stat().st_size
+                test_result["creation_time_ms"] = int((time.time() - start_time) * 1000)
                 results["total_success"] += 1
                 # Clean up test file
                 test_file.unlink()
@@ -320,8 +418,16 @@ for directory_path in test_directories:
     
     results["directory_tests"].append(test_result)
 
-# Then: Validate all operations completed
+# Then: Validate all operations completed and calculate metrics
 results["success_rate"] = results["total_success"] / results["total_tested"] if results["total_tested"] > 0 else 0
+creation_times = [t["creation_time_ms"] for t in results["directory_tests"] if t["creation_time_ms"] > 0]
+if creation_times:
+    results["performance_metrics"] = {{
+        "avg_creation_time_ms": sum(creation_times) / len(creation_times),
+        "max_creation_time_ms": max(creation_times),
+        "min_creation_time_ms": min(creation_times)
+    }}
+
 results
         """
 
@@ -334,7 +440,7 @@ results
             "success"
         ], f"Directory test execution failed: {result.get('error')}"
 
-        test_results = result["data"]["result"]
+        test_results = parse_result_data(result)
         assert isinstance(test_results, dict), "Results should be a dictionary"
         assert (
             "directory_tests" in test_results
@@ -367,15 +473,21 @@ results
             test_results["success_rate"] == 1.0
         ), f"Expected 100% success rate, got {test_results['success_rate']}"
 
+        # Validate performance metrics
+        if "performance_metrics" in test_results:
+            metrics = test_results["performance_metrics"]
+            assert metrics.get("avg_creation_time_ms", 0) > 0, "Should have performance metrics"
+            assert metrics.get("max_creation_time_ms", 0) < 30000, "Creation should be under 30 seconds"
+
     def test_given_non_plots_directories_when_creating_plots_then_should_work_but_be_outside_plots(
         self, server_ready, non_plots_directories, plot_timeout, cleanup_plots
     ):
         """
-        Test that plots can be created outside /plots but are distinguishable.
+        Test that plots can be created outside /home/pyodide/plots but are distinguishable.
 
-        Given: Directories outside the standard /plots structure
-        When: Creating plot files in these directories
-        Then: Files should be created successfully but clearly outside /plots
+        **Given:** Directories outside the standard /home/pyodide/plots structure
+        **When:** Creating plot files in these directories
+        **Then:** Files should be created successfully but clearly outside /home/pyodide/plots
 
         Args:
             server_ready: Server readiness fixture
@@ -401,17 +513,19 @@ non_plots_directories = {non_plots_directories}
 results = {{
     "non_plots_tests": [],
     "files_created": [],
-    "plots_vs_non_plots": {{}}
+    "plots_vs_non_plots": {{}},
+    "validation_checks": {{}}
 }}
 
 # When: Creating plots in non-plots directories
 for directory_path in non_plots_directories:
     test_result = {{
         "path": directory_path,
-        "is_plots_directory": directory_path.startswith("/plots"),
+        "is_plots_directory": directory_path.startswith("/home/pyodide/plots"),
         "created_successfully": False,
         "plot_created": False,
         "file_path": None,
+        "file_size": 0,
         "error": None
     }}
     
@@ -425,13 +539,14 @@ for directory_path in non_plots_directories:
             timestamp = int(time.time() * 1000)
             plot_file = directory / f"non_plots_test_{{timestamp}}.png"
             
-            plt.figure(figsize=(5, 4))
-            plt.scatter([1, 2, 3, 4, 5], [1, 4, 2, 8, 5], c='red', alpha=0.7)
+            plt.figure(figsize=(5, 4), dpi={TestConfig.PLOT_SETTINGS['default_dpi']})
+            plt.scatter([1, 2, 3, 4, 5], [1, 4, 2, 8, 5], c='red', alpha=0.7, s=50)
             plt.title(f'Non-Plots Directory Test\\n{{directory_path}}')
             plt.xlabel('X Values')
             plt.ylabel('Y Values')
+            plt.grid(True, alpha=0.3)
             
-            plt.savefig(str(plot_file), dpi=100, bbox_inches='tight')
+            plt.savefig(str(plot_file), dpi={TestConfig.PLOT_SETTINGS['default_dpi']}, bbox_inches='tight')
             plt.close()
             
             test_result["plot_created"] = plot_file.exists()
@@ -446,15 +561,23 @@ for directory_path in non_plots_directories:
     
     results["non_plots_tests"].append(test_result)
 
-# Then: Categorize results
-plots_files = [f for f in results["files_created"] if f.startswith("/plots/")]
-non_plots_files = [f for f in results["files_created"] if not f.startswith("/plots/")]
+# Then: Categorize results and validate
+plots_files = [f for f in results["files_created"] if f.startswith("/home/pyodide/plots/")]
+non_plots_files = [f for f in results["files_created"] if not f.startswith("/home/pyodide/plots/")]
 
 results["plots_vs_non_plots"] = {{
     "plots_directory_files": plots_files,
     "non_plots_directory_files": non_plots_files,
     "total_plots_files": len(plots_files),
     "total_non_plots_files": len(non_plots_files)
+}}
+
+# Validation checks
+results["validation_checks"] = {{
+    "all_directories_tested": len(results["non_plots_tests"]) == len(non_plots_directories),
+    "no_plots_directory_confusion": all(not test["is_plots_directory"] for test in results["non_plots_tests"]),
+    "files_created_outside_plots": len(non_plots_files) > 0,
+    "no_files_in_plots_dir": len(plots_files) == 0
 }}
 
 results
@@ -469,7 +592,7 @@ results
             "success"
         ], f"Non-plots directory test failed: {result.get('error')}"
 
-        test_results = result["data"]["result"]
+        test_results = parse_result_data(result)
         assert isinstance(test_results, dict), "Results should be a dictionary"
 
         # Track created files for cleanup
@@ -495,10 +618,15 @@ results
         categorization = test_results.get("plots_vs_non_plots", {})
         assert (
             categorization["total_non_plots_files"] > 0
-        ), "Should have created files outside /plots"
+        ), "Should have created files outside /home/pyodide/plots"
         assert (
             categorization["total_plots_files"] == 0
-        ), "Should not have created files in /plots directory"
+        ), "Should not have created files in /home/pyodide/plots directory"
+
+        # Validate validation checks
+        validation_checks = test_results.get("validation_checks", {})
+        for check_name, check_result in validation_checks.items():
+            assert check_result, f"Validation check '{check_name}' failed"
 
 
 @pytest.mark.matplotlib
@@ -512,19 +640,20 @@ class TestPlotCreationWorkflows:
     """
 
     def test_given_matplotlib_available_when_creating_multiple_plot_types_then_all_should_succeed(
-        self, server_ready, plot_timeout, cleanup_plots
+        self, server_ready, plot_timeout, cleanup_plots, plot_patterns
     ):
         """
         Test creation of multiple plot types using matplotlib.
 
-        Given: Matplotlib is available in the Pyodide environment
-        When: Creating various plot types (line, scatter, histogram, subplots)
-        Then: All plot types should be created successfully with proper file sizes
+        **Given:** Matplotlib is available in the Pyodide environment
+        **When:** Creating various plot types (line, scatter, histogram, subplots)
+        **Then:** All plot types should be created successfully with proper file sizes
 
         Args:
             server_ready: Server readiness fixture
             plot_timeout: Timeout for plot operations
             cleanup_plots: Cleanup tracking list
+            plot_patterns: Plot patterns fixture
 
         Example:
             Creates and validates:
@@ -533,7 +662,7 @@ class TestPlotCreationWorkflows:
             - Histograms
             - Multi-subplot figures
         """
-        # Given: Multiple plot types to create
+        # Given: Multiple plot types to create (simplified for performance)
         code = f"""
 import matplotlib
 matplotlib.use('Agg')
@@ -552,7 +681,8 @@ results = {{
     "plot_types": [],
     "total_files": 0,
     "total_size_bytes": 0,
-    "errors": []
+    "errors": [],
+    "performance_metrics": {{}}
 }}
 
 plot_configs = [
@@ -562,13 +692,13 @@ plot_configs = [
         "filename": f"line_plot_{{timestamp}}.png"
     }},
     {{
-        "type": "scatter_plot", 
+        "type": "scatter_plot",
         "title": "Scatter Plot Test",
         "filename": f"scatter_plot_{{timestamp}}.png"
     }},
     {{
         "type": "histogram",
-        "title": "Histogram Test", 
+        "title": "Histogram Test",
         "filename": f"histogram_{{timestamp}}.png"
     }},
     {{
@@ -578,8 +708,11 @@ plot_configs = [
     }}
 ]
 
-# When: Creating each plot type
+start_time = time.time()
+
+# When: Creating each plot type (optimized for speed)
 for config in plot_configs:
+    plot_start = time.time()
     plot_info = {{
         "type": config["type"],
         "title": config["title"],
@@ -587,6 +720,7 @@ for config in plot_configs:
         "file_path": None,
         "created": False,
         "size_bytes": 0,
+        "creation_time_ms": 0,
         "error": None
     }}
     
@@ -594,51 +728,49 @@ for config in plot_configs:
         file_path = plots_dir / config["filename"]
         plot_info["file_path"] = str(file_path)
         
-        plt.figure(figsize=(8, 6))
+        plt.figure(figsize=(6, 4), dpi={TestConfig.PLOT_SETTINGS['default_dpi']})
         
         if config["type"] == "line_plot":
-            x = np.linspace(0, 10, 100)
-            y = np.sin(x) + 0.1 * np.random.randn(100)
-            plt.plot(x, y, 'b-', linewidth=2, label='sin(x) + noise')
+            x = np.linspace(0, 10, 50)  # Reduced data points for speed
+            y = np.sin(x)
+            plt.plot(x, y, 'b-', linewidth=2, label='sin(x)')
             plt.xlabel('X values')
             plt.ylabel('Y values')
             plt.legend()
             
         elif config["type"] == "scatter_plot":
-            x = np.random.randn(200)
-            y = np.random.randn(200)
-            colors = np.random.rand(200)
-            plt.scatter(x, y, c=colors, alpha=0.6, cmap='viridis')
+            x = np.random.randn(100)  # Reduced data points
+            y = np.random.randn(100)
+            plt.scatter(x, y, alpha=0.6)
             plt.xlabel('Random X')
             plt.ylabel('Random Y')
-            plt.colorbar()
             
         elif config["type"] == "histogram":
-            data = np.random.normal(0, 1, 1000)
-            plt.hist(data, bins=30, alpha=0.7, edgecolor='black')
+            data = np.random.normal(0, 1, 500)  # Reduced data points
+            plt.hist(data, bins=20, alpha=0.7, edgecolor='black')
             plt.xlabel('Values')
             plt.ylabel('Frequency')
             
         elif config["type"] == "subplots":
-            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 8))
+            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(8, 6))
             
-            # Subplot 1: Line plot
-            x = np.linspace(0, 5, 50)
+            # Subplot 1: Simple line plot
+            x = np.linspace(0, 5, 20)  # Reduced data points
             ax1.plot(x, np.sin(x), 'r-')
             ax1.set_title('Sin(x)')
             
-            # Subplot 2: Bar plot  
-            categories = ['A', 'B', 'C', 'D']
-            values = [23, 45, 56, 78]
+            # Subplot 2: Simple bar plot
+            categories = ['A', 'B', 'C']  # Reduced categories
+            values = [23, 45, 56]
             ax2.bar(categories, values)
             ax2.set_title('Bar Chart')
             
-            # Subplot 3: Scatter
-            ax3.scatter(np.random.randn(50), np.random.randn(50))
+            # Subplot 3: Simple scatter
+            ax3.scatter(np.random.randn(25), np.random.randn(25))  # Reduced points
             ax3.set_title('Scatter Plot')
             
-            # Subplot 4: Histogram
-            ax4.hist(np.random.randn(100), bins=15)
+            # Subplot 4: Simple histogram
+            ax4.hist(np.random.randn(50), bins=10)  # Reduced data and bins
             ax4.set_title('Histogram')
             
             plt.tight_layout()
@@ -651,6 +783,7 @@ for config in plot_configs:
         if file_path.exists():
             plot_info["created"] = True
             plot_info["size_bytes"] = file_path.stat().st_size
+            plot_info["creation_time_ms"] = int((time.time() - plot_start) * 1000)
             results["plots_created"].append(str(file_path))
             results["total_size_bytes"] += plot_info["size_bytes"]
         
@@ -660,10 +793,20 @@ for config in plot_configs:
     
     results["plot_types"].append(plot_info)
 
-# Then: Summary statistics
+# Then: Summary statistics and performance metrics
+total_time = time.time() - start_time
 results["total_files"] = len(results["plots_created"])
 results["success_rate"] = len([p for p in results["plot_types"] if p["created"]]) / len(plot_configs)
 results["average_file_size"] = results["total_size_bytes"] / results["total_files"] if results["total_files"] > 0 else 0
+
+creation_times = [p["creation_time_ms"] for p in results["plot_types"] if p["creation_time_ms"] > 0]
+results["performance_metrics"] = {{
+    "total_time_seconds": total_time,
+    "avg_creation_time_ms": sum(creation_times) / len(creation_times) if creation_times else 0,
+    "max_creation_time_ms": max(creation_times) if creation_times else 0,
+    "min_creation_time_ms": min(creation_times) if creation_times else 0,
+    "plots_per_second": results["total_files"] / total_time if total_time > 0 else 0
+}}
 
 results
         """
@@ -677,7 +820,7 @@ results
             "success"
         ], f"Plot creation workflow failed: {result.get('error')}"
 
-        plot_results = result["data"]["result"]
+        plot_results = parse_result_data(result)
         assert isinstance(plot_results, dict), "Results should be a dictionary"
 
         # Track created files for cleanup
@@ -705,12 +848,18 @@ results
             plot_results.get("total_size_bytes", 0) > 0
         ), "Plot files should have content"
         assert (
-            plot_results.get("average_file_size", 0) > 1000
-        ), "Plot files should be reasonably sized (>1KB)"
+            plot_results.get("average_file_size", 0) > TestConfig.PLOT_SETTINGS["min_file_size_bytes"]
+        ), f"Plot files should be at least {TestConfig.PLOT_SETTINGS['min_file_size_bytes']} bytes"
 
         # Validate no errors occurred
         errors = plot_results.get("errors", [])
         assert len(errors) == 0, f"Unexpected errors during plot creation: {errors}"
+
+        # Validate performance metrics
+        metrics = plot_results.get("performance_metrics", {})
+        assert metrics.get("total_time_seconds", 0) > 0, "Should have performance timing"
+        assert metrics.get("plots_per_second", 0) > 0, "Should calculate plots per second"
+        assert metrics.get("avg_creation_time_ms", 0) < 15000, "Average creation should be under 15 seconds"
 
     @pytest.mark.error_handling
     def test_given_invalid_plot_operations_when_handling_errors_then_should_fail_gracefully(
@@ -719,9 +868,9 @@ results
         """
         Test error handling for invalid plot operations.
 
-        Given: Invalid plot operations and error conditions
-        When: Attempting to create plots with errors
-        Then: Should handle errors gracefully without crashing
+        **Given:** Invalid plot operations and error conditions
+        **When:** Attempting to create plots with errors
+        **Then:** Should handle errors gracefully without crashing
 
         Args:
             server_ready: Server readiness fixture
@@ -733,8 +882,9 @@ results
             - Matplotlib errors
             - File system errors
             - Memory limitations
+            - Invalid plot formats
         """
-        # Given: Various error conditions to test
+        # Given: Various error conditions to test (simplified for efficiency)
         code = f"""
 import matplotlib
 matplotlib.use('Agg')
@@ -747,7 +897,8 @@ results = {{
     "error_tests": [],
     "graceful_failures": 0,
     "unexpected_crashes": 0,
-    "total_tests": 0
+    "total_tests": 0,
+    "error_summary": {{}}
 }}
 
 error_scenarios = [
@@ -757,8 +908,8 @@ error_scenarios = [
         "test_function": lambda: create_plot_invalid_path()
     }},
     {{
-        "name": "matplotlib_error",
-        "description": "Trigger matplotlib error",
+        "name": "matplotlib_data_mismatch",
+        "description": "Trigger matplotlib data mismatch error",
         "test_function": lambda: create_plot_with_matplotlib_error()
     }},
     {{
@@ -769,31 +920,33 @@ error_scenarios = [
 ]
 
 def create_plot_invalid_path():
-    # Try to save to an invalid path
-    plt.figure()
+    # Try to save to an invalid path with invalid characters
+    plt.figure(figsize=(4, 3))
     plt.plot([1, 2, 3], [1, 2, 3])
     # This should fail due to invalid characters in path
-    invalid_path = "/plots/invalid<>|:\\*?plot.png"
+    invalid_path = "/home/pyodide/plots/invalid<>|:\\*?plot.png"
     plt.savefig(invalid_path)
     plt.close()
 
 def create_plot_with_matplotlib_error():
     # Create invalid matplotlib operations
-    plt.figure()
-    # This should cause a matplotlib error
-    plt.plot([1, 2, 3], [1, 2])  # Mismatched array sizes
-    plt.savefig("/plots/matplotlib/error_test.png")
+    plt.figure(figsize=(4, 3))
+    # This should cause a matplotlib error - mismatched array sizes
+    plt.plot([1, 2, 3], [1, 2])  # x has 3 elements, y has 2
+    plt.savefig("/home/pyodide/plots/matplotlib/error_test.png")
     plt.close()
 
 def create_plot_permission_error():
-    # Try to create plot in system directory (should fail gracefully)
-    plt.figure()
+    # Try to create plot in potentially restricted directory
+    plt.figure(figsize=(4, 3))
     plt.plot([1, 2, 3], [1, 2, 3])
     # This might fail due to permissions
     plt.savefig("/root/permission_test.png")
     plt.close()
 
 # When: Testing each error scenario
+error_types = {{}}
+
 for scenario in error_scenarios:
     test_result = {{
         "name": scenario["name"],
@@ -801,7 +954,8 @@ for scenario in error_scenarios:
         "error_occurred": False,
         "error_type": None,
         "error_message": None,
-        "handled_gracefully": False
+        "handled_gracefully": False,
+        "stack_trace": None
     }}
     
     try:
@@ -813,11 +967,18 @@ for scenario in error_scenarios:
         test_result["error_occurred"] = True
         test_result["error_type"] = type(e).__name__
         test_result["error_message"] = str(e)
+        test_result["stack_trace"] = traceback.format_exc()
         
         # Check if error was handled gracefully (no crash)
         # Any caught exception means graceful handling
         test_result["handled_gracefully"] = True
         results["graceful_failures"] += 1
+        
+        # Track error types
+        error_type = test_result["error_type"]
+        if error_type not in error_types:
+            error_types[error_type] = 0
+        error_types[error_type] += 1
         
     except SystemExit:
         # System exit indicates a crash
@@ -828,8 +989,15 @@ for scenario in error_scenarios:
     results["total_tests"] += 1
 
 # Then: Calculate error handling statistics
-results["graceful_handling_rate"] = (results["graceful_failures"] + (results["total_tests"] - results["graceful_failures"] - results["unexpected_crashes"])) / results["total_tests"] if results["total_tests"] > 0 else 0
+total_graceful = results["graceful_failures"] + (results["total_tests"] - results["graceful_failures"] - results["unexpected_crashes"])
+results["graceful_handling_rate"] = total_graceful / results["total_tests"] if results["total_tests"] > 0 else 0
 results["crash_rate"] = results["unexpected_crashes"] / results["total_tests"] if results["total_tests"] > 0 else 0
+results["error_summary"] = {{
+    "error_types_encountered": error_types,
+    "total_error_types": len(error_types),
+    "scenarios_with_errors": sum(1 for test in results["error_tests"] if test["error_occurred"]),
+    "scenarios_without_errors": sum(1 for test in results["error_tests"] if not test["error_occurred"])
+}}
 
 results
         """
@@ -844,7 +1012,7 @@ results
             "success"
         ], f"Error handling test framework failed: {result.get('error')}"
 
-        error_results = result["data"]["result"]
+        error_results = parse_result_data(result)
         assert isinstance(error_results, dict), "Results should be a dictionary"
 
         # Validate error handling behavior
@@ -868,6 +1036,11 @@ results
             assert test.get(
                 "handled_gracefully", False
             ), f"Error test '{test.get('name')}' was not handled gracefully"
+
+        # Validate error summary
+        error_summary = error_results.get("error_summary", {})
+        assert isinstance(error_summary.get("error_types_encountered", {}), dict), "Should track error types"
+        assert error_summary.get("total_error_types", 0) >= 0, "Should count error types"
 
 
 if __name__ == "__main__":

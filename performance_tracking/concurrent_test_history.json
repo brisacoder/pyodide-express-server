@@ -1,0 +1,36 @@
+[
+  {
+    "test_name": "concurrent_test",
+    "timestamp": "2025-09-16T09:47:36.695409",
+    "success_count": 3,
+    "failure_count": 0,
+    "total_count": 3,
+    "success_rate": 1.0,
+    "execution_time_mean": 41.666666666666664,
+    "execution_time_median": 5,
+    "execution_time_max": 116,
+    "execution_time_min": 4,
+    "execution_time_stdev": 64.37649674635405,
+    "response_time_mean": 44.97448603312174,
+    "response_time_median": 7.576704025268555,
+    "response_time_max": 120.46098709106445,
+    "response_time_min": 6.885766983032227
+  },
+  {
+    "test_name": "concurrent_test",
+    "timestamp": "2025-09-16T21:56:51.651355",
+    "success_count": 3,
+    "failure_count": 0,
+    "total_count": 3,
+    "success_rate": 1.0,
+    "execution_time_mean": 37.333333333333336,
+    "execution_time_median": 5,
+    "execution_time_max": 103,
+    "execution_time_min": 4,
+    "execution_time_stdev": 56.87119950672162,
+    "response_time_mean": 41.62295659383138,
+    "response_time_median": 7.863521575927734,
+    "response_time_max": 109.85732078552246,
+    "response_time_min": 7.148027420043945
+  }
+]

@@ -20,6 +20,7 @@ Examples:
         $ uv run pytest tests/test_filesystem_mount.py --cov=src --cov-report=term-missing
 """
 
+import json
 import time
 from pathlib import Path
 from typing import Dict, Any
@@ -41,6 +42,42 @@ class TestConfig:
     API_HEALTH_ENDPOINT = "/health"
     API_INSTALL_PACKAGE_ENDPOINT = "/api/install-package"
     REQUIRED_PACKAGES = ["matplotlib"]
+
+
+def parse_result_data(api_response):
+    """
+    Parse the result data from API response, handling both dict and JSON string formats.
+    
+    Args:
+        api_response: API response from execute_python_code containing result
+        
+    Returns:
+        dict: Parsed result data
+        
+    Raises:
+        AssertionError: If result cannot be parsed or is invalid
+        
+    Examples:
+        >>> response = execute_python_code("{'test': 'value'}")
+        >>> result = parse_result_data(response)
+        >>> assert result["test"] == "value"
+    """
+    # Get the result from the API response
+    result_data = api_response["data"]["result"]
+    
+    # If result is already a dict, return as-is
+    if isinstance(result_data, dict):
+        return result_data
+    
+    # If result is a JSON string, parse it
+    if isinstance(result_data, str):
+        try:
+            return json.loads(result_data)
+        except json.JSONDecodeError as e:
+            raise AssertionError(f"Failed to parse JSON result: {e}")
+    
+    # If result is neither dict nor string, it's invalid
+    raise AssertionError(f"Expected dict or JSON string, got {type(result_data)}: {result_data}")
 
 
 @pytest.fixture(scope="session")
@@ -385,7 +422,7 @@ result
         # Then: Response should indicate JS interface availability
         assert response["success"] is True, f"Mount detection failed: {response.get('error')}"
 
-        result = response["data"]["result"]
+        result = parse_result_data(response)
         assert result is not None, "Result should not be None"
         assert result["js_available"] is True, "JavaScript interface should be available"
         assert isinstance(result["mount_methods"], list), "Mount methods should be a list"
@@ -506,7 +543,7 @@ result
         # Then: Operation should complete gracefully
         assert response["success"] is True, f"Mount attempt failed: {response.get('error')}"
 
-        result = response["data"]["result"]
+        result = parse_result_data(response)
         assert result is not None, "Result should not be None"
 
         # Verify virtual filesystem operations work regardless of mount capability
@@ -580,7 +617,7 @@ except Exception as e:
 test_directories = [
     "/test_mount_dir",
     "/virtual_test/nested/deep/structure",
-    "/plots/test_matplotlib",
+    "/home/pyodide/plots/test_matplotlib",
     "/home/pyodide/uploads/test_data"
 ]
 
@@ -660,7 +697,7 @@ result
         # Then: Virtual filesystem operations should succeed
         assert response["success"] is True, f"Virtual filesystem test failed: {response.get('error')}"
 
-        result = response["data"]["result"]
+        result = parse_result_data(response)
         assert result is not None, "Result should not be None"
         assert result.get("success") is True, "Virtual filesystem operations should succeed"
 
@@ -716,7 +753,7 @@ import numpy as np
 result = {
     "matplotlib_imported": True,
     "plot_operations": [],
-    "virtual_plots_dir": "/plots/matplotlib",
+    "virtual_plots_dir": "/home/pyodide/plots/matplotlib",
     "success": True
 }
 
@@ -813,7 +850,7 @@ result
         # Then: Plots should be created successfully
         assert response["success"] is True, f"Matplotlib plot creation failed: {response.get('error')}"
 
-        result = response["data"]["result"]
+        result = parse_result_data(response)
         assert result is not None, "Result should not be None"
         assert result.get("matplotlib_imported") is True, "Matplotlib should be imported successfully"
         assert result.get("plots_dir_created") is True, "Plots directory should be created in virtual filesystem"
@@ -828,7 +865,8 @@ result
         for plot in successful_plots:
             assert plot.get("file_size", 0) > 0, f"Plot file {plot['file_path']} should have content"
             assert plot["file_path"].endswith('.png'), "Plot files should be PNG format"
-            assert "/plots/matplotlib/" in plot["file_path"], "Plots should be in correct virtual directory"
+            assert "/home/pyodide/plots/matplotlib/" in plot["file_path"], \
+                "Plots should be in correct virtual directory"
 
         # Verify total file count
         total_created = result.get("total_plots_created", 0)
@@ -1053,7 +1091,7 @@ result
         # Then: All operations should succeed with proper handling
         assert response["success"] is True, f"Complex batch operations failed: {response.get('error')}"
 
-        result = response["data"]["result"]
+        result = parse_result_data(response)
         assert result is not None, "Result should not be None"
         assert result.get("success") is True, "Batch operations should succeed overall"
 
@@ -1249,7 +1287,7 @@ result
         # Then: Security constraints should be properly enforced
         assert response["success"] is True, f"Security test failed: {response.get('error')}"
 
-        result = response["data"]["result"]
+        result = parse_result_data(response)
         assert result is not None, "Security test result should not be None"
 
         # Verify security tests were performed

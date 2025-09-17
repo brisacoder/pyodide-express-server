@@ -1,0 +1,204 @@
+Date : 2025-09-16 21:30:29
+Directory : c:\Users\dev\Dropbox\GitHub\pyodide-express-server
+Total : 147 files,  45052 codes, 17215 comments, 5878 blanks, all 68145 lines
+
+Languages
++--------------------+------------+------------+------------+------------+------------+
+| language           | files      | code       | comment    | blank      | total      |
++--------------------+------------+------------+------------+------------+------------+
+| Python             |         62 |     18,641 |     13,893 |      4,196 |     36,730 |
+| JSON               |         19 |      8,353 |          0 |          6 |      8,359 |
+| JavaScript         |         36 |      6,286 |      3,261 |        376 |      9,923 |
+| CSV                |          3 |      5,863 |          0 |          2 |      5,865 |
+| Markdown           |         17 |      3,996 |          1 |      1,068 |      5,065 |
+| TOML               |          2 |        976 |          0 |         66 |      1,042 |
+| HTML               |          1 |        622 |          0 |        100 |        722 |
+| PowerShell         |          1 |        113 |         15 |         18 |        146 |
+| Shell Script       |          1 |         85 |         15 |         16 |        116 |
+| YAML               |          2 |         57 |          4 |          5 |         66 |
+| Docker             |          1 |         43 |         25 |         24 |         92 |
+| Ini                |          1 |         17 |          0 |          0 |         17 |
+| JSON with Comments |          1 |          0 |          1 |          1 |          2 |
++--------------------+------------+------------+------------+------------+------------+
+
+Directories
++------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                             | files      | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                |        147 |     45,052 |     17,215 |      5,878 |     68,145 |
+| . (Files)                                                                                                        |         50 |     14,431 |        324 |      1,416 |     16,171 |
+| .github                                                                                                          |          1 |         25 |          0 |          9 |         34 |
+| aws                                                                                                              |          1 |         91 |          0 |          1 |         92 |
+| docs                                                                                                             |          4 |        740 |          0 |        220 |        960 |
+| examples                                                                                                         |          5 |        373 |         51 |         72 |        496 |
+| performance_tracking                                                                                             |         13 |        327 |          0 |          1 |        328 |
+| public                                                                                                           |          2 |        624 |         12 |        101 |        737 |
+| public (Files)                                                                                                   |          1 |        622 |          0 |        100 |        722 |
+| public\js                                                                                                        |          1 |          2 |         12 |          1 |         15 |
+| src                                                                                                              |         28 |      5,638 |      3,177 |        269 |      9,084 |
+| src (Files)                                                                                                      |          3 |        871 |         79 |          4 |        954 |
+| src\config                                                                                                       |          2 |        163 |         54 |          4 |        221 |
+| src\controllers                                                                                                  |          3 |        597 |        336 |         10 |        943 |
+| src\middleware                                                                                                   |          1 |        240 |        159 |          1 |        400 |
+| src\routes                                                                                                       |         10 |      1,983 |      1,464 |         51 |      3,498 |
+| src\services                                                                                                     |          4 |      1,170 |        332 |        194 |      1,696 |
+| src\types                                                                                                        |          1 |          1 |        164 |          1 |        166 |
+| src\utils                                                                                                        |          4 |        613 |        589 |          4 |      1,206 |
+| tests                                                                                                            |         43 |     22,803 |     13,651 |      3,789 |     40,243 |
+| tests (Files)                                                                                                    |         42 |     16,959 |     13,651 |      3,788 |     34,398 |
+| tests\data                                                                                                       |          1 |      5,844 |          0 |          1 |      5,845 |
++------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| filename                                                                                                         | language           | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\.eslintrc.json                                                | JSON with Comments |          0 |          1 |          1 |          2 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\.flake8                                                       | Ini                |         17 |          0 |          0 |         17 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\.github\copilot-instructions.md                               | Markdown           |         25 |          0 |          9 |         34 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\.prettierrc                                                   | JSON               |         10 |          0 |          1 |         11 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\AWS_DEPLOYMENT_GUIDE.md                                       | Markdown           |        263 |          0 |         88 |        351 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\CODE_QUALITY_AUDIT.md                                         | Markdown           |        509 |          0 |        119 |        628 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\CONTRIBUTING.md                                               | Markdown           |        181 |          0 |         53 |        234 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\Dockerfile                                                    | Docker             |         43 |         25 |         24 |         92 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\MATPLOTLIB_TEST_CONVERSION_SUMMARY.md                         | Markdown           |        113 |          0 |         25 |        138 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\PERFORMANCE_TRACKING.md                                       | Markdown           |        148 |          0 |         42 |        190 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\PROCESS_POOL_CONFIG.md                                        | Markdown           |         87 |          0 |         27 |        114 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\README.md                                                     | Markdown           |        385 |          0 |        111 |        496 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\TESTING.md                                                    | Markdown           |        118 |          0 |         39 |        157 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\VS_CODE_PYTEST_GUIDE.md                                       | Markdown           |        136 |          0 |         49 |        185 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\aws\ecs-task-definition.json                                  | JSON               |         91 |          0 |          1 |         92 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\crash-analyzer.js                                             | JavaScript         |        198 |          9 |         35 |        242 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\deploy-production.ps1                                         | PowerShell         |        113 |         15 |         18 |        146 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\deploy-production.sh                                          | Shell Script       |         85 |         15 |         16 |        116 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\docker-compose.dev.yml                                        | YAML               |         27 |          2 |          2 |         31 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\docker-compose.yml                                            | YAML               |         30 |          2 |          3 |         35 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\docs\FILESYSTEM_MOUNTING_GUIDE.md                             | Markdown           |        254 |          0 |         91 |        345 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\docs\QUICK_REFERENCE_FILESYSTEM.md                            | Markdown           |         46 |          0 |         15 |         61 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\docs\architecture.md                                          | Markdown           |        106 |          0 |         26 |        132 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\docs\curl-commands.md                                         | Markdown           |        334 |          0 |         88 |        422 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\ecosystem.config.js                                           | JavaScript         |         57 |         11 |         12 |         80 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\ecosystem.config.json                                         | JSON               |         38 |          0 |          1 |         39 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\eslint.config.js                                              | JavaScript         |         68 |          1 |          3 |         72 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\examples\README.md                                            | Markdown           |         50 |          0 |         16 |         66 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\examples\basic-client.js                                      | JavaScript         |         13 |          6 |          5 |         24 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\examples\data-science-client.js                               | JavaScript         |         73 |         13 |         13 |         99 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\examples\execute-raw-client.js                                | JavaScript         |        125 |         15 |         16 |        156 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\examples\file-upload-client.js                                | JavaScript         |        112 |         17 |         22 |        151 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\fix_api_calls.py                                              | Python             |         27 |         10 |          9 |         46 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\install_seaborn.json                                          | JSON               |          1 |          0 |          0 |          1 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\nodemon.json                                                  | JSON               |         32 |          0 |          1 |         33 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\package-lock.json                                             | JSON               |      7,637 |          0 |          1 |      7,638 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\package.json                                                  | JSON               |        232 |          0 |          1 |        233 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_analysis.py                                       | Python             |        143 |         17 |         43 |        203 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_monitor.py                                        | Python             |        144 |         28 |         47 |        219 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\concurrency_limits_history.json          | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\concurrent_test_history.json             | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\data_processing_limits_history.json      | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\matrix_operations_limits_history.json    | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\memory_allocation_limits_history.json    | JSON               |         36 |          0 |          0 |         36 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\monitor_report_20250916_000520.json      | JSON               |         27 |          0 |          0 |         27 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\monitor_report_20250916_000606.json      | JSON               |         27 |          0 |          0 |         27 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\performance_summary.csv                  | CSV                |         15 |          0 |          1 |         16 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\prime_calculation_limits_history.json    | JSON               |         70 |          0 |          0 |         70 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\recursive_algorithms_limits_history.json | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\string_processing_limits_history.json    | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\termination_behavior_history.json        | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\performance_tracking\timeout_limit_discovery_history.json     | JSON               |         19 |          0 |          0 |         19 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\public\index.html                                             | HTML               |        622 |          0 |        100 |        722 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\public\js\chart.js                                            | JavaScript         |          2 |         12 |          1 |         15 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\pyodide_arch.md                                               | Markdown           |        839 |          1 |        182 |      1,022 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\pyproject.toml                                                | TOML               |         48 |          0 |          3 |         51 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\run_comprehensive_tests.py                                    | Python             |        466 |         45 |         73 |        584 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\run_modernized_tests.py                                       | Python             |        117 |         37 |         33 |        187 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\run_simple_tests.py                                           | Python             |        129 |         39 |         55 |        223 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\security_audit.md                                             | Markdown           |        402 |          0 |         88 |        490 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\simple_debug.py                                               | Python             |         87 |         11 |         20 |        118 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\simple_test.py                                                | Python             |          3 |          0 |          0 |          3 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\app.js                                                    | JavaScript         |        175 |          7 |          2 |        184 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\config\constants.js                                       | JavaScript         |        131 |         52 |          3 |        186 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\config\index.js                                           | JavaScript         |         32 |          2 |          1 |         35 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\controllers\executeController.js                          | JavaScript         |        234 |        241 |          2 |        477 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\controllers\healthController.js                           | JavaScript         |        271 |         65 |          1 |        337 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\controllers\uploadController.js                           | JavaScript         |         92 |         30 |          7 |        129 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\middleware\validation.js                                  | JavaScript         |        240 |        159 |          1 |        400 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\crashReports.js                                    | JavaScript         |        200 |        416 |          1 |        617 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\dashboard.js                                       | JavaScript         |        538 |          1 |          2 |        541 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\execute.js                                         | JavaScript         |        204 |        505 |          2 |        711 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\executeRaw.js                                      | JavaScript         |          5 |          0 |          1 |          6 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\files.js                                           | JavaScript         |        207 |        190 |          6 |        403 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\health.js                                          | JavaScript         |          7 |          3 |          1 |         11 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\pyodide-internal.js                                | JavaScript         |        192 |        211 |          7 |        410 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\safePath.js                                        | JavaScript         |         57 |         38 |         17 |        112 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\stats.js                                           | JavaScript         |        509 |         79 |          0 |        588 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\routes\upload.js                                          | JavaScript         |         64 |         21 |         14 |         99 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\server.js                                                 | JavaScript         |         58 |         60 |          1 |        119 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\services\layout.js                                        | JavaScript         |         45 |         80 |         14 |        139 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\services\pyodide-executor.js                              | JavaScript         |        261 |         57 |         37 |        355 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\services\pyodide-process-pool.js                          | JavaScript         |        403 |         97 |         74 |        574 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\services\pyodide-service.js                               | JavaScript         |        461 |         98 |         69 |        628 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\swagger-config.js                                         | JavaScript         |        638 |         12 |          1 |        651 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\types\jsdoc-types.js                                      | JavaScript         |          1 |        164 |          1 |        166 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\utils\crashReporter.js                                    | JavaScript         |        286 |         16 |          1 |        303 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\utils\logger.js                                           | JavaScript         |        276 |        345 |          1 |        622 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\utils\metrics.js                                          | JavaScript         |         36 |        121 |          1 |        158 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\src\utils\requestContext.js                                   | JavaScript         |         15 |        107 |          1 |        123 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test-upload.csv                                               | CSV                |          4 |          0 |          0 |          4 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_correlation.py                                           | Python             |         85 |          8 |         16 |        109 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_exact_correlation.py                                     | Python             |         87 |         12 |         21 |        120 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_gradual.py                                               | Python             |         34 |          2 |          5 |         41 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_imports.py                                               | Python             |         22 |          0 |          4 |         26 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_matplotlib.py                                            | Python             |         64 |          7 |         17 |         88 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_packages.py                                              | Python             |         53 |          3 |         13 |         69 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_pandas.py                                                | Python             |         46 |          4 |         12 |         62 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_seaborn.py                                               | Python             |         17 |          3 |          4 |         24 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_seaborn_import.py                                        | Python             |         40 |          3 |          8 |         51 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_simple_correlation.py                                    | Python             |         67 |          6 |         16 |         89 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\test_syntax_error.py                                          | Python             |         18 |          3 |          5 |         26 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\conftest.py                                             | Python             |        390 |        105 |         30 |        525 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\data\DEVRT-NISSAN-LEAF.csv                              | CSV                |      5,844 |          0 |          1 |      5,845 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_api.py                                             | Python             |        369 |        800 |         93 |      1,262 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_basic_errors.py                                    | Python             |        153 |         53 |         30 |        236 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_code_quality_compliance.py                         | Python             |        438 |        445 |        120 |      1,003 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_container_filesystem.py                            | Python             |        433 |        590 |        106 |      1,129 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_crash_reporting_system.py                          | Python             |        157 |         44 |         46 |        247 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_csp_compliance.py                                  | Python             |        305 |        359 |         99 |        763 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_debug_filesystem_plots.py                          | Python             |      1,071 |        488 |        223 |      1,782 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_direct_filesystem_mount.py                         | Python             |        748 |        988 |        174 |      1,910 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_dynamic_modules_and_execution_robustness.py        | Python             |        610 |        441 |        165 |      1,216 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_error_handling.py                                  | Python             |        296 |        282 |         83 |        661 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_extract_plots_api.py                               | Python             |        497 |        438 |        114 |      1,049 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_file_management_enhancements.py                    | Python             |        325 |        360 |         94 |        779 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_file_upload_enhancements.py                        | Python             |        428 |        288 |         88 |        804 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_filesystem_mount.py                                | Python             |        776 |        365 |        180 |      1,321 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_filesystem_persistence.py                          | Python             |        397 |        257 |        101 |        755 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_function_return_patterns.py                        | Python             |        504 |        258 |        102 |        864 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_integration.py                                     | Python             |        156 |        301 |         21 |        478 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_javascript_module.py                               | Python             |        558 |        409 |         78 |      1,045 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_local_fs_access_api.py                             | Python             |        444 |        386 |        117 |        947 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_matplotlib.py                                      | Python             |        522 |        675 |        135 |      1,332 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_matplotlib_base64.py                               | Python             |        607 |        370 |         74 |      1,051 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_matplotlib_filesystem.py                           | Python             |        368 |        249 |         72 |        689 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_nissan_leaf_telemetry.py                           | Python             |        633 |        307 |        180 |      1,120 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_non_happy_paths.py                                 | Python             |        317 |        642 |         77 |      1,036 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_package_management.py                              | Python             |        226 |        486 |         54 |        766 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_performance.py                                     | Python             |        527 |        443 |         91 |      1,061 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_reset.py                                           | Python             |         77 |         28 |         26 |        131 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_return_data_types.py                               | Python             |        209 |        328 |         72 |        609 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_seaborn.py                                         | Python             |      1,122 |        300 |        114 |      1,536 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_seaborn_base64.py                                  | Python             |        447 |        425 |        148 |      1,020 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_seaborn_filesystem.py                              | Python             |        339 |        321 |         71 |        731 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_security.py                                        | Python             |        354 |        493 |         93 |        940 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_security_info_disclosure.py                        | Python             |         49 |          8 |         13 |         70 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_security_logging.py                                | Python             |        259 |         74 |         74 |        407 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_security_penetration.py                            | Python             |        340 |        110 |         35 |        485 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_server_kill_persistence.py                         | Python             |         54 |         50 |         18 |        122 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_simple_file_creation.py                            | Python             |        328 |        201 |         86 |        615 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_simple_filesystem.py                               | Python             |        266 |        187 |         75 |        528 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_sklearn.py                                         | Python             |        448 |        237 |        119 |        804 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_user_isolation.py                                  | Python             |        154 |         26 |         34 |        214 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\tests\test_virtual_filesystem.py                              | Python             |        258 |         34 |         63 |        355 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\ultra_simple_test.py                                          | Python             |         33 |          4 |          7 |         44 |
+| c:\Users\dev\Dropbox\GitHub\pyodide-express-server\uv.lock                                                       | TOML               |        928 |          0 |         63 |        991 |
+| Total                                                                                                            |                    |     45,052 |     17,215 |      5,878 |     68,145 |
++------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+

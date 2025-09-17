@@ -13,31 +13,31 @@ import requests
 
 # Import configuration (use try/except for different import contexts)
 try:
-    from tests.test_config import (
-        BASE_URL,
-        ENDPOINTS,
-        EXECUTE_TIMEOUT,
-        UPLOAD_TIMEOUT,
-        FILE_OPERATION_TIMEOUT,
-        PACKAGE_INSTALL_TIMEOUT,
-        RESET_TIMEOUT,
-        TEST_CSV_CONTENT,
-        TEST_FILES,
-        PACKAGES,
-    )
+    from .conftest import Config
+    # Map old constants to new Config class
+    BASE_URL = Config.BASE_URL
+    ENDPOINTS = Config.ENDPOINTS
+    EXECUTE_TIMEOUT = Config.TIMEOUTS["code_execution"]
+    UPLOAD_TIMEOUT = Config.TIMEOUTS["file_upload"]
+    FILE_OPERATION_TIMEOUT = Config.TIMEOUTS["file_operation"]
+    PACKAGE_INSTALL_TIMEOUT = Config.TIMEOUTS["package_install"]
+    RESET_TIMEOUT = Config.TIMEOUTS["reset_operation"]
+    TEST_CSV_CONTENT = Config.TEST_DATA["csv_content"]
+    TEST_FILES = Config.TEST_DATA["test_files"]
+    PACKAGES = Config.TEST_DATA["packages"]
 except ImportError:
-    from test_config import (
-        BASE_URL,
-        ENDPOINTS,
-        EXECUTE_TIMEOUT,
-        UPLOAD_TIMEOUT,
-        FILE_OPERATION_TIMEOUT,
-        PACKAGE_INSTALL_TIMEOUT,
-        RESET_TIMEOUT,
-        TEST_CSV_CONTENT,
-        TEST_FILES,
-        PACKAGES,
-    )
+    from conftest import Config
+    # Map old constants to new Config class
+    BASE_URL = Config.BASE_URL
+    ENDPOINTS = Config.ENDPOINTS
+    EXECUTE_TIMEOUT = Config.TIMEOUTS["code_execution"]
+    UPLOAD_TIMEOUT = Config.TIMEOUTS["file_upload"]
+    FILE_OPERATION_TIMEOUT = Config.TIMEOUTS["file_operation"]
+    PACKAGE_INSTALL_TIMEOUT = Config.TIMEOUTS["package_install"]
+    RESET_TIMEOUT = Config.TIMEOUTS["reset_operation"]
+    TEST_CSV_CONTENT = Config.TEST_DATA["csv_content"]
+    TEST_FILES = Config.TEST_DATA["test_files"]
+    PACKAGES = Config.TEST_DATA["packages"]
 
 
 # ===== Helper Functions =====

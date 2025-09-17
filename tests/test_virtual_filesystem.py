@@ -1,25 +1,242 @@
+#!/usr/bin/env python3
+"""
+BDD-style pytest tests for Pyodide virtual filesystem operations.
+
+This module tests the virtual filesystem behavior, directory operations,
+file creation/manipulation, and matplotlib plot saving within the Pyodide environment.
+
+Key Features:
+- ✅ BDD Given/When/Then structure with comprehensive virtual filesystem testing
+- ✅ Only uses /api/execute-raw endpoint with plain text code
+- ✅ API contract compliance validation for all responses
+- ✅ Cross-platform pathlib usage for all file operations
+- ✅ Enhanced error handling for filesystem operations
+- ✅ No hardcoded values - all parameterized with fixtures
+- ✅ Comprehensive filesystem state validation
+- ✅ Dynamic file naming to avoid conflicts
+
+API Contract:
+{
+  "success": true | false,
+  "data": {
+    "result": <any>,
+    "stdout": <string>,
+    "stderr": <string>,
+    "executionTime": <number>
+  } | null,
+  "error": <string|null>,
+  "meta": {"timestamp": <string>}
+}
+
+Test Categories:
+- filesystem_structure: Virtual filesystem discovery and structure validation
+- directory_operations: Directory creation, navigation, and management
+- file_operations: File creation, reading, writing, and manipulation
+- matplotlib_integration: Plot saving and filesystem interaction with matplotlib
+- api_integration: Integration with plot extraction and filesystem APIs
+"""
+
+import json
 import time
-import unittest
 
-import requests
+import pytest
 
-BASE_URL = "http://localhost:3000"
+# Import shared configuration and utilities
+try:
+    from .conftest import execute_python_code, validate_api_contract
+except ImportError:
+    from conftest import execute_python_code, validate_api_contract
 
 
-def wait_for_server(url: str, timeout: int = 180):
-    start = time.time()
-    while time.time() - start < timeout:
+class VirtualFilesystemTestConfig:
+    """Configuration constants for virtual filesystem tests."""
+    
+    # Filesystem test parameters
+    FILESYSTEM_SETTINGS = {
+        "default_timeout": 60,
+        "plot_timeout": 90,
+        "api_timeout": 45,
+        "min_file_size": 1000,  # Minimum expected file size for plots
+        "max_directory_listing": 20,  # Maximum items to list in directory
+        "test_content": "Hello virtual filesystem test"
+    }
+    
+    # Test paths for virtual filesystem
+    FILESYSTEM_PATHS = [
+        {
+            "path": "/",
+            "description": "Root directory - should always exist",
+            "should_exist": True,
+            "is_directory": True
+        },
+        {
+            "path": "/tmp",
+            "description": "Temporary directory - commonly available",
+            "should_exist": None,  # May or may not exist
+            "is_directory": True
+        },
+        {
+            "path": "/home",
+            "description": "Home directory - may exist in some environments",
+            "should_exist": None,
+            "is_directory": True
+        },
+        {
+            "path": "/home/pyodide",
+            "description": "Pyodide user home directory",
+            "should_exist": None,
+            "is_directory": True
+        },
+        {
+            "path": "/home/pyodide/plots",
+            "description": "Pyodide plots directory",
+            "should_exist": None,
+            "is_directory": True
+        }
+    ]
+    
+    # File operation test scenarios
+    FILE_OPERATIONS = [
+        {
+            "name": "basic_text_file",
+            "directory": "/test_vfs_basic",
+            "filename": "test.txt",
+            "content": "Basic test content",
+            "operation_type": "text"
+        },
+        {
+            "name": "json_data_file",
+            "directory": "/test_vfs_json",
+            "filename": "data.json",
+            "content": '{"test": "data", "number": 42}',
+            "operation_type": "json"
+        },
+        {
+            "name": "multiline_file",
+            "directory": "/test_vfs_multi",
+            "filename": "multiline.txt",
+            "content": "Line 1\nLine 2\nLine 3\n",
+            "operation_type": "multiline"
+        }
+    ]
+
+
+@pytest.fixture
+def filesystem_timeout():
+    """
+    Provide timeout for filesystem operations.
+
+    Returns:
+        int: Timeout in seconds for filesystem operations
+
+    Example:
+        >>> def test_filesystem(filesystem_timeout):
+        ...     result = execute_python_code(code, timeout=filesystem_timeout)
+    """
+    return VirtualFilesystemTestConfig.FILESYSTEM_SETTINGS["default_timeout"]
+
+
+@pytest.fixture
+def plot_timeout():
+    """
+    Provide timeout for plot generation and saving operations.
+
+    Returns:
+        int: Timeout in seconds for plot operations
+
+    Example:
+        >>> def test_plot_save(plot_timeout):
+        ...     result = execute_python_code(code, timeout=plot_timeout)
+    """
+    return VirtualFilesystemTestConfig.FILESYSTEM_SETTINGS["plot_timeout"]
+
+
+@pytest.fixture
+def api_timeout():
+    """
+    Provide timeout for API operations.
+
+    Returns:
+        int: Timeout in seconds for API operations
+
+    Example:
+        >>> def test_api_call(api_timeout):
+        ...     result = execute_python_code(code, timeout=api_timeout)
+    """
+    return VirtualFilesystemTestConfig.FILESYSTEM_SETTINGS["api_timeout"]
+
+
+@pytest.fixture
+def unique_timestamp():
+    """
+    Generate unique timestamp for test file naming.
+
+    Returns:
+        int: Unique timestamp in milliseconds
+
+    Example:
+        >>> def test_file_creation(unique_timestamp):
+        ...     filename = f"test_{unique_timestamp}.txt"
+        ...     # Use filename for unique test files
+    """
+    return int(time.time() * 1000)
+
+
+@pytest.fixture
+def cleanup_test_directories():
+    """
+    Cleanup fixture to remove test directories after tests.
+
+    Yields:
+        List[str]: List to append created directory paths for cleanup
+
+    Example:
+        >>> def test_directory_creation(cleanup_test_directories):
+        ...     test_dir = "/test_cleanup_example"
+        ...     cleanup_test_directories.append(test_dir)
+        ...     # Directory will be automatically cleaned up
+    """
+    created_directories = []
+    yield created_directories
+
+    # Cleanup created directories
+    if created_directories:
+        cleanup_code = f"""
+from pathlib import Path
+import shutil
+
+cleaned_dirs = []
+errors = []
+
+for dir_path in {created_directories}:
+    try:
+        test_dir = Path(dir_path)
+        if test_dir.exists():
+            if test_dir.is_dir():
+                shutil.rmtree(str(test_dir))
+            else:
+                test_dir.unlink()
+            cleaned_dirs.append(str(test_dir))
+    except Exception as e:
+        errors.append(f"{{dir_path}}: {{str(e)}}")
+
+{{
+    "cleaned_directories": cleaned_dirs,
+    "errors": errors,
+    "total_cleaned": len(cleaned_dirs)
+}}
+        """
         try:
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                return
-        except requests.RequestException:
+            execute_python_code(cleanup_code)
+        except Exception:
+            # Don't fail tests due to cleanup issues
             pass
-        time.sleep(1)
-    raise RuntimeError(f"Server at {url} did not start in time")
 
 
-class VirtualFilesystemTestCase(unittest.TestCase):
+@pytest.mark.filesystem
+@pytest.mark.virtual
+@pytest.mark.api
+class TestVirtualFilesystemStructure:
     """Test virtual filesystem behavior and debugging filesystem issues."""
 
     @classmethod

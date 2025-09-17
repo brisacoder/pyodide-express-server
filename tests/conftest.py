@@ -85,6 +85,32 @@ class Config:
     DEFAULT_TIMEOUT = 30
     MAX_CODE_LENGTH = 50000
     MAX_FILE_SIZE_MB = 10
+    
+    # Test data for integration tests
+    TEST_DATA = {
+        "csv_content": """name,age,city,salary
+John Doe,30,New York,75000
+Jane Smith,25,Los Angeles,65000
+Bob Johnson,35,Chicago,80000
+Alice Brown,28,Houston,70000
+Charlie Wilson,32,Phoenix,72000""",
+        "test_files": {
+            "small_csv": "test_small.csv",
+            "large_csv": "test_large.csv",
+            "invalid_csv": "test_invalid.csv",
+            "python_script": "test_script.py",
+            "text_file": "test_data.txt"
+        },
+        "packages": ["pandas", "numpy", "matplotlib", "seaborn"]
+    }
+    
+    # Additional timeout mappings for legacy compatibility
+    TIMEOUTS.update({
+        "file_upload": 30,
+        "file_operation": 15,
+        "package_install": 60,
+        "reset_operation": 20
+    })
 
 
 def wait_for_server(url: str, timeout: int = 120) -> bool:

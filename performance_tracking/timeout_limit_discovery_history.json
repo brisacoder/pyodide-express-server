@@ -1,0 +1,36 @@
+[
+  {
+    "test_name": "timeout_limit_discovery",
+    "timestamp": "2025-09-16T09:44:31.760444",
+    "success_count": 1,
+    "failure_count": 4,
+    "total_count": 5,
+    "success_rate": 0.2,
+    "execution_time_mean": 5003,
+    "execution_time_median": 5003,
+    "execution_time_max": 5003,
+    "execution_time_min": 5003,
+    "execution_time_stdev": 0,
+    "response_time_mean": 5006.823778152466,
+    "response_time_median": 5006.823778152466,
+    "response_time_max": 5006.823778152466,
+    "response_time_min": 5006.823778152466
+  },
+  {
+    "test_name": "timeout_limit_discovery",
+    "timestamp": "2025-09-16T21:54:48.242861",
+    "success_count": 2,
+    "failure_count": 3,
+    "total_count": 5,
+    "success_rate": 0.4,
+    "execution_time_mean": 10003,
+    "execution_time_median": 10003.0,
+    "execution_time_max": 15003,
+    "execution_time_min": 5003,
+    "execution_time_stdev": 7071.067811865475,
+    "response_time_mean": 10007.837295532227,
+    "response_time_median": 10007.837295532227,
+    "response_time_max": 15008.607387542725,
+    "response_time_min": 5007.0672035217285
+  }
+]

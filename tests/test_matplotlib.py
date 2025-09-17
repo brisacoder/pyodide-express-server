@@ -41,6 +41,7 @@ Example Usage:
 """
 
 import base64
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -84,7 +85,7 @@ class MatplotlibConfig:
 
     # Virtual filesystem paths (pathlib for portability)
     VIRTUAL_PATHS = {
-        "plots_dir": "/plots/matplotlib",
+        "plots_dir": "/home/pyodide/plots/matplotlib",
         "temp_dir": "/tmp",
     }
 
@@ -281,6 +282,33 @@ def generate_timestamp_filename(pattern: str) -> str:
     return pattern.format(timestamp=timestamp)
 
 
+def parse_result_data(response: dict) -> dict:
+    """
+    Parse result data from server response, handling JSON string conversion.
+    
+    The server may return result data as a JSON string that needs to be parsed
+    back into a dictionary for proper assertion handling.
+    
+    Args:
+        response: Server response dictionary containing data.result
+        
+    Returns:
+        Parsed result data as dictionary
+        
+    Raises:
+        json.JSONDecodeError: If result data is malformed JSON
+        KeyError: If response structure is invalid
+    """
+    result_data = response["data"]["result"]
+    if isinstance(result_data, str):
+        try:
+            return json.loads(result_data)
+        except json.JSONDecodeError:
+            # If it's not valid JSON, return as-is
+            return {"raw_result": result_data}
+    return result_data
+
+
 # ==================== BDD TEST SCENARIOS ====================
 
 
@@ -390,7 +418,7 @@ result
     assert "result" in response_data["data"], "Response should contain result field"
 
     # And: The plot result should contain expected base64 data
-    result = response_data["data"]["result"]
+    result = parse_result_data(response_data)
     assert isinstance(result, dict), f"Result should be dict, got {type(result)}"
     assert "plot_base64" in result, "Result should contain plot_base64 field"
     assert "plot_type" in result, "Result should contain plot_type field"
@@ -514,7 +542,7 @@ result
     assert response_data["data"] is not None, "Response data should not be null for success"
 
     # And: The plot result should contain expected scatter plot data
-    result = response_data["data"]["result"]
+    result = parse_result_data(response_data)
     assert isinstance(result, dict), f"Result should be dict, got {type(result)}"
     assert "plot_base64" in result, "Result should contain plot_base64 field"
     assert "plot_type" in result, "Result should contain plot_type field"
@@ -657,7 +685,7 @@ result
     assert response_data["data"] is not None, "Response data should not be null for success"
 
     # And: The plot result should contain expected histogram data and statistics
-    result = response_data["data"]["result"]
+    result = parse_result_data(response_data)
     assert isinstance(result, dict), f"Result should be dict, got {type(result)}"
     assert "plot_base64" in result, "Result should contain plot_base64 field"
     assert "plot_type" in result, "Result should contain plot_type field"
@@ -804,7 +832,7 @@ result
     assert response_data["data"] is not None, "Response data should not be null for success"
 
     # And: The plot result should contain expected subplot metadata
-    result = response_data["data"]["result"]
+    result = parse_result_data(response_data)
     assert isinstance(result, dict), f"Result should be dict, got {type(result)}"
     assert "plot_base64" in result, "Result should contain plot_base64 field"
     assert "plot_type" in result, "Result should contain plot_type field"
@@ -866,7 +894,7 @@ def test_when_direct_filesystem_plot_is_saved_then_virtual_file_system_contains_
           "file_saved": true,
           "file_size": 45678,
           "plot_type": "direct_save_basic",
-          "filename": "/plots/matplotlib/plot_xyz.png"
+          "filename": "/home/pyodide/plots/matplotlib/plot_xyz.png"
         }
     """
     # Given: Matplotlib is available in Pyodide environment
@@ -943,7 +971,7 @@ result
     assert response_data["data"] is not None, "Response data should not be null for success"
 
     # And: The file metadata should confirm successful creation
-    result = response_data["data"]["result"]
+    result = parse_result_data(response_data)
     assert isinstance(result, dict), f"Result should be dict, got {type(result)}"
     assert "file_saved" in result, "Result should contain file_saved field"
     assert "file_size" in result, "Result should contain file_size field"
@@ -1003,7 +1031,7 @@ def test_when_complex_filesystem_plot_is_saved_then_multi_subplot_file_is_create
           "plot_type": "direct_save_complex",
           "data_points": 1000,
           "subplot_count": 4,
-          "filename": "/plots/matplotlib/complex_xyz.png"
+          "filename": "/home/pyodide/plots/matplotlib/complex_xyz.png"
         }
     """
     # Given: Matplotlib is available in Pyodide environment
@@ -1112,7 +1140,7 @@ result
     assert response_data["data"] is not None, "Response data should not be null for success"
 
     # And: The complex plot metadata should confirm successful creation
-    result = response_data["data"]["result"]
+    result = parse_result_data(response_data)
     assert isinstance(result, dict), f"Result should be dict, got {type(result)}"
     assert "file_saved" in result, "Result should contain file_saved field"
     assert "file_size" in result, "Result should contain file_size field"

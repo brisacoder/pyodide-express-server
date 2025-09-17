@@ -1,0 +1,36 @@
+[
+  {
+    "test_name": "termination_behavior",
+    "timestamp": "2025-09-16T09:46:30.840794",
+    "success_count": 2,
+    "failure_count": 0,
+    "total_count": 2,
+    "success_rate": 1.0,
+    "execution_time_mean": 5995.5,
+    "execution_time_median": 5995.5,
+    "execution_time_max": 10006,
+    "execution_time_min": 1985,
+    "execution_time_stdev": 5671.703491897298,
+    "response_time_mean": 6001.025676727295,
+    "response_time_median": 6001.025676727295,
+    "response_time_max": 10013.193368911743,
+    "response_time_min": 1988.8579845428467
+  },
+  {
+    "test_name": "termination_behavior",
+    "timestamp": "2025-09-16T21:56:38.318965",
+    "success_count": 2,
+    "failure_count": 0,
+    "total_count": 2,
+    "success_rate": 1.0,
+    "execution_time_mean": 5882,
+    "execution_time_median": 5882.0,
+    "execution_time_max": 10004,
+    "execution_time_min": 1760,
+    "execution_time_stdev": 5829.388304101898,
+    "response_time_mean": 5885.332107543945,
+    "response_time_median": 5885.332107543945,
+    "response_time_max": 10008.011817932129,
+    "response_time_min": 1762.6523971557617
+  }
+]

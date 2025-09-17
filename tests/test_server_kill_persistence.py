@@ -33,7 +33,7 @@ MANUAL TEST PROCEDURE:
 
 EXPECTED RESULTS:
 ================
-- Files in /plots/matplotlib/ should persist (mounted directory)
+- Files in /home/pyodide/plots/matplotlib/ should persist (mounted directory)
 - Files in /tmp/ should NOT persist (virtual filesystem)
 - Local filesystem files survive server kills
 - Pyodide can access files in mounted directories after restart
@@ -76,7 +76,7 @@ plots_file.write_text("This file SHOULD persist after server restart")
     "plots_file_created": plots_file.exists(),
     "files_for_testing": [
         "/tmp/persistence_test_{timestamp}.txt",
-        "/plots/matplotlib/persistence_test_{timestamp}.txt"
+        "/home/pyodide/plots/matplotlib/persistence_test_{timestamp}.txt"
     ]
 }}
 '''

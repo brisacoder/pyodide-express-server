@@ -177,32 +177,39 @@ sys.stderr = _original_stderr
     const stdout = pyodide.runPython('_captured_stdout.getvalue()');
     const stderr = pyodide.runPython('_captured_stderr.getvalue()');
 
-    // Handle different result types
-    let serializedResult;
-    if (result === undefined || result === null) {
-      serializedResult = result;
+    // Handle different result types - Keep raw values to avoid double JSON serialization
+    // The message system will handle final JSON serialization
+    let processedResult;
+    if (result === undefined) {
+      processedResult = 'None';
+    } else if (result === null) {
+      processedResult = 'None';
     } else if (typeof result === 'bigint') {
-      serializedResult = result.toString() + 'n';
+      processedResult = result.toString();
     } else if (result && typeof result.toJs === 'function') {
-      // PyProxy object
+      // PyProxy object - convert to JavaScript object but don't stringify
       try {
-        serializedResult = result.toJs();
+        processedResult = result.toJs();
       } catch {
-        serializedResult = result.toString();
+        processedResult = result.toString();
       } finally {
         if (typeof result.destroy === 'function') {
           result.destroy();
         }
       }
+    } else if (typeof result === 'object') {
+      // Native JavaScript object - keep as object (don't stringify)
+      processedResult = result;
     } else {
-      serializedResult = result;
+      // Primitive types - convert to string
+      processedResult = String(result);
     }
 
     sendMessage({
       type: 'result',
       executionId,
       success: true,
-      result: serializedResult,
+      result: processedResult,
       stdout: stdout || '',
       stderr: stderr || '',
       executionTime: Date.now() - startTime

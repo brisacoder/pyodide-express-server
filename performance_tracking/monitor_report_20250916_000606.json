@@ -1,0 +1,27 @@
+{
+  "monitor_timestamp": "2025-09-16T00:06:06.091687",
+  "total_tests": 2,
+  "latest_results": {
+    "prime_calculation_limits": {
+      "timestamp": "2025-09-16T00:06:06.001026",
+      "test_name": "prime_calculation_limits",
+      "success_count": "3",
+      "failure_count": "0",
+      "success_rate": "1.000",
+      "execution_time_mean": "5.67",
+      "execution_time_max": "7.00",
+      "response_time_mean": "9.09"
+    },
+    "memory_allocation_limits": {
+      "timestamp": "2025-09-16T00:04:31.990590",
+      "test_name": "memory_allocation_limits",
+      "success_count": "5",
+      "failure_count": "0",
+      "success_rate": "1.000",
+      "execution_time_mean": "36.80",
+      "execution_time_max": "64.00",
+      "response_time_mean": "40.87"
+    }
+  },
+  "system_health": "healthy"
+}

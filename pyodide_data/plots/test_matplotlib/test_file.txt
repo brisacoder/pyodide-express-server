@@ -1,1 +1,1 @@
-Test content for /plots/test_matplotlib
+Test content for /home/pyodide/plots/test_matplotlib

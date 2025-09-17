@@ -1,1470 +1,1060 @@
 """
-Performance Testing Suite for Pyodide Express Server
-
-This module contains comprehensive performance tests using pytest with BDD style testing.
-Tests push the server to its limits with computation, memory, and file processing tasks.
-All tests use only the public /api/execute-raw endpoint for Pyodide code execution.
-
-Test Categories:
-- Execution Performance: Timeout handling, CPU intensive operations
-- Memory Performance: Large data structures, memory-intensive operations
-- File Processing: Large CSV files, multiple file operations
-- Computational Limits: Progressive complexity with numpy/pandas/scikit-learn
-- Concurrency Performance: Multiple simultaneous requests
-- Resource Cleanup: Error recovery and cleanup validation
-
-Author: GitHub Copilot
-Date: September 2025
+Comprehensive Performance Testing Suite for Pyodide Express Server
 """
 
-import os
-import tempfile
+import concurrent.futures
+import json
+import statistics
 import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+import csv
 
 import pytest
 import requests
 
 
-# ===== GLOBAL CONFIGURATION =====
-BASE_URL = "http://localhost:3000"
-DEFAULT_TIMEOUT = 30
-EXECUTION_TIMEOUT_SHORT = 5000  # 5 seconds
-EXECUTION_TIMEOUT_MEDIUM = 15000  # 15 seconds
-EXECUTION_TIMEOUT_LONG = 60000  # 60 seconds
-MAX_RESPONSE_TIME = 30  # seconds
-LARGE_FILE_ROWS = 10000
-VERY_LARGE_FILE_ROWS = 50000
-EXTREME_FILE_ROWS = 100000
+@dataclass
+class PerformanceConfig:
+    """Configuration for performance testing."""
+
+    BASE_URL: str = "http://localhost:3000"
+    EXECUTE_ENDPOINT: str = "/api/execute-raw"
+
+    TIMEOUTS = {
+        "health_check": 10,
+        "short_operation": 15,
+        "medium_operation": 45,
+        "long_operation": 120,
+    }
 
 
-# ===== PYTEST FIXTURES =====
+@dataclass
+class PerformanceMetrics:
+    """Performance metrics collection with persistence."""
+
+    test_name: str
+    execution_times: List[float] = field(default_factory=list)
+    response_times: List[float] = field(default_factory=list)
+    success_count: int = 0
+    failure_count: int = 0
+    errors: List[str] = field(default_factory=list)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    
+    def __post_init__(self):
+        """Initialize performance tracking directory."""
+        self.performance_dir = Path("performance_tracking")
+        self.performance_dir.mkdir(exist_ok=True)
+
+    def add_measurement(
+        self,
+        execution_time: float,
+        response_time: float,
+        success: bool = True,
+        error: Optional[str] = None,
+    ):
+        """Add performance measurement."""
+        if success:
+            self.execution_times.append(execution_time)
+            self.response_times.append(response_time)
+            self.success_count += 1
+        else:
+            self.failure_count += 1
+            if error:
+                self.errors.append(error)
+
+    def get_summary_stats(self) -> Dict[str, Any]:
+        """Get summary statistics."""
+        stats = {
+            "test_name": self.test_name,
+            "timestamp": self.timestamp,
+            "success_count": self.success_count,
+            "failure_count": self.failure_count,
+            "total_count": self.success_count + self.failure_count,
+            "success_rate": self.success_count / max(1, self.success_count + self.failure_count),
+        }
+        
+        if self.execution_times:
+            stats.update({
+                "execution_time_mean": statistics.mean(self.execution_times),
+                "execution_time_median": statistics.median(self.execution_times),
+                "execution_time_max": max(self.execution_times),
+                "execution_time_min": min(self.execution_times),
+                "execution_time_stdev": statistics.stdev(self.execution_times) if len(self.execution_times) > 1 else 0,
+            })
+        
+        if self.response_times:
+            stats.update({
+                "response_time_mean": statistics.mean(self.response_times),
+                "response_time_median": statistics.median(self.response_times),
+                "response_time_max": max(self.response_times),
+                "response_time_min": min(self.response_times),
+            })
+        
+        return stats
+
+    def save_to_history(self):
+        """Save performance metrics to persistent storage."""
+        # Save detailed JSON history
+        json_file = self.performance_dir / f"{self.test_name}_history.json"
+        
+        history = []
+        if json_file.exists():
+            try:
+                with open(json_file, 'r') as f:
+                    history = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                history = []
+        
+        history.append(self.get_summary_stats())
+        
+        with open(json_file, 'w') as f:
+            json.dump(history, f, indent=2)
+        
+        # Save CSV summary for easy analysis
+        csv_file = self.performance_dir / "performance_summary.csv"
+        file_exists = csv_file.exists()
+        
+        with open(csv_file, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                'timestamp', 'test_name', 'success_count', 'failure_count', 'success_rate',
+                'execution_time_mean', 'execution_time_max', 'response_time_mean'
+            ])
+            
+            if not file_exists:
+                writer.writeheader()
+            
+            stats = self.get_summary_stats()
+            writer.writerow({
+                'timestamp': stats['timestamp'],
+                'test_name': stats['test_name'],
+                'success_count': stats['success_count'],
+                'failure_count': stats['failure_count'],
+                'success_rate': f"{stats['success_rate']:.3f}",
+                'execution_time_mean': f"{stats.get('execution_time_mean', 0):.2f}",
+                'execution_time_max': f"{stats.get('execution_time_max', 0):.2f}",
+                'response_time_mean': f"{stats.get('response_time_mean', 0):.2f}",
+            })
+
+    def analyze_trends(self) -> Dict[str, Any]:
+        """Analyze performance trends over time."""
+        json_file = self.performance_dir / f"{self.test_name}_history.json"
+        
+        if not json_file.exists():
+            return {"trend_analysis": "No historical data available"}
+        
+        try:
+            with open(json_file, 'r') as f:
+                history = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return {"trend_analysis": "Error reading historical data"}
+        
+        if len(history) < 2:
+            return {"trend_analysis": "Insufficient data for trend analysis (need at least 2 runs)"}
+        
+        # Analyze recent vs historical performance
+        recent_runs = history[-3:]  # Last 3 runs
+        historical_runs = history[:-3] if len(history) > 3 else []
+        
+        trend_analysis = {
+            "total_runs": len(history),
+            "recent_runs_count": len(recent_runs),
+            "historical_runs_count": len(historical_runs),
+        }
+        
+        if recent_runs and historical_runs:
+            # Compare recent performance to historical
+            recent_exec_times = [run.get('execution_time_mean', 0) for run in recent_runs if 'execution_time_mean' in run]
+            historical_exec_times = [run.get('execution_time_mean', 0) for run in historical_runs if 'execution_time_mean' in run]
+            
+            if recent_exec_times and historical_exec_times:
+                recent_avg = statistics.mean(recent_exec_times)
+                historical_avg = statistics.mean(historical_exec_times)
+                performance_change = ((recent_avg - historical_avg) / historical_avg) * 100
+                
+                trend_analysis.update({
+                    "recent_avg_execution_time": recent_avg,
+                    "historical_avg_execution_time": historical_avg,
+                    "performance_change_percent": performance_change,
+                    "trend": "REGRESSION" if performance_change > 10 else "IMPROVEMENT" if performance_change < -10 else "STABLE"
+                })
+        
+        # Success rate trend
+        recent_success_rates = [run.get('success_rate', 0) for run in recent_runs]
+        if recent_success_rates:
+            avg_success_rate = statistics.mean(recent_success_rates)
+            trend_analysis["recent_success_rate"] = avg_success_rate
+            trend_analysis["reliability"] = "HIGH" if avg_success_rate > 0.95 else "MEDIUM" if avg_success_rate > 0.8 else "LOW"
+        
+        return trend_analysis
+
+    def print_summary(self):
+        """Print performance summary with trend analysis."""
+        print(f"\n{'='*60}")
+        print(f"PERFORMANCE SUMMARY: {self.test_name}")
+        print(f"Timestamp: {self.timestamp}")
+        print(f"{'='*60}")
+        print(
+            f"Success Rate: {self.success_count}/{self.success_count + self.failure_count}"
+        )
+
+        if self.execution_times:
+            print(
+                f"Execution Times - Mean: {statistics.mean(self.execution_times):.2f}ms"
+            )
+            print(f"                  Median: {statistics.median(self.execution_times):.2f}ms")
+            print(f"                  Max: {max(self.execution_times):.2f}ms")
+            print(f"                  Min: {min(self.execution_times):.2f}ms")
+            if len(self.execution_times) > 1:
+                print(f"                  StdDev: {statistics.stdev(self.execution_times):.2f}ms")
+
+        if self.response_times:
+            print(
+                f"Response Times - Mean: {statistics.mean(self.response_times):.2f}ms"
+            )
+
+        if self.errors:
+            print(f"Errors: {len(self.errors)}")
+            for error in self.errors[:3]:
+                print(f"  - {error}")
+        
+        # Show trend analysis
+        trends = self.analyze_trends()
+        if "trend" in trends:
+            print(f"\n📈 TREND ANALYSIS:")
+            print(f"  Total Runs: {trends['total_runs']}")
+            print(f"  Performance Trend: {trends['trend']}")
+            if trends['trend'] != 'STABLE':
+                print(f"  Change: {trends['performance_change_percent']:+.1f}%")
+            print(f"  Reliability: {trends.get('reliability', 'N/A')}")
+        
+        print(f"{'='*60}")
+        print(f"📁 Data saved to: performance_tracking/{self.test_name}_history.json")
+        print(f"📊 Summary: performance_tracking/performance_summary.csv")
+        print(f"{'='*60}\n")
+
+
+class PerformanceTestManager:
+    """Performance test manager."""
+
+    def __init__(self, config: PerformanceConfig):
+        self.config = config
+        self.session = requests.Session()
+
+    def validate_api_contract(
+        self, response: requests.Response
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Validate API contract."""
+        try:
+            data = response.json()
+            required_fields = ["success", "data", "error", "meta"]
+            for field in required_fields:
+                if field not in data:
+                    return False, {"error": f"Missing field: {field}"}
+
+            if data["success"] and data["data"]:
+                required_data_fields = ["result", "stdout", "stderr", "executionTime"]
+                for field in required_data_fields:
+                    if field not in data["data"]:
+                        return False, {"error": f"Missing data field: {field}"}
+
+            return True, data
+        except json.JSONDecodeError:
+            return False, {"error": "Invalid JSON"}
+
+    def execute_code_with_metrics(
+        self, code: str, timeout: int = None
+    ) -> Tuple[bool, Dict[str, Any], float, float]:
+        """Execute code and collect metrics."""
+        if timeout is None:
+            timeout = self.config.TIMEOUTS["medium_operation"]
+
+        start_time = time.time()
+
+        try:
+            response = self.session.post(
+                f"{self.config.BASE_URL}{self.config.EXECUTE_ENDPOINT}",
+                data=code,
+                headers={"Content-Type": "text/plain"},
+                timeout=timeout,
+            )
+
+            response_time = (time.time() - start_time) * 1000
+            is_valid, data = self.validate_api_contract(response)
+
+            if not is_valid:
+                return False, data, 0, response_time
+
+            execution_time = (
+                data.get("data", {}).get("executionTime", 0) if data.get("data") else 0
+            )
+            return data["success"], data, execution_time, response_time
+
+        except requests.exceptions.Timeout:
+            response_time = (time.time() - start_time) * 1000
+            return (
+                False,
+                {"success": False, "error": f"Timeout after {timeout}s"},
+                0,
+                response_time,
+            )
+        except requests.exceptions.RequestException as e:
+            response_time = (time.time() - start_time) * 1000
+            return False, {"success": False, "error": str(e)}, 0, response_time
+
+    def wait_for_server_ready(self) -> bool:
+        """Wait for server readiness."""
+        for _ in range(30):
+            try:
+                success, _, _, _ = self.execute_code_with_metrics(
+                    "print('health_check')", timeout=5
+                )
+                if success:
+                    return True
+            except:
+                pass
+            time.sleep(1)
+        return False
+
 
 @pytest.fixture(scope="session")
-def server_health():
-    """
-    Ensure the server is running and healthy before any tests.
+def performance_config():
+    """Performance configuration fixture."""
+    return PerformanceConfig()
 
-    Validates:
-    - Server responds to health check
-    - Pyodide is available
-    - Basic connectivity works
-    """
-    max_wait = 120  # 2 minutes max wait
-    start = time.time()
 
-    while time.time() - start < max_wait:
-        try:
-            response = requests.get(f"{BASE_URL}/health", timeout=10)
-            if response.status_code == 200:
-                health_data = response.json()
-                assert health_data["status"] == "ok"
-                assert health_data["pyodide"] == "available"
-                return health_data
-        except Exception:
-            pass
-        time.sleep(1)
+@pytest.fixture(scope="session")
+def performance_manager(performance_config):
+    """Performance manager fixture."""
+    return PerformanceTestManager(performance_config)
 
-    pytest.fail("Server is not healthy or not responding")
+
+@pytest.fixture(scope="session")
+def server_ready(performance_manager):
+    """Server readiness fixture."""
+    if not performance_manager.wait_for_server_ready():
+        pytest.skip("Server not ready")
+    return True
 
 
 @pytest.fixture
-def performance_session():
-    """
-    Create a requests session optimized for performance testing.
-
-    Returns:
-        requests.Session: Configured session with appropriate timeouts
-    """
-    session = requests.Session()
-    session.timeout = DEFAULT_TIMEOUT
-    return session
-
-
-@pytest.fixture
-def temp_csv_file():
-    """
-    Create a temporary CSV file for testing.
-
-    Yields:
-        str: Path to temporary CSV file
-    """
-    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-        tmp.write("id,value,category\n1,100,A\n2,200,B\n")
-        temp_path = tmp.name
-
-    yield temp_path
-
-    # Cleanup
-    if os.path.exists(temp_path):
-        os.unlink(temp_path)
+def performance_metrics_collector():
+    """Metrics collector fixture with automatic persistence."""
+    metrics = {}
+    yield metrics
+    
+    # Print all collected metrics and save to history
+    print(f"\n{'='*80}")
+    print("COMPREHENSIVE PERFORMANCE TEST SUMMARY") 
+    print(f"{'='*80}")
+    for name, metric in metrics.items():
+        if isinstance(metric, PerformanceMetrics):
+            # Save to persistent storage
+            metric.save_to_history()
+            # Print summary with trends
+            metric.print_summary()
 
 
-@pytest.fixture
-def large_csv_file():
-    """
-    Create a large CSV file for performance testing.
+def generate_performance_report():
+    """Generate comprehensive performance report from historical data."""
+    performance_dir = Path("performance_tracking")
+    if not performance_dir.exists():
+        print("❌ No performance tracking data found")
+        return
+    
+    csv_file = performance_dir / "performance_summary.csv"
+    if not csv_file.exists():
+        print("❌ No performance summary found")
+        return
+    
+    print(f"\n{'='*80}")
+    print("📊 HISTORICAL PERFORMANCE ANALYSIS")
+    print(f"{'='*80}")
+    
+    try:
+        with open(csv_file, 'r') as f:
+            reader = csv.DictReader(f)
+            data = list(reader)
+        
+        if not data:
+            print("❌ No historical data available")
+            return
+        
+        # Group by test name
+        test_groups = {}
+        for row in data:
+            test_name = row['test_name']
+            if test_name not in test_groups:
+                test_groups[test_name] = []
+            test_groups[test_name].append(row)
+        
+        for test_name, runs in test_groups.items():
+            print(f"\n🔍 {test_name}:")
+            print(f"  Total Runs: {len(runs)}")
+            
+            if len(runs) >= 2:
+                # Show first and last run comparison
+                first_run = runs[0]
+                last_run = runs[-1]
+                
+                first_time = float(first_run.get('execution_time_mean', 0))
+                last_time = float(last_run.get('execution_time_mean', 0))
+                
+                if first_time > 0:
+                    change = ((last_time - first_time) / first_time) * 100
+                    print(f"  Performance Change: {change:+.1f}%")
+                    trend = "📈 IMPROVED" if change < -5 else "📉 DEGRADED" if change > 5 else "➡️ STABLE"
+                    print(f"  Trend: {trend}")
+                
+                print(f"  Latest Success Rate: {float(last_run.get('success_rate', 0)):.1%}")
+                print(f"  Latest Execution Time: {last_run.get('execution_time_mean', 'N/A')}ms")
+        
+        print(f"\n📁 Full data available in: {csv_file}")
+        print(f"{'='*80}\n")
+        
+    except Exception as e:
+        print(f"❌ Error reading performance data: {e}")
+class TestCPUIntensivePerformance:
+    """BDD tests for CPU-intensive performance scenarios."""
 
-    Yields:
-        str: Path to large CSV file with 10K+ rows
-    """
-    content = "id,value,category,description,data\n"
-    for i in range(LARGE_FILE_ROWS):
-        content += f"{i},{i*2.5},cat_{i % 5},desc_{i},{'x' * (i % 100)}\n"
-
-    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-        tmp.write(content)
-        temp_path = tmp.name
-
-    yield temp_path
-
-    # Cleanup
-    if os.path.exists(temp_path):
-        os.unlink(temp_path)
-
-
-@pytest.fixture
-def very_large_csv_file():
-    """
-    Create a very large CSV file for extreme performance testing.
-
-    Yields:
-        str: Path to very large CSV file with 50K+ rows
-    """
-    content = "id,value1,value2,category,description,metadata\n"
-    for i in range(VERY_LARGE_FILE_ROWS):
-        content += f"{i},{i*1.5},{i*2.3},category_{i % 10},description for {i},meta_{i % 20}\n"
-
-    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-        tmp.write(content)
-        temp_path = tmp.name
-
-    yield temp_path
-
-    # Cleanup
-    if os.path.exists(temp_path):
-        os.unlink(temp_path)
-
-
-@pytest.fixture
-def uploaded_files_tracker():
-    """
-    Track uploaded files for cleanup after tests.
-
-    Yields:
-        list: List to store uploaded filenames for cleanup
-    """
-    uploaded_files = []
-    yield uploaded_files
-
-    # Cleanup uploaded files
-    for filename in uploaded_files:
-        try:
-            requests.delete(f"{BASE_URL}/api/uploaded-files/{filename}", timeout=10)
-        except Exception:
-            pass  # File might already be deleted
-
-
-# ===== EXECUTION PERFORMANCE TESTS =====
-
-class TestExecutionPerformance:
-    """Test suite for execution performance characteristics."""
-
-    def test_given_long_running_code_when_timeout_is_short_then_execution_completes_within_limit(
-        self, server_health, performance_session
+    def test_given_prime_calculation_when_executed_then_cpu_limits_discovered(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
     ):
         """
-        Test that long-running Python code respects timeout limits.
-
-        Given: A Python script that performs intensive computation
-        When: The script is executed with a short timeout
-        Then: The execution completes within the timeout window
-        And: The server remains responsive
+        Given: Prime number calculation with increasing complexity
+        When: Executed with performance monitoring
+        Then: CPU computation limits are discovered and reported
         """
-        # Given: Long-running computational code
-        long_running_code = '''
-import time
-total = 0
-for i in range(100000):
-    total += i * i
-    if i % 10000 == 0:
-        time.sleep(0.01)  # Small sleep to control timing
-print(f"Computation complete: {total}")
-'''
-
-        # When: Code is executed with timeout
-        start_time = time.time()
-        response = performance_session.post(
-            f"{BASE_URL}/api/execute-raw",
-            data=long_running_code,
-            headers={"Content-Type": "text/plain"},
-            timeout=30  # Reasonable timeout
-        )
-        execution_time = time.time() - start_time
-
-        # Then: Execution completes within reasonable time
-        assert execution_time < 10  # Should not take more than 10 seconds
-        assert response.status_code == 200
-
-        # And: Response contains expected output or timeout message
-        response_text = response.text
-        assert isinstance(response_text, str)
-
-    def test_given_cpu_intensive_operations_when_executed_then_results_are_accurate_and_fast(
-        self, server_health, performance_session
-    ):
-        """
-        Test CPU-intensive mathematical operations for accuracy and performance.
-
-        Given: CPU-intensive mathematical calculations
-        When: Multiple operations are executed sequentially
-        Then: All results are mathematically correct
-        And: Each operation completes within acceptable time limits
-        """
-        cpu_intensive_operations = [
-            {
-                "name": "Prime number calculation",
-                "code": '''
+        # Given: Progressive prime calculation operations
+        prime_tests = [
+            {"limit": 1000, "expected_max_ms": 5000},
+            {"limit": 5000, "expected_max_ms": 15000},
+            {"limit": 10000, "expected_max_ms": 30000},
+        ]
+        
+        metrics = PerformanceMetrics("prime_calculation_limits")
+        
+        for test in prime_tests:
+            # When: Execute prime calculation
+            code = f"""
 def is_prime(n):
     if n < 2:
         return False
-    for i in range(2, int(n**0.5) + 1):
+    if n == 2:
+        return True
+    if n % 2 == 0:
+        return False
+    for i in range(3, int(n**0.5) + 1, 2):
         if n % i == 0:
             return False
     return True
 
-primes = [i for i in range(2, 1000) if is_prime(i)]
-print(f"Found {len(primes)} primes up to 1000")
-print(f"First 10 primes: {primes[:10]}")
-''',
-                "expected_primes": 168,
-                "max_time": 5
-            },
-            {
-                "name": "Fibonacci sequence",
-                "code": '''
-def fib_iterative(n):
-    if n <= 1:
-        return n
-    a, b = 0, 1
-    for _ in range(2, n + 1):
-        a, b = b, a + b
-    return b
+# Find all primes up to {test['limit']}
+primes = [n for n in range(2, {test['limit']}) if is_prime(n)]
+result = len(primes)
+print(f"Found {{result}} primes up to {test['limit']}")
+result
+"""
+            
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                code, timeout=test["expected_max_ms"] // 1000 + 10
+            )
+            
+            # Then: Measure and report performance
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"\n✅ Prime calculation (limit={test['limit']}): {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"\n❌ Prime calculation failed (limit={test['limit']}): {error}")
+        
+        performance_metrics_collector["prime_calculation_limits"] = metrics
 
-result = fib_iterative(30)
-print(f"Fibonacci(30) = {result}")
-''',
-                "expected_fib": 832040,
-                "max_time": 3
-            },
-            {
-                "name": "Matrix multiplication",
-                "code": '''
-size = 100
-matrix_a = [[i * j for j in range(size)] for i in range(size)]
-matrix_b = [[j * i for j in range(size)] for i in range(size)]
+    def test_given_matrix_operations_when_executed_then_computation_limits_found(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
+    ):
+        """
+        Given: Matrix multiplication with increasing sizes
+        When: Executed with performance monitoring
+        Then: Matrix computation limits are discovered
+        """
+        # Given: Progressive matrix sizes
+        matrix_tests = [
+            {"size": 50, "expected_max_ms": 5000},
+            {"size": 100, "expected_max_ms": 15000},
+            {"size": 150, "expected_max_ms": 30000},
+        ]
+        
+        metrics = PerformanceMetrics("matrix_operations_limits")
+        
+        for test in matrix_tests:
+            # When: Execute matrix multiplication
+            code = f"""
+import random
 
-# Simple matrix multiplication
-result = [[0 for _ in range(size)] for _ in range(size)]
+# Create random matrices
+size = {test['size']}
+A = [[random.random() for _ in range(size)] for _ in range(size)]
+B = [[random.random() for _ in range(size)] for _ in range(size)]
+
+# Matrix multiplication
+C = [[0 for _ in range(size)] for _ in range(size)]
 for i in range(size):
     for j in range(size):
         for k in range(size):
-            result[i][j] += matrix_a[i][k] * matrix_b[k][j]
+            C[i][j] += A[i][k] * B[k][j]
 
-total = sum(sum(row) for row in result)
-print(f"Matrix multiplication total: {total}")
-''',
-                "max_time": 8
-            }
-        ]
-
-        for operation in cpu_intensive_operations:
-            # Given: CPU intensive operation
-            code = operation["code"]
-
-            # When: Operation is executed
-            start_time = time.time()
-            response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code, headers={"Content-Type": "text/plain"}
+# Calculate some stats
+total = sum(sum(row) for row in C)
+print(f"Matrix {{size}}x{{size}} multiplication completed, sum: {{total:.2f}}")
+size
+"""
+            
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                code, timeout=test["expected_max_ms"] // 1000 + 10
             )
-            execution_time = time.time() - start_time
+            
+            # Then: Measure and report performance
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"\n✅ Matrix {test['size']}x{test['size']}: {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"\n❌ Matrix {test['size']}x{test['size']} failed: {error}")
+        
+        performance_metrics_collector["matrix_operations_limits"] = metrics
 
-            # Then: Operation completes successfully
-            assert response.status_code == 200
-            assert execution_time < operation["max_time"]
-
-            # And: Response contains expected output
-            response_text = response.text
-            assert len(response_text) > 0
-
-            # Validate specific results
-            if "expected_primes" in operation:
-                assert "168 primes" in response_text
-            elif "expected_fib" in operation:
-                assert "832040" in response_text
-
-    def test_given_memory_intensive_operations_when_executed_then_memory_is_managed_efficiently(
-        self, server_health, performance_session
+    def test_given_recursive_algorithms_when_executed_then_recursion_limits_measured(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
     ):
         """
-        Test memory-intensive operations for proper memory management.
-
-        Given: Operations that create large data structures
-        When: Multiple memory-intensive operations are executed
-        Then: Each operation completes successfully
-        And: Memory is properly managed without crashes
+        Given: Recursive algorithms with increasing depth/complexity
+        When: Executed with performance monitoring
+        Then: Recursion and algorithm limits are discovered
         """
-        memory_operations = [
-            {
-                "name": "Large list creation",
-                "code": '''
-import sys
-large_list = list(range(500000))
-memory_usage = sys.getsizeof(large_list)
-print(f"Created list with {len(large_list)} elements")
-print(f"Memory usage: {memory_usage} bytes")
-del large_list  # Explicit cleanup
-print("List deleted successfully")
-''',
-                "max_time": 5
-            },
-            {
-                "name": "Large string operations",
-                "code": '''
-import sys
-big_string = 'Hello World! ' * 100000
-memory_usage = sys.getsizeof(big_string)
-print(f"Created string with {len(big_string)} characters")
-print(f"Memory usage: {memory_usage} bytes")
-
-# String operations
-upper_string = big_string.upper()
-print(f"Uppercase string length: {len(upper_string)}")
-del big_string, upper_string
-print("Strings deleted successfully")
-''',
-                "max_time": 5
-            },
-            {
-                "name": "Large dictionary operations",
-                "code": '''
-import sys
-big_dict = {f"key_{i}": f"value_{i}" * 10 for i in range(50000)}
-memory_usage = sys.getsizeof(big_dict)
-print(f"Created dictionary with {len(big_dict)} items")
-print(f"Memory usage: {memory_usage} bytes")
-
-# Dictionary operations
-keys_sum = sum(1 for key in big_dict.keys() if key.startswith("key_1"))
-print(f"Keys starting with 'key_1': {keys_sum}")
-del big_dict
-print("Dictionary deleted successfully")
-''',
-                "max_time": 8
-            }
+        # Given: Progressive recursive tests
+        recursive_tests = [
+            {"name": "fibonacci", "param": 30, "expected_max_ms": 5000},
+            {"name": "fibonacci", "param": 35, "expected_max_ms": 15000},
+            {"name": "factorial", "param": 1000, "expected_max_ms": 3000},
+            {"name": "towers_hanoi", "param": 20, "expected_max_ms": 10000},
         ]
+        
+        metrics = PerformanceMetrics("recursive_algorithms_limits")
+        
+        for test in recursive_tests:
+            # When: Execute recursive algorithm
+            if test["name"] == "fibonacci":
+                code = f"""
+def fibonacci(n):
+    if n <= 1:
+        return n
+    return fibonacci(n-1) + fibonacci(n-2)
 
-        for operation in memory_operations:
-            # Given: Memory intensive operation
-            code = operation["code"]
+result = fibonacci({test['param']})
+print(f"Fibonacci({test['param']}) = {{result}}")
+result
+"""
+            elif test["name"] == "factorial":
+                code = f"""
+def factorial(n):
+    if n <= 1:
+        return 1
+    return n * factorial(n-1)
 
-            # When: Operation is executed
-            start_time = time.time()
-            response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code, headers={"Content-Type": "text/plain"}
+result = factorial({test['param']})
+print(f"Factorial({test['param']}) calculated (digits: {{len(str(result))}})")
+len(str(result))
+"""
+            elif test["name"] == "towers_hanoi":
+                code = f"""
+def hanoi_moves(n):
+    if n == 1:
+        return 1
+    return 2 * hanoi_moves(n-1) + 1
+
+result = hanoi_moves({test['param']})
+print(f"Towers of Hanoi({test['param']}) requires {{result}} moves")
+result
+"""
+            
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                code, timeout=test["expected_max_ms"] // 1000 + 5
             )
-            execution_time = time.time() - start_time
+            
+            # Then: Measure and report performance
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"\n✅ {test['name']}({test['param']}): {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"\n❌ {test['name']}({test['param']}) failed: {error}")
+        
+        performance_metrics_collector["recursive_algorithms_limits"] = metrics
 
-            # Then: Operation completes within time limit
-            assert response.status_code == 200
-            assert execution_time < operation["max_time"]
 
-            # And: Response indicates successful memory management
-            response_text = response.text
-            assert "deleted successfully" in response_text
-            assert "Memory usage:" in response_text
+class TestMemoryIntensivePerformance:
+    """BDD tests for memory-intensive performance scenarios."""
 
-
-# ===== FILE PROCESSING PERFORMANCE TESTS =====
-
-class TestFileProcessingPerformance:
-    """Test suite for file processing performance."""
-
-    def test_given_large_csv_file_when_uploaded_and_processed_then_operations_complete_efficiently(
-        self, server_health, performance_session, large_csv_file, uploaded_files_tracker
+    def test_given_large_data_structures_when_created_then_memory_limits_discovered(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
     ):
         """
-        Test processing of large CSV files for performance and accuracy.
-
-        Given: A large CSV file with 10K+ rows
-        When: The file is uploaded and processed with pandas
-        Then: Upload completes within acceptable time
-        And: Data processing operations are accurate and efficient
+        Given: Large data structure creation with increasing sizes
+        When: Executed with performance monitoring
+        Then: Memory allocation limits are discovered
         """
-        # Given: Large CSV file is available
-        assert os.path.exists(large_csv_file)
-        file_size = os.path.getsize(large_csv_file)
-        assert file_size > 100000  # Should be > 100KB
-
-        # When: File is uploaded
-        start_time = time.time()
-        with open(large_csv_file, "rb") as fh:
-            upload_response = performance_session.post(
-                f"{BASE_URL}/api/upload",
-                files={"file": ("large_performance_test.csv", fh, "text/csv")}
+        # Given: Progressive memory allocation tests
+        memory_tests = [
+            {"name": "list_int", "size": 100000, "expected_max_ms": 5000},
+            {"name": "list_int", "size": 500000, "expected_max_ms": 10000},
+            {"name": "list_int", "size": 1000000, "expected_max_ms": 15000},
+            {"name": "dict_large", "size": 50000, "expected_max_ms": 10000},
+            {"name": "nested_list", "size": 1000, "expected_max_ms": 15000},
+        ]
+        
+        metrics = PerformanceMetrics("memory_allocation_limits")
+        
+        for test in memory_tests:
+            # When: Execute memory allocation
+            if test["name"] == "list_int":
+                code = f"""
+# Create large list of integers
+size = {test['size']}
+data = list(range(size))
+total = sum(data)
+print(f"Created list of {{len(data)}} integers, sum: {{total}}")
+len(data)
+"""
+            elif test["name"] == "dict_large":
+                code = f"""
+# Create large dictionary
+size = {test['size']}
+data = {{i: f"value_{{i}}" for i in range(size)}}
+print(f"Created dictionary with {{len(data)}} entries")
+len(data)
+"""
+            elif test["name"] == "nested_list":
+                code = f"""
+# Create nested list structure
+size = {test['size']}
+data = [[i + j for j in range(size)] for i in range(size)]
+total = sum(sum(row) for row in data)
+print(f"Created {{len(data)}}x{{len(data[0])}} nested list, sum: {{total}}")
+len(data)
+"""
+            
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                code, timeout=test["expected_max_ms"] // 1000 + 10
             )
-        upload_time = time.time() - start_time
+            
+            # Then: Measure and report performance
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"\n✅ {test['name']}({test['size']}): {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"\n❌ {test['name']}({test['size']}) failed: {error}")
+        
+        performance_metrics_collector["memory_allocation_limits"] = metrics
 
-        # Then: Upload completes successfully and efficiently
-        assert upload_response.status_code == 200
-        assert upload_time < 15  # Should upload within 15 seconds
+    def test_given_string_processing_when_executed_then_string_limits_measured(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
+    ):
+        """
+        Given: Large string processing operations
+        When: Executed with performance monitoring
+        Then: String processing limits are discovered
+        """
+        # Given: Progressive string processing tests
+        string_tests = [
+            {"operation": "concatenation", "size": 10000, "expected_max_ms": 5000},
+            {"operation": "concatenation", "size": 50000, "expected_max_ms": 15000},
+            {"operation": "join", "size": 100000, "expected_max_ms": 10000},
+            {"operation": "regex", "size": 10000, "expected_max_ms": 8000},
+        ]
+        
+        metrics = PerformanceMetrics("string_processing_limits")
+        
+        for test in string_tests:
+            # When: Execute string processing
+            if test["operation"] == "concatenation":
+                code = f"""
+# String concatenation test
+size = {test['size']}
+result = ""
+for i in range(size):
+    result += f"item_{{i}}_"
+print(f"Concatenated string length: {{len(result)}}")
+len(result)
+"""
+            elif test["operation"] == "join":
+                code = f"""
+# String join test
+size = {test['size']}
+items = [f"item_{{i}}" for i in range(size)]
+result = "_".join(items)
+print(f"Joined string length: {{len(result)}}")
+len(result)
+"""
+            elif test["operation"] == "regex":
+                code = f"""
+import re
+# Regex processing test
+size = {test['size']}
+text = " ".join([f"word{{i}}" for i in range(size)])
+pattern = r"word\\d+"
+matches = re.findall(pattern, text)
+print(f"Found {{len(matches)}} regex matches in text of length {{len(text)}}")
+len(matches)
+"""
+            
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                code, timeout=test["expected_max_ms"] // 1000 + 10
+            )
+            
+            # Then: Measure and report performance
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"\n✅ {test['operation']}({test['size']}): {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"\n❌ {test['operation']}({test['size']}) failed: {error}")
+        
+        performance_metrics_collector["string_processing_limits"] = metrics
 
-        upload_data = upload_response.json()
-        filename = upload_data["filename"]
-        uploaded_files_tracker.append(filename)
 
-        # When: Large file is processed with pandas
-        processing_code = f'''
-import pandas as pd
+class TestTimeoutAndLimitDiscovery:
+    """BDD tests for discovering system timeout and execution limits."""
+
+    def test_given_progressive_timeouts_when_executed_then_timeout_limits_discovered(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
+    ):
+        """
+        Given: Operations with progressively longer execution times
+        When: Executed with timeout monitoring
+        Then: System timeout limits are discovered
+        """
+        # Given: Progressive timeout tests
+        timeout_tests = [
+            {"sleep_time": 5, "timeout": 10, "should_succeed": True},
+            {"sleep_time": 15, "timeout": 20, "should_succeed": True},
+            {"sleep_time": 30, "timeout": 35, "should_succeed": True},
+            {"sleep_time": 60, "timeout": 65, "should_succeed": True},
+            {"sleep_time": 120, "timeout": 125, "should_succeed": False},  # This might timeout
+        ]
+        
+        metrics = PerformanceMetrics("timeout_limit_discovery")
+        
+        for test in timeout_tests:
+            # When: Execute operation with specific sleep time
+            code = f"""
 import time
-from pathlib import Path
+print(f"Starting {test['sleep_time']} second operation...")
+time.sleep({test['sleep_time']})
+print(f"Completed {test['sleep_time']} second operation")
+"success"
+"""
+            
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                code, timeout=test["timeout"]
+            )
+            
+            # Then: Record timeout behavior
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"\n✅ {test['sleep_time']}s operation: {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"\n❌ {test['sleep_time']}s operation failed: {error}")
+        
+        performance_metrics_collector["timeout_limit_discovery"] = metrics
 
-# Load the data
+    def test_given_infinite_loops_when_executed_then_termination_behavior_measured(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
+    ):
+        """
+        Given: Operations that could run indefinitely
+        When: Executed with timeout controls
+        Then: System termination behavior is measured
+        """
+        # Given: Potentially infinite operations
+        infinite_tests = [
+            {
+                "name": "controlled_loop",
+                "code": """
+import time
+count = 0
 start_time = time.time()
-df = pd.read_csv('/home/pyodide/uploads/{filename}')
-load_time = time.time() - start_time
+while time.time() - start_time < 10:  # Run for 10 seconds max
+    count += 1
+    if count % 1000000 == 0:
+        print(f"Iteration {count}")
+print(f"Completed {count} iterations")
+count
+""",
+                "timeout": 15,
+                "should_succeed": True,
+            },
+            {
+                "name": "cpu_bound_loop",
+                "code": """
+count = 0
+max_iterations = 10000000
+for i in range(max_iterations):
+    count += i * i
+    if i % 1000000 == 0:
+        print(f"Progress: {i/max_iterations*100:.1f}%")
+print(f"Final count: {count}")
+count
+""",
+                "timeout": 30,
+                "should_succeed": True,
+            },
+        ]
+        
+        metrics = PerformanceMetrics("termination_behavior")
+        
+        for test in infinite_tests:
+            # When: Execute potentially long-running operation
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                test["code"], timeout=test["timeout"]
+            )
+            
+            # Then: Measure termination behavior
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"\n✅ {test['name']}: {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"\n❌ {test['name']} terminated: {error}")
+        
+        performance_metrics_collector["termination_behavior"] = metrics
 
-print(f"Data loading took {{load_time:.3f}} seconds")
-print(f"DataFrame shape: {{df.shape}}")
-print(f"Memory usage: {{df.memory_usage(deep=True).sum()}} bytes")
+
+class TestProgressiveLoadTesting:
+    """BDD tests for progressive load testing to find system limits."""
+
+    def test_given_increasing_concurrent_load_when_executed_then_concurrency_limits_found(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
+    ):
+        """
+        Given: Increasing numbers of concurrent requests
+        When: Executed simultaneously
+        Then: System concurrency limits are discovered
+        """
+        # Given: Progressive concurrency levels
+        concurrency_levels = [2, 5, 10, 15, 20]
+        
+        metrics = PerformanceMetrics("concurrency_limits")
+        
+        for level in concurrency_levels:
+            print(f"\n🔄 Testing concurrency level: {level}")
+            
+            # When: Execute concurrent operations
+            code = """
+import time
+import random
+# Simulate some work
+data = []
+for i in range(1000):
+    data.append(i * random.random())
+result = sum(data)
+print(f"Processed {len(data)} items, sum: {result:.2f}")
+result
+"""
+            
+            def execute_single():
+                return performance_manager.execute_code_with_metrics(code, timeout=15)
+            
+            level_success_count = 0
+            level_times = []
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=level) as executor:
+                futures = [executor.submit(execute_single) for _ in range(level)]
+                
+                for future in concurrent.futures.as_completed(futures, timeout=60):
+                    try:
+                        success, data, exec_time, resp_time = future.result()
+                        if success:
+                            level_success_count += 1
+                            level_times.append(exec_time)
+                            metrics.add_measurement(exec_time, resp_time, success=True)
+                        else:
+                            error = data.get("error", "Unknown error")
+                            metrics.add_measurement(0, resp_time, success=False, error=error)
+                    except Exception as e:
+                        metrics.add_measurement(0, 0, success=False, error=str(e))
+            
+            # Then: Report concurrency results
+            success_rate = level_success_count / level
+            avg_time = statistics.mean(level_times) if level_times else 0
+            print(f"   Success rate: {success_rate:.2%} ({level_success_count}/{level})")
+            print(f"   Average time: {avg_time:.2f}ms")
+            
+            # Stop if success rate drops below 50%
+            if success_rate < 0.5:
+                print(f"   ⚠️  Concurrency limit reached at level {level}")
+                break
+        
+        performance_metrics_collector["concurrency_limits"] = metrics
+
+    def test_given_increasing_data_sizes_when_processed_then_data_limits_discovered(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
+    ):
+        """
+        Given: Data processing tasks with increasing data sizes
+        When: Executed with performance monitoring
+        Then: Data processing limits are discovered
+        """
+        # Given: Progressive data sizes
+        data_sizes = [1000, 10000, 50000, 100000, 500000]
+        
+        metrics = PerformanceMetrics("data_processing_limits")
+        
+        for size in data_sizes:
+            print(f"\n📊 Testing data size: {size:,}")
+            
+            # When: Process increasingly large datasets
+            code = f"""
+import random
+import statistics
+
+# Generate large dataset
+size = {size}
+data = [random.random() * 1000 for _ in range(size)]
 
 # Perform various operations
-operations_start = time.time()
-
-# Basic statistics
-value_stats = df['value'].describe()
-print(f"Value column statistics:")
-print(f"  Mean: {{value_stats['mean']:.2f}}")
-print(f"  Std: {{value_stats['std']:.2f}}")
-
-# Grouping operations
-category_counts = df['category'].value_counts()
-print(f"Category distribution:")
-for cat, count in category_counts.head().items():
-    print(f"  {{cat}}: {{count}}")
-
-# Advanced operations
-df['value_squared'] = df['value'] ** 2
-df['value_log'] = df['value'].apply(lambda x: x ** 0.5)
-complex_result = df.groupby('category')['value'].agg(['mean', 'std', 'count'])
-
-operations_time = time.time() - operations_start
-print(f"Data operations took {{operations_time:.3f}} seconds")
-print(f"Complex grouping result shape: {{complex_result.shape}}")
-
-total_time = time.time() - start_time
-print(f"Total processing time: {{total_time:.3f}} seconds")
-'''
-
-        start_time = time.time()
-        processing_response = performance_session.post(
-            f"{BASE_URL}/api/execute-raw",
-            data=processing_code, headers={"Content-Type": "text/plain"}
-        )
-        processing_time = time.time() - start_time
-
-        # Then: Processing completes successfully and efficiently
-        assert processing_response.status_code == 200
-        assert processing_time < 20  # Should process within 20 seconds
-
-        response_text = processing_response.text
-        assert "DataFrame shape:" in response_text
-        assert f"({LARGE_FILE_ROWS}," in response_text  # Should show correct row count
-        assert "Total processing time:" in response_text
-
-    def test_given_very_large_csv_file_when_processed_then_system_handles_extreme_load(
-        self, server_health, performance_session, very_large_csv_file, uploaded_files_tracker
-    ):
-        """
-        Test system limits with very large CSV files.
-
-        Given: A very large CSV file with 50K+ rows
-        When: The file is processed with complex pandas operations
-        Then: System handles the load without crashing
-        And: Performance remains within acceptable bounds
-        """
-        # Given: Very large CSV file
-        file_size = os.path.getsize(very_large_csv_file)
-        assert file_size > 1000000  # Should be > 1MB
-
-        # When: Very large file is uploaded
-        start_time = time.time()
-        with open(very_large_csv_file, "rb") as fh:
-            upload_response = performance_session.post(
-                f"{BASE_URL}/api/upload",
-                files={"file": ("very_large_test.csv", fh, "text/csv")},
-                timeout=60  # Extended timeout for large file
-            )
-        upload_time = time.time() - start_time
-
-        # Then: Upload handles large file
-        assert upload_response.status_code == 200
-        assert upload_time < 30  # Should upload within 30 seconds
-
-        filename = upload_response.json()["filename"]
-        uploaded_files_tracker.append(filename)
-
-        # When: Complex processing is performed
-        extreme_processing_code = f'''
-import pandas as pd
-import numpy as np
-import time
-
-print("Starting extreme file processing...")
-start_time = time.time()
-
-# Load with chunking for memory efficiency
-chunk_size = 10000
-chunks = []
-load_start = time.time()
-
-for chunk in pd.read_csv('/home/pyodide/uploads/{filename}', chunksize=chunk_size):
-    chunks.append(chunk)
-
-df = pd.concat(chunks, ignore_index=True)
-load_time = time.time() - load_start
-
-print(f"Loaded {{len(chunks)}} chunks in {{load_time:.3f}} seconds")
-print(f"Final DataFrame shape: {{df.shape}}")
-print(f"Memory usage: {{df.memory_usage(deep=True).sum() / 1024 / 1024:.2f}} MB")
-
-# Intensive operations
-ops_start = time.time()
-
-# Statistical operations
-print("Performing statistical operations...")
-stats = df.describe(include='all')
-print(f"Statistics computed for {{len(stats.columns)}} columns")
-
-# Grouping operations
-print("Performing grouping operations...")
-grouped_stats = df.groupby('category').agg({{
-    'value1': ['mean', 'std', 'min', 'max'],
-    'value2': ['sum', 'count']
-}})
-print(f"Grouped statistics shape: {{grouped_stats.shape}}")
-
-# Memory-intensive operations
-print("Creating derived columns...")
-df['complex_calc'] = df['value1'] * df['value2'] + np.sin(df['value1'] * 0.1)
-df['category_encoded'] = pd.Categorical(df['category']).codes
-
-ops_time = time.time() - ops_start
-total_time = time.time() - start_time
-
-print(f"Operations completed in {{ops_time:.3f}} seconds")
-print(f"Total processing time: {{total_time:.3f}} seconds")
-print(f"Rows processed per second: {{df.shape[0] / total_time:.0f}}")
-
-# Cleanup to free memory
-del df, chunks
-print("Memory cleanup completed")
-'''
-
-        start_time = time.time()
-        processing_response = performance_session.post(
-            f"{BASE_URL}/api/execute-raw",
-            data=extreme_processing_code, headers={"Content-Type": "text/plain"},
-            timeout=90  # Extended timeout
-        )
-        processing_time = time.time() - start_time
-
-        # Then: Extreme processing completes successfully
-        assert processing_response.status_code == 200
-        assert processing_time < 60  # Should complete within 1 minute
-
-        response_text = processing_response.text
-        assert "extreme file processing" in response_text
-        assert f"({VERY_LARGE_FILE_ROWS}," in response_text
-        assert "Memory cleanup completed" in response_text
-
-    def test_given_multiple_csv_files_when_processed_concurrently_then_system_maintains_performance(
-        self, server_health, performance_session, uploaded_files_tracker
-    ):
-        """
-        Test concurrent file processing performance.
-
-        Given: Multiple CSV files of varying sizes
-        When: Files are uploaded and processed in sequence
-        Then: Each operation maintains consistent performance
-        And: System resources are managed efficiently
-        """
-        files_to_process = []
-
-        # Given: Create multiple test files
-        for i in range(5):
-            content = f"id,value,category,data\n"
-            rows = 1000 * (i + 1)  # 1K, 2K, 3K, 4K, 5K rows
-            for j in range(rows):
-                content += f"{j},{j * (i + 1)},cat_{j % 3},data_{j}_{i}\n"
-
-            with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
-                tmp.write(content)
-                files_to_process.append({
-                    "path": tmp.name,
-                    "name": f"concurrent_test_{i}.csv",
-                    "expected_rows": rows
-                })
-
-        try:
-            uploaded_filenames = []
-            processing_times = []
-
-            # When: Files are uploaded and processed
-            for file_info in files_to_process:
-                # Upload file
-                start_time = time.time()
-                with open(file_info["path"], "rb") as fh:
-                    upload_response = performance_session.post(
-                        f"{BASE_URL}/api/upload",
-                        files={"file": (file_info["name"], fh, "text/csv")}
-                    )
-
-                assert upload_response.status_code == 200
-                filename = upload_response.json()["filename"]
-                uploaded_filenames.append(filename)
-                uploaded_files_tracker.append(filename)
-
-                # Process file
-                processing_code = f'''
-import pandas as pd
-import time
-
-start_time = time.time()
-df = pd.read_csv('/home/pyodide/uploads/{filename}')
-load_time = time.time() - start_time
-
-print(f"File: {filename}")
-print(f"Shape: {{df.shape}}")
-print(f"Load time: {{load_time:.3f}}s")
-
-# Perform operations
-ops_start = time.time()
-summary = df.groupby('category')['value'].agg(['count', 'mean', 'sum'])
-ops_time = time.time() - ops_start
-
-print(f"Operations time: {{ops_time:.3f}}s")
-print(f"Total time: {{time.time() - start_time:.3f}}s")
-print(f"Processing rate: {{df.shape[0] / (time.time() - start_time):.0f}} rows/sec")
-'''
-
-                processing_response = performance_session.post(
-                    f"{BASE_URL}/api/execute-raw",
-                    data=processing_code, headers={"Content-Type": "text/plain"}
-                )
-
-                total_time = time.time() - start_time
-                processing_times.append(total_time)
-
-                # Then: Each file processes successfully
-                assert processing_response.status_code == 200
-                assert total_time < 15  # Each file should process within 15 seconds
-
-                response_text = processing_response.text
-                assert f"Shape: ({file_info['expected_rows']}," in response_text
-                assert "Processing rate:" in response_text
-
-            # Then: Performance remains consistent across files
-            assert len(processing_times) == 5
-            avg_time = sum(processing_times) / len(processing_times)
-            assert avg_time < 10  # Average processing time should be reasonable
-
-            # Performance should not degrade significantly
-            first_half_avg = sum(processing_times[:2]) / 2
-            second_half_avg = sum(processing_times[3:]) / 2
-            assert second_half_avg < first_half_avg * 2  # Should not be more than 2x slower
-
-        finally:
-            # Cleanup temporary files
-            for file_info in files_to_process:
-                if os.path.exists(file_info["path"]):
-                    os.unlink(file_info["path"])
-
-
-# ===== COMPUTATIONAL LIMITS TESTS =====
-
-class TestComputationalLimits:
-    """Test suite for pushing computational limits with data science libraries."""
-
-    def test_given_numpy_operations_when_complexity_increases_then_performance_scales_appropriately(
-        self, server_health, performance_session
-    ):
-        """
-        Test numpy computational limits with increasing complexity.
-
-        Given: Numpy operations of increasing computational complexity
-        When: Each operation is executed and timed
-        Then: Performance scales predictably with complexity
-        And: System handles intensive numerical computations
-        """
-        numpy_complexity_tests = [
-            {
-                "name": "Small matrix operations",
-                "code": '''
-import numpy as np
-import time
-
-start_time = time.time()
-
-# Small matrices (100x100)
-a = np.random.rand(100, 100)
-b = np.random.rand(100, 100)
-
-# Matrix operations
-c = np.dot(a, b)
-eigenvals = np.linalg.eigvals(c)
-det = np.linalg.det(c)
-
-duration = time.time() - start_time
-print(f"Small matrix operations completed in {{duration:.3f}} seconds")
-print(f"Matrix shape: {{c.shape}}")
-print(f"Determinant: {{det:.6f}}")
-print(f"Max eigenvalue: {{np.max(np.real(eigenvals)):.6f}}")
-''',
-                "max_time": 5
-            },
-            {
-                "name": "Medium matrix operations",
-                "code": '''
-import numpy as np
-import time
-
-start_time = time.time()
-
-# Medium matrices (500x500)
-a = np.random.rand(500, 500)
-b = np.random.rand(500, 500)
-
-# Intensive operations
-c = np.dot(a, b)
-svd_u, svd_s, svd_vh = np.linalg.svd(c[:100, :100])  # SVD on subset for speed
-inv_subset = np.linalg.inv(c[:100, :100])
-
-duration = time.time() - start_time
-print(f"Medium matrix operations completed in {{duration:.3f}} seconds")
-print(f"Full matrix shape: {{c.shape}}")
-print(f"SVD singular values (first 5): {{svd_s[:5]}}")
-print(f"Inverse condition number: {{np.linalg.cond(inv_subset):.2f}}")
-''',
-                "max_time": 10
-            },
-            {
-                "name": "Large array computations",
-                "code": '''
-import numpy as np
-import time
-
-start_time = time.time()
-
-# Large arrays
-size = 1000000  # 1M elements
-a = np.random.rand(size)
-b = np.random.rand(size)
-
-# Vectorized operations
-c = a * b + np.sin(a) + np.cos(b)
-d = np.sqrt(np.abs(c))
-e = np.fft.fft(d[:10000])  # FFT on subset
-
-# Statistical operations
-stats = {{
-    'mean': np.mean(d),
-    'std': np.std(d),
-    'median': np.median(d),
-    'percentile_95': np.percentile(d, 95)
+mean_val = statistics.mean(data)
+sorted_data = sorted(data)
+filtered_data = [x for x in data if x > mean_val]
+
+# Calculate results
+result = {{
+    'size': len(data),
+    'mean': mean_val,
+    'sorted_first': sorted_data[0],
+    'sorted_last': sorted_data[-1],
+    'filtered_count': len(filtered_data)
 }}
 
-duration = time.time() - start_time
-print(f"Large array computations completed in {{duration:.3f}} seconds")
-print(f"Array size: {{size}} elements")
-print(f"Mean: {{stats['mean']:.6f}}")
-print(f"Std: {{stats['std']:.6f}}")
-print(f"FFT result size: {{len(e)}}")
-''',
-                "max_time": 8
-            }
-        ]
-
-        execution_times = []
-
-        for test in numpy_complexity_tests:
-            # Given: Numpy operation of specific complexity
-            code = test["code"]
-
-            # When: Operation is executed
-            start_time = time.time()
-            response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code, headers={"Content-Type": "text/plain"}
+print(f"Processed {{size:,}} items: mean={{mean_val:.2f}}, filtered={{len(filtered_data):,}}")
+result['size']
+"""
+            
+            success, data, exec_time, resp_time = performance_manager.execute_code_with_metrics(
+                code, timeout=60
             )
-            execution_time = time.time() - start_time
-            execution_times.append(execution_time)
+            
+            # Then: Measure data processing performance
+            if success:
+                metrics.add_measurement(exec_time, resp_time, success=True)
+                print(f"   ✅ Processing time: {exec_time:.2f}ms")
+            else:
+                error = data.get("error", "Unknown error")
+                metrics.add_measurement(0, resp_time, success=False, error=error)
+                print(f"   ❌ Processing failed: {error}")
+                # Stop if processing fails
+                break
+        
+        performance_metrics_collector["data_processing_limits"] = metrics
 
-            # Then: Operation completes within expected time
-            assert response.status_code == 200
-            assert execution_time < test["max_time"]
 
-            response_text = response.text
-            assert "completed in" in response_text
-            assert "seconds" in response_text
+class TestConcurrencyPerformance:
+    """BDD tests for concurrency performance."""
 
-            print(f"✅ {test['name']}: {execution_time:.3f}s")
-
-        # Then: Performance scales as expected
-        assert len(execution_times) == 3
-        # Later tests should generally take longer (but not always due to different operations)
-        assert max(execution_times) < 15  # No test should take more than 15 seconds
-
-    def test_given_pandas_operations_when_data_size_increases_then_memory_and_performance_scale(
-        self, server_health, performance_session
+    def test_given_concurrent_requests_when_executed_then_system_stable(
+        self,
+        server_ready,
+        performance_manager: PerformanceTestManager,
+        performance_metrics_collector,
     ):
         """
-        Test pandas computational limits with increasing data sizes.
-
-        Given: Pandas operations on datasets of increasing size
-        When: Complex data manipulation tasks are performed
-        Then: Operations complete successfully within memory limits
-        And: Performance degrades gracefully with data size
+        Given: Multiple concurrent requests
+        When: Executed simultaneously
+        Then: System handles load gracefully
         """
-        pandas_scaling_tests = [
-            {
-                "name": "Small DataFrame operations",
-                "rows": 10000,
-                "code_template": '''
-import pandas as pd
-import numpy as np
-import time
-
-start_time = time.time()
-
-# Create DataFrame
-rows = {rows}
-df = pd.DataFrame({{
-    'id': range(rows),
-    'value1': np.random.rand(rows),
-    'value2': np.random.rand(rows) * 100,
-    'category': [f'cat_{{i % 10}}' for i in range(rows)],
-    'date': pd.date_range('2023-01-01', periods=rows, freq='1H')
-}})
-
-creation_time = time.time() - start_time
-print(f"DataFrame creation ({{rows}} rows): {{creation_time:.3f}}s")
-print(f"Memory usage: {{df.memory_usage(deep=True).sum() / 1024 / 1024:.2f}} MB")
-
-# Operations
-ops_start = time.time()
-
-# Statistical operations
-stats = df.describe()
-correlations = df[['value1', 'value2']].corr()
-
-# Groupby operations
-grouped = df.groupby('category').agg({{
-    'value1': ['mean', 'std', 'count'],
-    'value2': ['sum', 'min', 'max']
-}})
-
-# Time series operations
-df['hour'] = df['date'].dt.hour
-hourly_stats = df.groupby('hour')['value1'].mean()
-
-ops_time = time.time() - ops_start
-total_time = time.time() - start_time
-
-print(f"Operations time: {{ops_time:.3f}}s")
-print(f"Total time: {{total_time:.3f}}s")
-print(f"Rows per second: {{rows / total_time:.0f}}")
-print(f"Categories found: {{len(grouped)}}")
-''',
-                "max_time": 8
-            },
-            {
-                "name": "Medium DataFrame operations",
-                "rows": 50000,
-                "code_template": '''
-import pandas as pd
-import numpy as np
-import time
-
-start_time = time.time()
-
-# Create larger DataFrame
-rows = {rows}
-df = pd.DataFrame({{
-    'id': range(rows),
-    'value1': np.random.rand(rows),
-    'value2': np.random.rand(rows) * 1000,
-    'value3': np.random.randint(1, 100, rows),
-    'category': [f'category_{{i % 20}}' for i in range(rows)],
-    'subcategory': [f'sub_{{i % 5}}' for i in range(rows)],
-    'date': pd.date_range('2022-01-01', periods=rows, freq='30T')
-}})
-
-creation_time = time.time() - start_time
-print(f"DataFrame creation ({{rows}} rows): {{creation_time:.3f}}s")
-print(f"Memory usage: {{df.memory_usage(deep=True).sum() / 1024 / 1024:.2f}} MB")
-
-# Complex operations
-ops_start = time.time()
-
-# Multi-level grouping
-multi_grouped = df.groupby(['category', 'subcategory']).agg({{
-    'value1': ['mean', 'std'],
-    'value2': ['sum', 'count'],
-    'value3': ['median', 'max']
-}})
-
-# Window operations
-df['rolling_mean'] = df['value1'].rolling(window=100).mean()
-df['pct_change'] = df['value2'].pct_change()
-
-# Filtering and sorting
-filtered = df[df['value1'] > 0.5].sort_values('value2', ascending=False).head(1000)
-
-ops_time = time.time() - ops_start
-total_time = time.time() - start_time
-
-print(f"Operations time: {{ops_time:.3f}}s")
-print(f"Total time: {{total_time:.3f}}s")
-print(f"Processing rate: {{rows / total_time:.0f}} rows/sec")
-print(f"Multi-group shape: {{multi_grouped.shape}}")
-print(f"Filtered records: {{len(filtered)}}")
-''',
-                "max_time": 15
-            }
-        ]
-
-        for test in pandas_scaling_tests:
-            # Given: Pandas operation with specific data size
-            code = test["code_template"].format(rows=test["rows"])
-
-            # When: Complex pandas operations are executed
-            start_time = time.time()
-            response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code, headers={"Content-Type": "text/plain"}
-            )
-            execution_time = time.time() - start_time
-
-            # Then: Operations complete within expected time
-            assert response.status_code == 200
-            assert execution_time < test["max_time"]
-
-            response_text = response.text
-            assert f"DataFrame creation ({test['rows']} rows)" in response_text
-            assert "Memory usage:" in response_text
-            assert "Processing rate:" in response_text or "Rows per second:" in response_text
-
-            print(f"✅ {test['name']}: {execution_time:.3f}s")
-
-    def test_given_scikit_learn_operations_when_model_complexity_increases_then_training_scales_appropriately(
-        self, server_health, performance_session
-    ):
-        """
-        Test scikit-learn computational limits with increasing model complexity.
-
-        Given: Machine learning models of increasing complexity
-        When: Models are trained on progressively larger datasets
-        Then: Training completes successfully within time limits
-        And: Model performance metrics are reasonable
-        """
-        sklearn_complexity_tests = [
-            {
-                "name": "Simple linear regression",
-                "code": '''
-import numpy as np
-import pandas as pd
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
-import time
-
-start_time = time.time()
-
-# Generate synthetic data
-n_samples = 10000
-n_features = 10
-
-X = np.random.rand(n_samples, n_features)
-y = np.sum(X * np.random.rand(n_features), axis=1) + np.random.rand(n_samples) * 0.1
-
-data_time = time.time() - start_time
-print(f"Data generation ({{n_samples}} samples, {{n_features}} features): {{data_time:.3f}}s")
-
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Model training
-train_start = time.time()
-model = LinearRegression()
-model.fit(X_train, y_train)
-train_time = time.time() - train_start
-
-# Predictions and evaluation
-pred_start = time.time()
-y_pred = model.predict(X_test)
-mse = mean_squared_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
-pred_time = time.time() - pred_start
-
-total_time = time.time() - start_time
-
-print(f"Training time: {{train_time:.3f}}s")
-print(f"Prediction time: {{pred_time:.3f}}s")
-print(f"Total time: {{total_time:.3f}}s")
-print(f"MSE: {{mse:.6f}}")
-print(f"R² Score: {{r2:.6f}}")
-print(f"Samples per second (training): {{len(X_train) / train_time:.0f}}")
-''',
-                "max_time": 10
-            },
-            {
-                "name": "Random Forest classification",
-                "code": '''
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import accuracy_score, classification_report
-import time
-
-start_time = time.time()
-
-# Generate classification data
-n_samples = 20000
-n_features = 20
-n_classes = 5
-
-X = np.random.rand(n_samples, n_features)
-y = np.random.randint(0, n_classes, n_samples)
-
-data_time = time.time() - start_time
-print(f"Data generation ({{n_samples}} samples, {{n_features}} features): {{data_time:.3f}}s")
-
-# Train-test split
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Model training with Random Forest
-train_start = time.time()
-model = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=1)
-model.fit(X_train, y_train)
-train_time = time.time() - train_start
-
-# Predictions
-pred_start = time.time()
-y_pred = model.predict(X_test)
-accuracy = accuracy_score(y_test, y_pred)
-pred_time = time.time() - pred_start
-
-# Feature importance
-importance_start = time.time()
-feature_importance = model.feature_importances_
-top_features = np.argsort(feature_importance)[-5:]  # Top 5 features
-importance_time = time.time() - importance_start
-
-total_time = time.time() - start_time
-
-print(f"Training time: {{train_time:.3f}}s")
-print(f"Prediction time: {{pred_time:.3f}}s")
-print(f"Feature importance time: {{importance_time:.3f}}s")
-print(f"Total time: {{total_time:.3f}}s")
-print(f"Accuracy: {{accuracy:.4f}}")
-print(f"Training rate: {{len(X_train) / train_time:.0f}} samples/sec")
-print(f"Top feature indices: {{top_features.tolist()}}")
-''',
-                "max_time": 15
-            },
-            {
-                "name": "K-means clustering with PCA",
-                "code": '''
-import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score
-import time
-
-start_time = time.time()
-
-# Generate clustering data
-n_samples = 15000
-n_features = 30
-n_clusters = 8
-
-X = np.random.rand(n_samples, n_features)
-# Add some structure to make clustering meaningful
-for i in range(n_clusters):
-    center = np.random.rand(n_features) * 10
-    cluster_samples = n_samples // n_clusters
-    start_idx = i * cluster_samples
-    end_idx = start_idx + cluster_samples
-    if i == n_clusters - 1:  # Last cluster gets remaining samples
-        end_idx = n_samples
-    X[start_idx:end_idx] += center
-
-data_time = time.time() - start_time
-print(f"Data generation ({{n_samples}} samples, {{n_features}} features): {{data_time:.3f}}s")
-
-# Data preprocessing
-prep_start = time.time()
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-prep_time = time.time() - prep_start
-
-# PCA for dimensionality reduction
-pca_start = time.time()
-pca = PCA(n_components=10)
-X_pca = pca.fit_transform(X_scaled)
-pca_time = time.time() - pca_start
-
-# K-means clustering
-cluster_start = time.time()
-kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-clusters = kmeans.fit_predict(X_pca)
-cluster_time = time.time() - cluster_start
-
-# Evaluation
-eval_start = time.time()
-silhouette_avg = silhouette_score(X_pca, clusters)
-eval_time = time.time() - eval_start
-
-total_time = time.time() - start_time
-
-print(f"Preprocessing time: {{prep_time:.3f}}s")
-print(f"PCA time: {{pca_time:.3f}}s")
-print(f"Clustering time: {{cluster_time:.3f}}s")
-print(f"Evaluation time: {{eval_time:.3f}}s")
-print(f"Total time: {{total_time:.3f}}s")
-print(f"Silhouette score: {{silhouette_avg:.4f}}")
-print(f"PCA explained variance ratio (first 3): {{pca.explained_variance_ratio_[:3]}}")
-print(f"Clustering rate: {{n_samples / cluster_time:.0f}} samples/sec")
-''',
-                "max_time": 20
-            }
-        ]
-
-        for test in sklearn_complexity_tests:
-            # Given: Scikit-learn operation with specific complexity
-            code = test["code"]
-
-            # When: Machine learning operation is executed
-            start_time = time.time()
-            response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code, headers={"Content-Type": "text/plain"}
-            )
-            execution_time = time.time() - start_time
-
-            # Then: Operation completes within expected time
-            assert response.status_code == 200
-            assert execution_time < test["max_time"]
-
-            response_text = response.text
-            assert "Data generation" in response_text
-            assert "Total time:" in response_text
-
-            # Verify model-specific outputs
-            if "regression" in test["name"]:
-                assert "R² Score:" in response_text
-                assert "MSE:" in response_text
-            elif "classification" in test["name"]:
-                assert "Accuracy:" in response_text
-                assert "Training rate:" in response_text
-            elif "clustering" in test["name"]:
-                assert "Silhouette score:" in response_text
-                assert "PCA" in response_text
-
-            print(f"✅ {test['name']}: {execution_time:.3f}s")
-
-
-# ===== CONCURRENCY AND CLEANUP TESTS =====
-
-class TestConcurrencyAndCleanup:
-    """Test suite for concurrent requests and resource cleanup."""
-
-    def test_given_multiple_concurrent_requests_when_executed_simultaneously_then_all_complete_successfully(
-        self, server_health, performance_session
-    ):
-        """
-        Test handling of multiple concurrent execution requests.
-
-        Given: Multiple Python execution requests
-        When: Requests are sent in rapid succession
-        Then: All requests complete successfully
-        And: Response times remain reasonable
-        """
-        # Given: Multiple simple execution requests
-        test_codes = [
-            "result = sum(range(1000)); print(f'Sum: {result}')",
-            "import math; result = [math.sqrt(i) for i in range(500)]; print(f'Computed {len(result)} square roots')",
-            "text = 'hello world ' * 100; print(f'Text length: {len(text)}')",
-            "data = {'key' + str(i): i**2 for i in range(200)}; print(f'Dict size: {len(data)}')",
-            "import random; values = [random.random() for _ in range(1000)]; print(f'Average: {sum(values)/len(values):.4f}')"
-        ]
-
-        # When: Requests are executed in sequence (simulating concurrent load)
-        start_time = time.time()
-        responses = []
-
-        for i, code in enumerate(test_codes):
-            response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code, headers={"Content-Type": "text/plain"}
-            )
-            responses.append({
-                "index": i,
-                "response": response,
-                "code": code[:30] + "..." if len(code) > 30 else code
-            })
-
-        total_time = time.time() - start_time
-
-        # Then: All requests complete successfully
-        assert len(responses) == len(test_codes)
-        assert total_time < 15  # Should complete all within 15 seconds
-
-        for resp_data in responses:
-            response = resp_data["response"]
-            assert response.status_code == 200
-
-            response_text = response.text
-            assert len(response_text) > 0
-
-            # Verify expected outputs
-            if "Sum:" in resp_data["code"]:
-                assert "Sum: 499500" in response_text
-            elif "square roots" in resp_data["code"]:
-                assert "Computed 500 square roots" in response_text
-            elif "Text length:" in resp_data["code"]:
-                assert "Text length:" in response_text
-            elif "Dict size:" in resp_data["code"]:
-                assert "Dict size: 200" in response_text
-            elif "Average:" in resp_data["code"]:
-                assert "Average:" in response_text
-
-        # Performance metrics
-        avg_time = total_time / len(test_codes)
-        print(f"✅ Concurrent requests: {len(test_codes)} completed in {total_time:.3f}s (avg: {avg_time:.3f}s)")
-
-    def test_given_execution_errors_when_they_occur_then_system_recovers_and_cleans_up_properly(
-        self, server_health, performance_session, temp_csv_file, uploaded_files_tracker
-    ):
-        """
-        Test system recovery and cleanup after execution errors.
-
-        Given: Python code that will cause various types of errors
-        When: Error-inducing code is executed
-        Then: Errors are handled gracefully
-        And: System continues to function normally
-        And: Resources are properly cleaned up
-        """
-        # Given: Upload a test file for cleanup testing
-        with open(temp_csv_file, "rb") as fh:
-            upload_response = performance_session.post(
-                f"{BASE_URL}/api/upload",
-                files={"file": ("cleanup_test.csv", fh, "text/csv")}
-            )
-
-        assert upload_response.status_code == 200
-        filename = upload_response.json()["filename"]
-        uploaded_files_tracker.append(filename)
-
-        # Set some variables before errors
-        setup_code = '''
-test_var = "should_persist_after_errors"
-import pandas as pd
-df = pd.read_csv('/home/pyodide/uploads/{}")
-print(f"Setup complete - DataFrame shape: {{df.shape}}")
-print(f"Test variable: {{test_var}}")
-'''.format(filename)
-
-        response = performance_session.post(
-            f"{BASE_URL}/api/execute-raw",
-            data=setup_code, headers={"Content-Type": "text/plain"}
-        )
-        assert response.status_code == 200
-        assert "Setup complete" in response.text
-
-        # Test various error scenarios
-        error_tests = [
-            {
-                "name": "NameError",
-                "code": "print(undefined_variable_xyz)",
-                "expected_error_indicator": "error" # Response should indicate error
-            },
-            {
-                "name": "ZeroDivisionError",
-                "code": "result = 10 / 0; print(result)",
-                "expected_error_indicator": "error"
-            },
-            {
-                "name": "ImportError",
-                "code": "import nonexistent_module; print('Should not reach here')",
-                "expected_error_indicator": "error"
-            },
-            {
-                "name": "IndexError",
-                "code": "my_list = [1, 2, 3]; print(my_list[10])",
-                "expected_error_indicator": "error"
-            }
-        ]
-
-        for error_test in error_tests:
-            # When: Error-inducing code is executed
-            error_response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=error_test["code"], headers={"Content-Type": "text/plain"}
-            )
-
-            # Then: Error is handled gracefully (status 200 but error in response)
-            assert error_response.status_code == 200
-            error_text = error_response.text
-            # The response should contain error information (exact format may vary)
-            assert len(error_text) > 0  # Should have some error output
-
-            print(f"✅ {error_test['name']} handled: {len(error_text)} chars in response")
-
-        # Then: System continues to function normally after errors
-        recovery_code = '''
-# Test that system still works
-print("Testing system recovery...")
-result = 2 + 2
-print(f"Basic math works: {result}")
-
-# Test that uploaded file is still accessible
-import pandas as pd
-df = pd.read_csv('/home/pyodide/uploads/{}")
-print(f"File still accessible - shape: {{df.shape}}")
-
-# Test that we can still create new variables
-recovery_var = "system_recovered"
-print(f"Recovery variable: {{recovery_var}}")
-
-print("System recovery test complete")
-'''.format(filename)
-
-        recovery_response = performance_session.post(
-            f"{BASE_URL}/api/execute-raw",
-            data=recovery_code, headers={"Content-Type": "text/plain"}
+        # Given: Simple concurrent operation
+        code = (
+            "result = sum(i*i for i in range(10)); print(f'Result: {result}'); result"
         )
 
-        # Then: Recovery is successful
-        assert recovery_response.status_code == 200
-        recovery_text = recovery_response.text
-        assert "Testing system recovery" in recovery_text
-        assert "Basic math works: 4" in recovery_text
-        assert "File still accessible" in recovery_text
-        assert "System recovery test complete" in recovery_text
+        metrics = PerformanceMetrics("concurrent_test")
 
-        print("✅ System recovery after errors: successful")
+        # When: Execute concurrently
+        def execute_single():
+            return performance_manager.execute_code_with_metrics(code, timeout=10)
 
-    def test_given_timeout_scenarios_when_code_exceeds_limits_then_timeouts_are_enforced_properly(
-        self, server_health, performance_session
-    ):
-        """
-        Test timeout enforcement for long-running operations.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(execute_single) for _ in range(3)]
 
-        Given: Python code designed to run longer than timeout limits
-        When: Code is executed with various timeout settings
-        Then: Timeouts are properly enforced
-        And: System remains responsive after timeouts
-        """
-        timeout_tests = [
-            {
-                "name": "Short timeout test",
-                "code": '''
-import time
-print("Starting potentially long operation...")
-for i in range(100):
-    # Simulate work
-    total = sum(range(10000))
-    if i % 10 == 0:
-        print(f"Iteration {i}: {total}")
-    time.sleep(0.1)  # This will likely cause timeout
-print("This should not be reached with short timeout")
-''',
-                "timeout": 2000,  # 2 seconds
-                "max_execution_time": 5
-            },
-            {
-                "name": "Medium timeout test",
-                "code": '''
-import time
-print("Starting medium duration operation...")
-start_time = time.time()
-iterations = 0
-while time.time() - start_time < 8:  # Try to run for 8 seconds
-    total = sum(i*i for i in range(1000))
-    iterations += 1
-    if iterations % 100 == 0:
-        print(f"Completed {iterations} iterations")
-        elapsed = time.time() - start_time
-        print(f"Elapsed time: {elapsed:.2f}s")
+            for future in concurrent.futures.as_completed(futures, timeout=30):
+                try:
+                    success, data, exec_time, resp_time = future.result()
+                    if success:
+                        metrics.add_measurement(exec_time, resp_time, success=True)
+                    else:
+                        error = data.get("error", "Unknown error")
+                        metrics.add_measurement(
+                            0, resp_time, success=False, error=error
+                        )
+                except Exception as e:
+                    metrics.add_measurement(0, 0, success=False, error=str(e))
 
-print(f"Final iterations: {iterations}")
-''',
-                "timeout": 5000,  # 5 seconds
-                "max_execution_time": 8
-            }
-        ]
-
-        for timeout_test in timeout_tests:
-            # Given: Code that may exceed timeout limits
-            code = timeout_test["code"]
-            timeout = timeout_test["timeout"]
-
-            # When: Code is executed with timeout
-            start_time = time.time()
-            response = performance_session.post(
-                f"{BASE_URL}/api/execute-raw",
-                data=code, headers={"Content-Type": "text/plain"}
-            )
-            execution_time = time.time() - start_time
-
-            # Then: Execution completes within reasonable time
-            assert response.status_code == 200
-            assert execution_time < timeout_test["max_execution_time"]
-
-            response_text = response.text
-            assert len(response_text) > 0
-
-            # Should have some output (either completion or timeout)
-            has_output = ("Starting" in response_text or
-                         "Iteration" in response_text or
-                         "Elapsed time" in response_text or
-                         "timeout" in response_text.lower() or
-                         "error" in response_text.lower())
-            assert has_output
-
-            print(f"✅ {timeout_test['name']}: {execution_time:.3f}s (timeout: {timeout}ms)")
-
-        # Then: System remains responsive after timeout tests
-        health_response = performance_session.get(f"{BASE_URL}/health")
-        assert health_response.status_code == 200
-        assert health_response.json()["status"] == "ok"
-
-        # Simple execution still works
-        simple_response = performance_session.post(
-            f"{BASE_URL}/api/execute-raw",
-            data="print('System still responsive'); result = 1 + 1; print(f'1 + 1 = {result}')",
-            headers={"Content-Type": "text/plain"}
+        # Then: Good success rate
+        success_rate = metrics.success_count / (
+            metrics.success_count + metrics.failure_count
         )
-        assert simple_response.status_code == 200
-        assert "System still responsive" in simple_response.text
-        assert "1 + 1 = 2" in simple_response.text
-
-        print("✅ System responsiveness after timeouts: confirmed")
+        assert success_rate >= 0.6, f"Success rate {success_rate:.2%} should be >= 60%"
+        performance_metrics_collector["concurrent_test"] = metrics
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+    """Run performance tests directly."""
+    import sys
+
+    config = PerformanceConfig()
+    manager = PerformanceTestManager(config)
+
+    if not manager.wait_for_server_ready():
+        print("❌ Server not ready")
+        sys.exit(1)
+
+    print("✅ Server ready - running tests")
+    pytest.main([__file__, "-v", "-s"])
