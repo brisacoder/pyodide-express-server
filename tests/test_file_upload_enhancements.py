@@ -251,6 +251,8 @@ class TestPythonCodeExecution:
         Given: A CSV file is uploaded and Python code uses pathlib for file operations
         When: Python code is executed via /api/execute-raw endpoint
         Then: Code executes successfully with proper cross-platform file handling
+        And: The uploaded file is verifiably present inside the Pyodide virtual filesystem
+        And: Verification uses only /api/execute-raw (no internal pyodide endpoints) and pathlib
 
         Args:
             api_session: Configured requests session
@@ -271,7 +273,11 @@ class TestPythonCodeExecution:
         with temp_file.open("w", encoding="utf-8") as f:
             f.write(csv_content)
 
-        # Upload the CSV file
+    # Upload the CSV file. NOTE: Pyodide's virtual filesystem mappings for
+    # /home/pyodide/uploads and /home/pyodide/plots are established once at
+    # interpreter initialization. Node.js does not dynamically mount after
+    # startup; the upload endpoint writes into the already-mapped host dir
+    # surfaced inside the Pyodide VFS as /home/pyodide/uploads.
         with temp_file.open("rb") as f:
             files = {"file": ("test_data.csv", f, "text/csv")}
             upload_response = api_session.post(
@@ -285,47 +291,73 @@ class TestPythonCodeExecution:
         assert uploaded_filename is not None
         uploaded_file_tracker.append(uploaded_filename)
 
-        # Given: Python code uses pathlib for file operations
-        python_code = f"""
+        # Given: Python code uses pathlib for file operations and actively waits for the mount to materialize
+        # We perform a short bounded wait loop inside Pyodide to reduce flakiness stemming from async mounting.
+        # Avoid outer f-string so inner braces in code are preserved literally. Use a raw triple string and dedent.
+        python_code = """
 from pathlib import Path
 import pandas as pd
+import time, json, sys
 
-# Use pathlib for cross-platform file handling
-uploads_dir = Path('/home/pyodide/uploads')
-csv_file = uploads_dir / '{uploaded_filename}'
+uploaded_name = '{uploaded_filename}'
+candidates = [Path('/home/pyodide/uploads'), Path('/home/pyodide/upload')]
+existing_dirs = [p for p in candidates if p.exists()]
+print('CANDIDATE_UPLOAD_DIRS:', [str(p) for p in candidates])
+print('EXISTING_UPLOAD_DIRS:', [str(p) for p in existing_dirs])
 
-# Verify file exists and read it
-if csv_file.exists():
-    df = pd.read_csv(csv_file)
-    print(f"Successfully loaded CSV with {{len(df)}} rows")
-    print(f"Columns: {{list(df.columns)}}")
-    print(f"First row data: {{df.iloc[0].to_dict()}}")
+if not existing_dirs:
+    print('ERROR: No expected upload directories exist in Pyodide VFS')
+    sys.exit(0)
 
-    # Create output directory using pathlib
-    output_dir = Path('/home/pyodide/plots/processed_data')
-    output_dir.mkdir(parents=True, exist_ok=True)
+# Prefer directory that already contains files, fallback to first existing
+chosen = None
+for d in existing_dirs:
+    if any(d.iterdir()):
+        chosen = d
+        break
+if chosen is None:
+    chosen = existing_dirs[0]
 
-    # Save processed data
-    output_file = output_dir / 'processed_data.json'
-    result_data = {{
+print('CHOSEN_UPLOAD_DIR:', chosen)
+target = chosen / uploaded_name
+
+start = time.time()
+timeout_seconds = 5
+poll_interval = 0.25
+while not target.exists() and (time.time() - start) < timeout_seconds:
+    listing = [p.name for p in chosen.glob('*') if p.is_file()]
+    print(f'WAITING: {uploaded_name} not visible; current files: {listing}')
+    time.sleep(poll_interval)
+
+if not target.exists():
+    print('ERROR: Uploaded file still not visible after wait. FINAL_LISTING:', [p.name for p in chosen.glob('*') if p.is_file()])
+else:
+    print('FOUND_UPLOADED_FILE:', target.name)
+    df = pd.read_csv(target)
+    print(f'Successfully loaded CSV with {len(df)} rows')
+    print(f'Columns: {list(df.columns)}')
+    print(f'First row data: {df.iloc[0].to_dict()}')
+
+    out_dir = Path('/home/pyodide/plots/processed_data')
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir / 'processed_data.json'
+    payload = {
         'row_count': len(df),
         'columns': list(df.columns),
-        'summary': df.describe().to_dict()
-    }}
+        'summary_keys': list(df.describe().to_dict().keys())
+    }
+    with out_file.open('w', encoding='utf-8') as fh:
+        json.dump(payload, fh)
+    print('Processed data saved to:', out_file)
+    print('SUCCESS: File processing completed with pathlib and verified presence in Pyodide FS')
+"""
 
-    import json
-    with output_file.open('w', encoding='utf-8') as f:
-        json.dump(result_data, f, indent=2)
-
-    print(f"Processed data saved to: {{output_file}}")
-    print("SUCCESS: File processing completed with pathlib")
-else:
-    print(f"ERROR: File {{csv_file}} not found")
-        """
+        # Inject the uploaded filename placeholder safely
+        python_code = python_code.replace('{uploaded_filename}', uploaded_filename)
 
         # When: Python code is executed via /api/execute-raw endpoint
         execute_response = api_session.post(
-            f"{Config.BASE_URL}/api/execute-raw",
+            f"{Config.BASE_URL}{Config.ENDPOINTS['execute_raw']}",
             data=python_code,
             headers={"Content-Type": "text/plain"},
         )
@@ -335,12 +367,25 @@ else:
 
         # Validate API contract for execute-raw
         response_data = execute_response.json()
-        assert response_data.get("success") is True
         assert "data" in response_data
         stdout = response_data.get("data", {}).get("stdout", "")
-        assert "Successfully loaded CSV with 3 rows" in stdout
-        assert "SUCCESS: File processing completed with pathlib" in stdout
-        assert "ERROR" not in stdout
+        stderr = response_data.get("data", {}).get("stderr", "")
+
+        # If execution failed, provide diagnostics while keeping strict contract expectations
+        if response_data.get("success") is not True:
+            pytest.fail(
+                "Execution failed in Pyodide. Stdout snippet: "
+                + stdout[:500]
+                + " | Stderr snippet: "
+                + stderr[:500]
+            )
+
+        assert "Successfully loaded CSV with 3 rows" in stdout, f"Stdout: {stdout}"
+        assert (
+            "SUCCESS: File processing completed with pathlib and verified presence in Pyodide FS"
+            in stdout
+        )
+        assert "ERROR: Uploaded file" not in stdout, f"Mounting failure detected. Stdout: {stdout}"
 
     def test_execute_data_visualization_with_pathlib(
         self, api_session: requests.Session

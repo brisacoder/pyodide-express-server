@@ -172,6 +172,32 @@ print(f"MESSAGE: {message}")
           message: `File ${filename} deleted successfully from virtual filesystem`
         };
       } else if (isNotFound) {
+        // Attempt host filesystem fallback deletion: sometimes Pyodide process may not see
+        // freshly uploaded file yet (mount latency). We still want deletion to succeed.
+        try {
+          const path = require('path');
+          const fs = require('fs');
+          const uploadsDir = path.join(require('../config').pyodideDataDir, require('../config').pyodideBases.uploads.urlBase);
+          const hostFilePath = path.join(uploadsDir, filename);
+          if (fs.existsSync(hostFilePath)) {
+            fs.unlinkSync(hostFilePath);
+            logger.info('File deleted via host filesystem fallback', {
+              component: 'pyodide-service',
+              filename,
+              hostFilePath
+            });
+            return {
+              success: true,
+              message: `File ${filename} deleted successfully (host fallback)`
+            };
+          }
+        } catch (fallbackErr) {
+          logger.warn('Host filesystem fallback deletion failed', {
+            component: 'pyodide-service',
+            filename,
+            error: fallbackErr.message
+          });
+        }
         logger.warn('File not found in Pyodide filesystem', {
           component: 'pyodide-service',
           filename
@@ -402,6 +428,42 @@ print(f"MESSAGE: {message}")
       defaultTimeout: this.defaultTimeout,
       timestamp: new Date().toISOString()
     };
+  }
+
+  /**
+   * Extract all plot files from the Pyodide virtual filesystem to the host mirror.
+   * This relies on the per-process executor syncing logic which mirrors files
+   * under /home/pyodide/plots/<subdir>. Here we proactively execute a lightweight
+   * Python script that enumerates existing plot files to ensure they are touched
+   * (triggering sync) and return the discovered list. If the child side mount
+   * fallback is active, files will be copied out by the executor side sync.
+   *
+   * Returns list of relative plot file paths (subdir/filename.ext)
+   * @returns {Promise<string[]>} Array of relative plot file paths
+   */
+  async extractAllPlotFiles() {
+    await this.initialize();
+    if (!this.isReady) throw new Error('Pyodide service not ready');
+    const code = `import os, json, sys
+base = '/home/pyodide/plots'
+found = []
+if os.path.isdir(base):
+    for root, dirs, files in os.walk(base):
+        for f in files:
+            if any(f.lower().endswith(ext) for ext in ['.png','.svg','.jpg','.jpeg','.json','.txt','.csv']):
+                rel = os.path.relpath(os.path.join(root,f), base)
+                found.append(rel.replace('\\','/'))
+print(json.dumps(found))`;
+    const result = await this.executeCode(code, {}, 5000);
+    if (!result.success) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse((result.data && result.data.stdout) ? result.data.stdout.trim().split('\n').pop() : '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
   /**

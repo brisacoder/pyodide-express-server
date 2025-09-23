@@ -13,12 +13,21 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
 
 class PyodideProcessPool {
   constructor(options = {}) {
-    this.poolSize = options.poolSize || 2; // Number of persistent processes
+    // Requested pool size (pre-adaptation)
+    this.requestedPoolSize = options.poolSize || parseInt(process.env.PYODIDE_POOL_SIZE || '2', 10);
+
+    // Establish adaptive memory constraints before finalizing poolSize
+    const adaptive = this._computeAdaptivePoolSize(this.requestedPoolSize);
+    this.poolSize = adaptive.finalPoolSize;
+    this.adaptiveSizing = adaptive; // store details for stats/logging
+
     this.maxExecutions = options.maxExecutions || 20; // Recycle after N executions - reduced from 100 to prevent memory buildup
     this.processInitTimeout = options.processInitTimeout || 90000; // 90 seconds for Pyodide init
     this.executionTimeout = options.executionTimeout || 30000; // 30 seconds default execution timeout
@@ -31,6 +40,37 @@ class PyodideProcessPool {
     this.isInitialized = false;
     this.initializationPromise = null;
     this.memoryMonitorInterval = null;
+    // Adaptive recycling & health tracking additions
+    this.adaptiveEnabled = process.env.ADAPTIVE_CLEANUP_ENABLED === '1' || process.env.ADAPTIVE_CLEANUP_ENABLED === 'true';
+    this.metricsHistoryLimit = 50; // retain last N metrics per process
+    this.initFailureStreak = 0; // consecutive init failures (pool level)
+    this.maxInitFailureStreak = parseInt(process.env.MAX_INIT_FAILURE_STREAK || '5', 10); // circuit breaker threshold
+    this.circuitBreakerOpen = false;
+    this.circuitBreakerResetMs = parseInt(process.env.CIRCUIT_BREAKER_RESET_MS || '60000', 10);
+    this.lastCircuitOpenAt = 0;
+    this.adaptiveRecycleReason = 'none';
+    this.maxQueueSize = parseInt(process.env.MAX_PENDING_EXECUTIONS || '100', 10); // backpressure limit
+    this.backpressureRejects = 0;
+    // Performance protection additions
+    this.minFreeMemFraction = Math.min(0.8, Math.max(0.01, parseFloat(process.env.MIN_FREE_MEM_FRACTION || '0.12')));
+    this.minFreeMemFloorMB = Math.max(32, parseInt(process.env.MIN_FREE_MEM_MB_FLOOR || '256', 10));
+    this.adaptiveQueueEnabled = process.env.ADAPTIVE_QUEUE_ENABLED !== '0';
+    this.softTimeoutFactor = Math.min(0.95, Math.max(0.1, parseFloat(process.env.EXEC_SOFT_TIMEOUT_FACTOR || '0.7')));
+    this.memGrowthRecycleMB = Math.max(10, parseInt(process.env.MEM_GROWTH_RECYCLE_MB || '120', 10));
+    this.maxExecutions = parseInt(process.env.PYODIDE_MAX_EXECUTIONS_BEFORE_RECYCLE || `${this.maxExecutions}`, 10);
+    this.lowMemRejects = 0;
+    this.admissionRejects = 0;
+    this.earlyTerminations = 0;
+    this.recycledForGrowth = 0;
+    this.recycledForRssLimit = 0;
+    this.observedProcessRssMB = [];
+    this.memoryObservationLimit = Math.max(1, parseInt(process.env.PYODIDE_MEMORY_OBSERVATION_LIMIT || '24', 10));
+    this.maxWorkerRssMB = Math.max(128, parseInt(process.env.PYODIDE_MAX_WORKER_RSS_MB || '768', 10));
+    this.memoryGuardEnabled = process.env.PYODIDE_MEMORY_GUARD !== '0';
+    this.queueHighWaterMark = 0;
+    const headroomCap = parseInt(process.env.PYODIDE_MIN_FREE_MEM_MB_CAP || '2048', 10);
+    this.minFreeMemCapMB = Number.isFinite(headroomCap) && headroomCap > 0 ? headroomCap : Infinity;
+    this.memoryGuardSoftBypass = process.env.PYODIDE_MEMORY_GUARD_SOFT_BYPASS !== '0';
   }
 
   /**
@@ -54,25 +94,44 @@ class PyodideProcessPool {
     logger.info('Initializing Pyodide process pool', {
       component: 'pyodide-process-pool',
       poolSize: this.poolSize,
+      requestedPoolSize: this.requestedPoolSize,
+      adaptiveReason: this.adaptiveSizing.reason,
+      totalMemMB: this.adaptiveSizing.totalMemMB,
+      perProcessMB: this.adaptiveSizing.perProcessMB,
+      maxFraction: this.adaptiveSizing.maxPoolMemFraction,
+      memCapCount: this.adaptiveSizing.memCapCount,
+      cpuCount: this.adaptiveSizing.cpuCount,
       initTimeout: this.processInitTimeout
     });
 
-    const initPromises = [];
-    
-    for (let i = 0; i < this.poolSize; i++) {
-      initPromises.push(this._createProcess(i));
-    }
-
+    const createdProcesses = [];
     try {
-      await Promise.all(initPromises);
+      const targetPoolSize = this.poolSize;
+      for (let i = 0; i < targetPoolSize; i++) {
+        if (!this._canSpawnAnotherProcess(createdProcesses.length)) {
+          this.adaptiveRecycleReason = 'memory_guard_startup';
+          break;
+        }
+        const processInfo = await this._createProcess(i);
+        createdProcesses.push(processInfo);
+      }
+
+      this.poolSize = createdProcesses.length;
+      this.adaptiveSizing.finalPoolSize = createdProcesses.length;
+
+      if (createdProcesses.length === 0) {
+        throw new Error('No Pyodide workers could be started due to memory constraints');
+      }
+
       this.isInitialized = true;
-      
-      // Start memory monitoring
       this.startMemoryMonitoring();
-      
+
       logger.info('Pyodide process pool initialized successfully', {
         component: 'pyodide-process-pool',
-        availableProcesses: this.availableProcesses.length
+        availableProcesses: this.availableProcesses.length,
+        poolSize: this.poolSize,
+        observedProcessRssMB: this.observedProcessRssMB,
+        maxWorkerRssMB: this.maxWorkerRssMB
       });
     } catch (error) {
       logger.error('Failed to initialize Pyodide process pool', {
@@ -82,6 +141,121 @@ class PyodideProcessPool {
       throw error;
     }
   }
+  // ================= Performance Protection Helpers =================
+  _memoryPressure() {
+    const total = os.totalmem();
+    const free = os.freemem();
+    let available = free;
+
+    if (process.platform === 'linux' && typeof fs.existsSync === 'function' && fs.existsSync('/proc/meminfo')) {
+      try {
+        const meminfo = fs.readFileSync('/proc/meminfo', 'utf8');
+        const match = meminfo.match(/^MemAvailable:\s+(\d+)\s+kB/m);
+        if (match) {
+          available = parseInt(match[1], 10) * 1024;
+        }
+      } catch {
+        // Ignore failures to read /proc/meminfo
+      }
+    }
+
+    // On some platforms free memory can be zero while buffers/caches are reclaimable.
+    // Fallback to free memory if the computed value is clearly wrong.
+    if (!Number.isFinite(available) || available <= 0) {
+      available = free;
+    }
+
+    return {
+      total,
+      free,
+      available,
+      totalMB: total / 1024 / 1024,
+      freeMB: free / 1024 / 1024,
+      availableMB: available / 1024 / 1024,
+      freeFraction: available / total
+    };
+  }
+
+  _recordProcessMemoryObservation(rssMB) {
+    if (!Number.isFinite(rssMB) || rssMB <= 0) {
+      return;
+    }
+    this.observedProcessRssMB.push(rssMB);
+    if (this.observedProcessRssMB.length > this.memoryObservationLimit) {
+      this.observedProcessRssMB.shift();
+    }
+  }
+
+  _estimatePerProcessMB() {
+    if (this.observedProcessRssMB.length > 0) {
+      const sum = this.observedProcessRssMB.reduce((acc, value) => acc + value, 0);
+      return Math.max(64, Math.round(sum / this.observedProcessRssMB.length));
+    }
+    return Math.max(128, parseInt(process.env.PYODIDE_EST_PROC_MB || '512', 10));
+  }
+
+  _canSpawnAnotherProcess(activeCount) {
+    if (!this.memoryGuardEnabled) {
+      return true;
+    }
+
+    const pressure = this._memoryPressure();
+    const estimated = this._estimatePerProcessMB();
+    const projectedAvailableMB = pressure.availableMB - estimated;
+    let minFreeMB = Math.max(this.minFreeMemFloorMB, pressure.totalMB * this.minFreeMemFraction);
+    if (Number.isFinite(this.minFreeMemCapMB)) {
+      minFreeMB = Math.min(minFreeMB, this.minFreeMemCapMB);
+    }
+
+    if (projectedAvailableMB < minFreeMB) {
+      const bypassFloor = Math.max(this.minFreeMemFloorMB, this.maxWorkerRssMB * 0.75);
+      const canBypass = this.memoryGuardSoftBypass &&
+        activeCount < Math.max(2, Math.ceil(this.poolSize / 2)) &&
+        projectedAvailableMB >= bypassFloor;
+
+      if (!canBypass) {
+        logger.warn('Skipping Pyodide worker spawn due to memory guard', {
+          component: 'pyodide-process-pool',
+          activeCount,
+          poolEmpty: activeCount === 0,
+          estimatedPerProcessMB: estimated,
+          availableMB: pressure.availableMB,
+          projectedAvailableMB,
+          minFreeMB,
+          maxWorkerRssMB: this.maxWorkerRssMB
+        });
+        return false;
+      }
+
+      logger.warn('Memory guard soft bypass allowing worker spawn', {
+        component: 'pyodide-process-pool',
+        activeCount,
+        poolEmpty: activeCount === 0,
+        estimatedPerProcessMB: estimated,
+        availableMB: pressure.availableMB,
+        projectedAvailableMB,
+        minFreeMB,
+        bypassFloor,
+        maxWorkerRssMB: this.maxWorkerRssMB
+      });
+    }
+    return true;
+  }
+  _admissionAllowed() {
+    const p = this._memoryPressure();
+    if (p.freeFraction < this.minFreeMemFraction && p.availableMB < this.minFreeMemFloorMB) {
+      return { allowed: false, reason: 'low-memory', pressure: p };
+    }
+    return { allowed: true, pressure: p };
+  }
+
+  _effectiveMaxQueueSize() {
+    if (!this.adaptiveQueueEnabled) return this.maxQueueSize;
+    const p = this._memoryPressure();
+    const fraction = Math.max(0.05, Math.min(1, (p.freeFraction - this.minFreeMemFraction) / 0.5));
+    const dynamicCap = Math.max(1, Math.floor(this.maxQueueSize * fraction));
+    return Math.min(this.maxQueueSize, dynamicCap);
+  }
 
   /**
    * Create a new persistent Pyodide process
@@ -90,6 +264,17 @@ class PyodideProcessPool {
    * @private
    */
   async _createProcess(processId) {
+    if (this.circuitBreakerOpen) {
+      const now = Date.now();
+      if (now - this.lastCircuitOpenAt > this.circuitBreakerResetMs) {
+        // Reset circuit breaker after cooldown
+        this.circuitBreakerOpen = false;
+        this.initFailureStreak = 0;
+        logger.warn('Circuit breaker reset, attempting process creation', { component: 'pyodide-process-pool' });
+      } else {
+        throw new Error('Circuit breaker open - refusing to create new Pyodide processes temporarily');
+      }
+    }
     return new Promise((resolve, reject) => {
       const executorPath = path.join(__dirname, 'pyodide-executor.js');
       
@@ -107,7 +292,10 @@ class PyodideProcessPool {
         executionCount: 0,
         createdAt: Date.now(),
         lastUsed: Date.now(),
-        outputBuffer: ''
+        outputBuffer: '',
+        initialMemory: null,
+        lastKnownRssMB: null,
+        markedForRecycle: null
       };
 
       this.processes[processId] = processInfo;
@@ -120,6 +308,16 @@ class PyodideProcessPool {
 
       // Set up initialization timeout
       const initTimeout = setTimeout(() => {
+        this.initFailureStreak += 1;
+        if (this.initFailureStreak >= this.maxInitFailureStreak && !this.circuitBreakerOpen) {
+          this.circuitBreakerOpen = true;
+          this.lastCircuitOpenAt = Date.now();
+          logger.error('Circuit breaker opened due to repeated process init timeouts', {
+            component: 'pyodide-process-pool',
+            streak: this.initFailureStreak,
+            maxInitFailureStreak: this.maxInitFailureStreak
+          });
+        }
         this._killProcess(processId, 'initialization timeout');
         reject(new Error(`Process ${processId} initialization timeout after ${this.processInitTimeout}ms`));
       }, this.processInitTimeout);
@@ -162,9 +360,15 @@ class PyodideProcessPool {
       });
 
       // Store the resolve function for when initialization completes
-      processInfo.initResolve = () => {
+      processInfo.initResolve = (memory) => {
         clearTimeout(initTimeout);
         processInfo.available = true;
+        processInfo.initialMemory = memory || null;
+        if (memory && typeof memory.rssMB === 'number') {
+          processInfo.lastKnownRssMB = memory.rssMB;
+          this._recordProcessMemoryObservation(memory.rssMB);
+        }
+        processInfo.markedForRecycle = null;
         this.availableProcesses.push(processId);
         resolve(processInfo);
       };
@@ -224,8 +428,10 @@ class PyodideProcessPool {
             component: 'pyodide-process-pool',
             processId
           });
+          // Reset init failure streak on success
+          this.initFailureStreak = 0;
           if (processInfo.initResolve) {
-            processInfo.initResolve();
+            processInfo.initResolve(message.memory || null);
             delete processInfo.initResolve;
           }
         } else {
@@ -234,6 +440,16 @@ class PyodideProcessPool {
             processId,
             error: message.error
           });
+          this.initFailureStreak += 1;
+          if (this.initFailureStreak >= this.maxInitFailureStreak && !this.circuitBreakerOpen) {
+            this.circuitBreakerOpen = true;
+            this.lastCircuitOpenAt = Date.now();
+            logger.error('Circuit breaker opened due to repeated init failures', {
+              component: 'pyodide-process-pool',
+              streak: this.initFailureStreak,
+              maxInitFailureStreak: this.maxInitFailureStreak
+            });
+          }
           this._killProcess(processId, 'initialization failed');
         }
         break;
@@ -261,13 +477,41 @@ class PyodideProcessPool {
           processInfo.available = true;
           processInfo.lastUsed = Date.now();
           processInfo.executionCount++;
-          
-          // Check if process needs recycling
-          // Only recycle on max executions for now (disabled Python error recycling)
-          if (processInfo.executionCount >= this.maxExecutions) {
+          // Memory growth recycle heuristic using adaptive metrics if available
+          const statsRecord = this.processStats.get(processId);
+          let recycledForGrowth = false;
+          if (statsRecord && statsRecord.metricsHistory && statsRecord.metricsHistory.length >= 2) {
+            const lastTwo = statsRecord.metricsHistory.slice(-2);
+            const prev = lastTwo[0];
+            const curr = lastTwo[1];
+            if (prev && curr && typeof prev.deltaMB === 'number' && typeof curr.deltaMB === 'number') {
+              const growth = curr.deltaMB - prev.deltaMB;
+              if (growth >= this.memGrowthRecycleMB) {
+                this.recycledForGrowth += 1;
+                logger.info('Recycling process due to memory growth spike', {
+                  component: 'pyodide-process-pool',
+                  processId,
+                  growthMB: growth,
+                  thresholdMB: this.memGrowthRecycleMB
+                });
+                this._recycleProcess(processId);
+                recycledForGrowth = true;
+              }
+            }
+          }
+
+          const shouldRecycleForRss = processInfo.markedForRecycle === 'rss_limit';
+          if (shouldRecycleForRss) {
+            this.recycledForRssLimit += 1;
+            this.adaptiveRecycleReason = 'rss_limit';
+            processInfo.markedForRecycle = null;
+            this._recycleProcess(processId);
+          } else if (recycledForGrowth) {
+            processInfo.markedForRecycle = null;
+          } else if (processInfo.executionCount >= this.maxExecutions) {
             this._recycleProcess(processId);
           } else {
-            // Push back to available pool
+            processInfo.markedForRecycle = null;
             this.availableProcesses.push(processId);
           }
 
@@ -287,6 +531,71 @@ class PyodideProcessPool {
               });
             }
             pendingExecution.reject(error);
+          }
+        }
+        break;
+      }
+      case 'post_exec_metrics': {
+        if (message.processMemory && typeof message.processMemory.rssMB === 'number') {
+          processInfo.lastKnownRssMB = message.processMemory.rssMB;
+          this._recordProcessMemoryObservation(message.processMemory.rssMB);
+          if (message.processMemory.rssMB >= this.maxWorkerRssMB && processInfo.markedForRecycle !== 'rss_limit') {
+            processInfo.markedForRecycle = 'rss_limit';
+            logger.warn('Pyodide worker flagged for RSS recycle', {
+              component: 'pyodide-process-pool',
+              processId,
+              rssMB: message.processMemory.rssMB,
+              maxWorkerRssMB: this.maxWorkerRssMB
+            });
+          }
+        }
+        // Adaptive metrics from child process after execution
+        const stats = this.processStats.get(processId) || {};
+        // Initialize adaptive fields if missing
+        if (!stats.metricsHistory) stats.metricsHistory = [];
+        if (typeof stats.tier3Executions !== 'number') stats.tier3Executions = 0;
+        if (typeof stats.tier2Executions !== 'number') stats.tier2Executions = 0;
+        if (typeof stats.recycleSuggestions !== 'number') stats.recycleSuggestions = 0;
+        if (typeof stats.lastDeltaMB !== 'number') stats.lastDeltaMB = 0;
+        if (typeof stats.aggressiveCleanups !== 'number') stats.aggressiveCleanups = 0;
+
+        const tier = message.tier || 0;
+        const deltaMB = message.stats && typeof message.stats.deltaMB === 'number' ? message.stats.deltaMB : 0;
+        stats.lastDeltaMB = deltaMB;
+        if (tier === 3) stats.tier3Executions += 1; else if (tier === 2) stats.tier2Executions += 1;
+        if (message.recycleSuggested) stats.recycleSuggestions += 1;
+        if (message.aggressive) stats.aggressiveCleanups += 1;
+        stats.metricsHistory.push({ ts: Date.now(), tier, deltaMB, recycle: !!message.recycleSuggested });
+        if (stats.metricsHistory.length > this.metricsHistoryLimit) {
+          stats.metricsHistory.shift();
+        }
+        this.processStats.set(processId, stats);
+
+        // Adaptive recycling decision (only if enabled)
+        if (this.adaptiveEnabled) {
+          let shouldRecycle = false;
+          let reason = '';
+          // Respect explicit suggestion
+            if (message.recycleSuggested) {
+              shouldRecycle = true;
+              reason = 'child_suggested';
+            }
+          // Hard tier 3 more than once in short window
+          const recentT3 = stats.metricsHistory.filter(m => Date.now() - m.ts < 60000 && m.tier === 3).length;
+          if (!shouldRecycle && recentT3 >= 2) {
+            shouldRecycle = true; reason = 'repeated_tier3_1min';
+          }
+          // Sustained growth: average positive delta over last 10 metrics
+          const recent = stats.metricsHistory.slice(-10);
+          if (!shouldRecycle && recent.length >= 5) {
+            const avgDelta = recent.reduce((s, m) => s + m.deltaMB, 0) / recent.length;
+            if (avgDelta > 50) { // 50MB average growth threshold
+              shouldRecycle = true; reason = 'avg_growth_gt_50mb_last10';
+            }
+          }
+          if (shouldRecycle && processInfo.available) {
+            this.adaptiveRecycleReason = reason;
+            this._recycleProcess(processId);
           }
         }
         break;
@@ -325,6 +634,36 @@ class PyodideProcessPool {
     if (!this.isInitialized) {
       throw new Error('Process pool not initialized');
     }
+    // Admission control (memory pressure)
+    const admission = this._admissionAllowed();
+    if (!admission.allowed) {
+      this.lowMemRejects += 1;
+      logger.warn('Admission rejected due to low memory', {
+        component: 'pyodide-process-pool',
+        freeFraction: admission.pressure.freeFraction.toFixed(4),
+        availableMB: Math.round(admission.pressure.availableMB),
+        minFreeMemFraction: this.minFreeMemFraction,
+        minFreeMemFloorMB: this.minFreeMemFloorMB,
+        pendingExecutions: this.pendingExecutions.size
+      });
+      throw new Error('Server under memory pressure, try later');
+    }
+
+    // Adaptive queue sizing
+    const effectiveMax = this._effectiveMaxQueueSize();
+    if (this.pendingExecutions.size >= effectiveMax) {
+      this.backpressureRejects += 1;
+      logger.warn('Backpressure rejection', {
+        component: 'pyodide-process-pool',
+        pending: this.pendingExecutions.size,
+        effectiveMaxQueueSize: effectiveMax,
+        configuredMaxQueueSize: this.maxQueueSize
+      });
+      throw new Error('Server busy: too many pending executions');
+    }
+    if (this.pendingExecutions.size > this.queueHighWaterMark) {
+      this.queueHighWaterMark = this.pendingExecutions.size;
+    }
 
     // Wait for an available process
     const processId = await this._getAvailableProcess();
@@ -334,12 +673,33 @@ class PyodideProcessPool {
       // Store the pending execution
       this.pendingExecutions.set(executionId, { resolve, reject });
 
-      // Set execution timeout
+      // Hard timeout
       const timeoutHandle = setTimeout(() => {
         this.pendingExecutions.delete(executionId);
         this._killProcess(processId, 'execution timeout');
         reject(new Error(`Execution timeout after ${timeout}ms`));
       }, timeout);
+
+      // Soft timeout watchdog for early termination under pressure
+      const softMs = Math.max(100, Math.floor(timeout * this.softTimeoutFactor));
+      const softHandle = setTimeout(() => {
+        const pressure = this._memoryPressure();
+        if (pressure.freeFraction < this.minFreeMemFraction * 0.75) {
+          this.pendingExecutions.delete(executionId);
+            this.earlyTerminations += 1;
+            logger.warn('Early termination due to memory pressure (soft timeout)', {
+              component: 'pyodide-process-pool',
+              processId,
+              softMs,
+              timeout,
+              freeFraction: pressure.freeFraction.toFixed(4),
+              availableMB: Math.round(pressure.availableMB),
+              minFreeMemFraction: this.minFreeMemFraction
+            });
+            this._killProcess(processId, 'soft-timeout-memory-pressure');
+            reject(new Error(`Execution terminated early due to memory pressure at ~${softMs}ms`));
+        }
+      }, softMs);
 
       // Send execution message to process
       const message = {
@@ -360,16 +720,19 @@ class PyodideProcessPool {
         this.pendingExecutions.set(executionId, {
           resolve: (result) => {
             clearTimeout(timeoutHandle);
+            clearTimeout(softHandle);
             originalResolve(result);
           },
           reject: (error) => {
             clearTimeout(timeoutHandle);
+            clearTimeout(softHandle);
             originalReject(error);
           }
         });
         
       } catch (error) {
         clearTimeout(timeoutHandle);
+        clearTimeout(softHandle);
         this.pendingExecutions.delete(executionId);
         // Return process to pool
         this.availableProcesses.push(processId);
@@ -507,17 +870,24 @@ class PyodideProcessPool {
     if (index > -1) {
       this.availableProcesses.splice(index, 1);
     }
-
+   
     // Clear the process info
     this.processes[processId] = null;
-
-    // Create a replacement process
-    if (this.isInitialized) {
+   
+    if (!this.isInitialized) {
+      return;
+    }
+   
+    const attemptSpawn = () => {
+      const activeCount = this.processes.filter((p) => p !== null).length;
+      if (!this._canSpawnAnotherProcess(activeCount)) {
+        return false;
+      }
       logger.info('Creating replacement process', {
         component: 'pyodide-process-pool',
         processId
       });
-      
+   
       this._createProcess(processId).catch(error => {
         logger.error('Failed to create replacement process', {
           component: 'pyodide-process-pool',
@@ -525,9 +895,33 @@ class PyodideProcessPool {
           error: error.message
         });
       });
+      return true;
+    };
+   
+    if (attemptSpawn()) {
+      return;
     }
+   
+    logger.warn('Deferred replacement process creation due to memory guard', {
+      component: 'pyodide-process-pool',
+      processId,
+      maxWorkerRssMB: this.maxWorkerRssMB
+    });
+   
+    setTimeout(() => {
+      if (!this.isInitialized || this.processes[processId]) {
+        return;
+      }
+      if (!attemptSpawn()) {
+        logger.warn('Memory guard still preventing replacement process spawn', {
+          component: 'pyodide-process-pool',
+          processId,
+          maxWorkerRssMB: this.maxWorkerRssMB
+        });
+      }
+    }, Math.min(this.circuitBreakerResetMs, 30000));
   }
-
+   
   /**
    * Recycle a process after it reaches max executions
    * @param {string} processId - ID of the process to recycle
@@ -554,11 +948,52 @@ class PyodideProcessPool {
 
     return {
       poolSize: this.poolSize,
+      requestedPoolSize: this.requestedPoolSize,
       activeProcesses,
       availableProcesses: this.availableProcesses.length,
       totalExecutions,
       pendingExecutions: this.pendingExecutions.size,
-      processStats: Object.fromEntries(this.processStats)
+      processStats: Object.fromEntries(this.processStats),
+      observedProcessRssMB: this.observedProcessRssMB,
+
+      memoryAdaptive: {
+        totalMemMB: this.adaptiveSizing.totalMemMB,
+        perProcessMB: this.adaptiveSizing.perProcessMB,
+        maxFraction: this.adaptiveSizing.maxPoolMemFraction,
+        memCapCount: this.adaptiveSizing.memCapCount,
+        envMaxPool: this.adaptiveSizing.envMaxPool,
+        cpuCount: this.adaptiveSizing.cpuCount,
+        finalPoolSize: this.adaptiveSizing.finalPoolSize,
+        reason: this.adaptiveSizing.reason,
+        minFreeMemCapMB: Number.isFinite(this.minFreeMemCapMB) ? this.minFreeMemCapMB : null
+      },
+      adaptive: {
+        enabled: this.adaptiveEnabled,
+        circuitBreakerOpen: this.circuitBreakerOpen,
+        initFailureStreak: this.initFailureStreak,
+        maxInitFailureStreak: this.maxInitFailureStreak,
+        adaptiveRecycleReason: this.adaptiveRecycleReason,
+        backpressure: {
+          maxQueueSize: this.maxQueueSize,
+            currentPending: this.pendingExecutions.size,
+            rejects: this.backpressureRejects,
+            effectiveMaxQueueSize: this._effectiveMaxQueueSize(),
+            highWaterMark: this.queueHighWaterMark
+        },
+        protection: {
+          minFreeMemFraction: this.minFreeMemFraction,
+          minFreeMemFloorMB: this.minFreeMemFloorMB,
+          lowMemRejects: this.lowMemRejects,
+          earlyTerminations: this.earlyTerminations,
+          recycledForGrowth: this.recycledForGrowth,
+          recycledForRssLimit: this.recycledForRssLimit,
+          softTimeoutFactor: this.softTimeoutFactor,
+          memGrowthRecycleMB: this.memGrowthRecycleMB,
+          rssLimitMB: this.maxWorkerRssMB,
+          headroomCapMB: Number.isFinite(this.minFreeMemCapMB) ? this.minFreeMemCapMB : null,
+          softBypassEnabled: this.memoryGuardSoftBypass
+        }
+      }
     };
   }
 
@@ -737,6 +1172,68 @@ class PyodideProcessPool {
     this.availableProcesses = [];
     this.pendingExecutions.clear();
     this.processStats.clear();
+  }
+
+  /**
+   * Compute an adaptive pool size based on host memory and env hints.
+   * Keeps memory pressure low during large test runs to avoid OS-level crashes.
+   * Order of constraints:
+   *   1. Hard env max (PYODIDE_MAX_POOL_SIZE) if provided
+   *   2. Memory cap derived from (totalMem * fraction) / perProcessEstimate
+   *   3. Requested size
+   * Returns an object with detailed reasoning.
+   * @param {number} requested - originally requested pool size
+   * @returns {{finalPoolSize:number, reason:string, totalMemMB:number, perProcessMB:number, maxPoolMemFraction:number, memCapCount:number, envMaxPool:number}} Object containing sizing decision details
+   * @private
+   */
+  _computeAdaptivePoolSize(requested) {
+    const totalMemMB = Math.max(1, Math.round(os.totalmem() / 1024 / 1024));
+    const perProcessMB = Math.max(50, parseInt(process.env.PYODIDE_EST_PROC_MB || '250', 10));
+    const maxPoolMemFraction = Math.min(0.9, Math.max(0.05, parseFloat(process.env.PYODIDE_MAX_POOL_MEM_FRACTION || '0.5')));
+    const envMaxPool = parseInt(process.env.PYODIDE_MAX_POOL_SIZE || String(Number.MAX_SAFE_INTEGER), 10);
+    let cpuCount = 1;
+    try {
+      const cpuInfo = typeof os.cpus === 'function' ? os.cpus() : [];
+      cpuCount = Array.isArray(cpuInfo) && cpuInfo.length > 0 ? cpuInfo.length : 1;
+    } catch {
+      cpuCount = 1;
+    }
+
+    // memory-derived cap
+    const memCapCount = Math.max(1, Math.floor((totalMemMB * maxPoolMemFraction) / perProcessMB));
+
+    let finalPoolSize = requested;
+    let reason = 'requested_ok';
+
+    if (requested > envMaxPool) {
+      finalPoolSize = envMaxPool;
+      reason = 'capped_env_max';
+    }
+    if (finalPoolSize > memCapCount) {
+      finalPoolSize = memCapCount;
+      reason = reason === 'requested_ok' ? 'capped_memory' : reason + '+memory';
+    }
+    if (finalPoolSize < 1) {
+      finalPoolSize = 1; // safety
+      reason = 'safety_min_1';
+    }
+
+    if (finalPoolSize !== requested) {
+      logger.warn('Adaptive pool size adjustment', {
+        component: 'pyodide-process-pool',
+        requested,
+        finalPoolSize,
+        reason,
+        totalMemMB,
+        perProcessMB,
+        maxPoolMemFraction,
+        memCapCount,
+        envMaxPool,
+        cpuCount
+      });
+    }
+
+    return { finalPoolSize, reason, totalMemMB, perProcessMB, maxPoolMemFraction, memCapCount, envMaxPool, cpuCount };
   }
 }
 

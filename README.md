@@ -206,6 +206,52 @@ REQUEST_TIMEOUT=30000
 MAX_FILE_SIZE=10485760
 ```
 
+### Process Pool & Adaptive Memory Configuration
+
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| PYODIDE_POOL_SIZE | Number of persistent Pyodide worker processes | 4 |
+| PYODIDE_MAX_EXECUTIONS | Executions per worker before recycle | 50 |
+| ADAPTIVE_CLEANUP_ENABLED | Enable adaptive tiered cleanup & recycling | false |
+| MAX_PENDING_EXECUTIONS | Backpressure queue limit (pending executions) | 100 |
+| MAX_INIT_FAILURE_STREAK | Circuit breaker threshold for init failures | 5 |
+| CIRCUIT_BREAKER_RESET_MS | Cooldown after breaker opens (ms) | 60000 |
+| SMALL_DELTA_MB | Tier 1 threshold (light growth) | 15 |
+| LARGE_DELTA_MB | Tier 2 threshold (moderate growth) | 80 |
+| HUGE_DELTA_MB | Tier 3 threshold (aggressive cleanup) | 200 |
+
+### Status Endpoint Enhancements (`GET /api/status`)
+
+The status endpoint now embeds memory and adaptive pool telemetry under the API contract:
+
+```json
+{
+  "success": true,
+  "data": {
+    "ready": true,
+    "processPool": true,
+    "poolStats": { "poolSize": 4, "adaptive": { "enabled": true, "circuitBreakerOpen": false } },
+    "defaultTimeout": 30000,
+    "timestamp": "2025-09-17T12:00:00.000Z",
+    "memory": {
+      "timestamp": "2025-09-17T12:00:00.000Z",
+      "nodeProcess": { "rss": 123456789 },
+      "childProcesses": [ { "id": 0, "pid": 12345, "executions": 10, "age": 54321 } ]
+    }
+  },
+  "error": null,
+  "meta": { "timestamp": "2025-09-17T12:00:00.000Z" }
+}
+```
+
+`poolStats.adaptive` fields:
+* `enabled` – adaptive cleanup enabled flag
+* `circuitBreakerOpen` – whether init circuit breaker is active
+* `initFailureStreak` – current consecutive init failure count
+* `adaptiveRecycleReason` – last adaptive recycle trigger reason
+* `backpressure` – current pending, limit and reject counters
+
+
 ## API Endpoints
 
 ### Core Execution

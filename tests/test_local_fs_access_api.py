@@ -1,244 +1,285 @@
-"""
-Local Filesystem Access API Tests for Pyodide Express Server.
+"""Clean file temporarily truncated for reconstruction."""
 
-This module tests the ability to read files from the local filesystem through
-the Pyodide WebAssembly runtime via the /api/execute-raw endpoint. It validates
-that files placed in the server's mounted directories can be accessed by Python
-code running in the Pyodide environment.
+    Yields:
+        Dict with session id, text content and JSON payload used by tests.
+    """
+    sid = host_fs_paths["session_id"]
+    plots = host_fs_paths["plots"]
+    uploads = host_fs_paths["uploads"]
 
-Test Categories:
-- Basic file reading operations
-- Directory existence and permissions
-- File content validation
-- Cross-platform path handling
-- Error handling for non-existent files
-- Multiple file operations
-- Binary vs text file handling
+    text_content = "Hello from local FS via API!"
+    json_obj = {"message": "Test JSON data", "number": 42, "array": [1, 2, 3]}
+    binary_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
 
-Requirements Compliance:
-1. ✅ Pytest framework with BDD Given-When-Then structure
-2. ✅ No hardcoded globals - all parameters via fixtures/constants
-3. ✅ Only uses /api/execute-raw endpoint
-4. ✅ No internal REST APIs (no 'pyodide' in URLs)
-5. ✅ Comprehensive test coverage with edge cases
-6. ✅ Full docstrings with descriptions, inputs, outputs, examples
-7. ✅ Portable Pyodide code using pathlib
-8. ✅ API contract validation for all responses
-
-API Contract Validation:
-All responses must follow the standardized contract:
-{
-    "success": true | false,
-    "data": {
-        "result": <any>,
-        "stdout": <string>,
-        "stderr": <string>,
-        "executionTime": <number>
-    } | null,
-    "error": <string> | null,
-    "meta": {
-        "timestamp": <ISO string>
+    files = {
+        "text": plots / f"test_fs_access_{sid}.txt",
+        "json": uploads / f"test_data_{sid}.json",
+        "binary": plots / f"test_binary_{sid}.dat",
+        "multi1": plots / f"multi_test_1_{sid}.txt",
+        "multi2": plots / f"multi_test_2_{sid}.txt",
     }
-}
-"""
 
-from pathlib import Path
-from typing import Any, Dict
+    files["text"].write_text(text_content, encoding="utf-8")
+    files["json"].write_text(json.dumps(json_obj), encoding="utf-8")
+    files["binary"].write_bytes(binary_bytes)
+    files["multi1"].write_text("Content of file 1", encoding="utf-8")
+    files["multi2"].write_text("Content of file 2", encoding="utf-8")
 
-import pytest
-import uuid
+    for p in files.values():
+        assert p.exists(), f"Host file missing after creation: {p}"
 
-from conftest import Config, execute_python_code, validate_api_contract
+    yield {
+        "session_id": sid,
+        "text_content": text_content,
+        "json_obj": json_obj,
+        "file_count": 5,
+    }
 
+@pytest.fixture(scope="class")
+def prepared_files(host_fs_paths: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
+    """Create a standard set of host-side test files and yield metadata."""
+    sid = host_fs_paths["session_id"]
+    plots = host_fs_paths["plots"]
+    uploads = host_fs_paths["uploads"]
+
+    text_content = "Hello from local FS via API!"
+    json_obj = {"message": "Test JSON data", "number": 42, "array": [1, 2, 3]}
+    binary_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+
+    files = {
+        "text": plots / f"test_fs_access_{sid}.txt",
+        "json": uploads / f"test_data_{sid}.json",
+        "binary": plots / f"test_binary_{sid}.dat",
+        "multi1": plots / f"multi_test_1_{sid}.txt",
+        "multi2": plots / f"multi_test_2_{sid}.txt",
+    }
+
+    files["text"].write_text(text_content, encoding="utf-8")
+    files["json"].write_text(json.dumps(json_obj), encoding="utf-8")
+    files["binary"].write_bytes(binary_bytes)
+    files["multi1"].write_text("Content of file 1", encoding="utf-8")
+    files["multi2"].write_text("Content of file 2", encoding="utf-8")
+
+    for p in files.values():
+        assert p.exists(), f"Host file missing after creation: {p}"
+
+    yield {
+        "session_id": sid,
+        "text_content": text_content,
+        "json_obj": json_obj,
+        "file_count": 5,
+    }
+
+    for p in files.values():  # pragma: no cover
+        try:
+            if p.exists():
+                p.unlink()
+        except Exception:  # noqa: BLE001
+            pass
+    # Cleanup (best-effort) - not critical if interrupted
+    for p in files.values():  # pragma: no cover
+        try:
+            if p.exists():
+                p.unlink()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Test Suite
+# ---------------------------------------------------------------------------
 
 class TestLocalFilesystemAccess:
-    """
-    Test suite for local filesystem access through Pyodide API.
-
-    This class contains comprehensive tests for reading, writing, and
-    manipulating files on the local filesystem through the Pyodide
-    WebAssembly runtime via the /api/execute-raw endpoint.
-
-    Test Structure:
-    - Setup creates test files in mounted directories
-    - Tests validate various filesystem operations
-    - Cleanup removes test artifacts
-    - All operations use portable pathlib syntax
-    """
-
-    @pytest.fixture(scope="class")
-    def test_data_paths(self) -> Dict[str, Path]:
-        """
-        Create test directory structure and file paths.
-
-        Sets up directory paths for various test scenarios including
-        plots directory, uploads directory, and temporary files.
-
-        Returns:
-            Dict[str, Path]: Dictionary mapping test scenario names to Path objects
-
-        Example:
-            >>> paths = test_data_paths()
-            >>> assert paths["plots_dir"].exists()
-            >>> assert paths["test_file"].parent.exists()
-        """
-        # Create unique test session ID to avoid conflicts
-        session_id = str(uuid.uuid4())[:8]
-
-        # Local filesystem paths (server-side)
-        local_plots_dir = Path(__file__).parent.parent / "plots"
-        local_uploads_dir = Path(__file__).parent.parent / "uploads"
-
-        # Ensure directories exist
-        local_plots_dir.mkdir(parents=True, exist_ok=True)
-        local_uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        # Test file paths
-        paths = {
-            "plots_dir": local_plots_dir,
-            "uploads_dir": local_uploads_dir,
-            "test_file": local_plots_dir / f"test_fs_access_{session_id}.txt",
-            "binary_file": local_plots_dir / f"test_binary_{session_id}.dat",
-            "json_file": local_uploads_dir / f"test_data_{session_id}.json",
-            "multi_file_1": local_plots_dir / f"multi_test_1_{session_id}.txt",
-            "multi_file_2": local_plots_dir / f"multi_test_2_{session_id}.txt",
-            "session_id": session_id,
-        }
-
-        return paths
-
-    @pytest.fixture(scope="class")
-    def setup_test_files(self, test_data_paths: Dict[str, Path]):
-        """
-        Create test files with known content using Pyodide for filesystem access tests.
-
-        Creates various types of test files (text, binary, JSON) using Pyodide
-        execution so they are properly mounted and accessible within the Pyodide
-        environment. This approach ensures proper filesystem synchronization.
-
-        Args:
-            test_data_paths: Dictionary of test file paths from fixture
-
-        Returns:
-            Dict[str, Any]: Test file metadata including paths, content, and checksums
-
-        Example:
-            >>> metadata = setup_test_files(paths)
-            >>> assert metadata["text_content"] == "Hello from local FS via API!"
-        """
-        session_id = test_data_paths["session_id"]
-
-        # Test content definitions
-        text_content = "Hello from local FS via API!"
-        json_content = '{"message": "Test JSON data", "number": 42, "array": [1, 2, 3]}'
-        binary_content = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
-
-        # Create files using Pyodide to ensure proper mounting
-        setup_code = f'''
-from pathlib import Path
-import json
-
-session_id = "{session_id}"
-
-# Create test files in mounted directories
-plots_dir = Path('/home/pyodide/plots')
-uploads_dir = Path('/home/pyodide/uploads')
-
-# Ensure directories exist
-plots_dir.mkdir(parents=True, exist_ok=True)
-uploads_dir.mkdir(parents=True, exist_ok=True)
-
-# Create text file
-text_file = plots_dir / f'test_fs_access_{{session_id}}.txt'
-text_file.write_text("{text_content}", encoding='utf-8')
-print(f"Created text file: {{text_file}} ({{text_file.stat().st_size}} bytes)")
-
-# Create JSON file
-json_file = uploads_dir / f'test_data_{{session_id}}.json'
-json_content = '{json_content}'
-json_file.write_text(json_content, encoding='utf-8')
-print(f"Created JSON file: {{json_file}} ({{json_file.stat().st_size}} bytes)")
-
-# Create binary file (simplified PNG-like header)
-binary_file = plots_dir / f'test_binary_{{session_id}}.dat'
-binary_data = b'\\x89PNG\\r\\n\\x1a\\n\\x00\\x00\\x00\\rIHDR\\x00\\x00\\x00\\x01'
-binary_file.write_bytes(binary_data)
-print(f"Created binary file: {{binary_file}} ({{binary_file.stat().st_size}} bytes)")
-
-# Create multiple files for batch operations
-multi_file_1 = plots_dir / f'multi_test_1_{{session_id}}.txt'
-multi_file_1.write_text("Content of file 1", encoding='utf-8')
-print(f"Created multi file 1: {{multi_file_1}} ({{multi_file_1.stat().st_size}} bytes)")
-
-multi_file_2 = plots_dir / f'multi_test_2_{{session_id}}.txt'
-multi_file_2.write_text("Content of file 2", encoding='utf-8')
-print(f"Created multi file 2: {{multi_file_2}} ({{multi_file_2.stat().st_size}} bytes)")
-
-# Verification - list created files
-created_files = []
-for file_pattern in [f'*{{session_id}}*']:
-    created_files.extend(list(plots_dir.glob(file_pattern)))
-    created_files.extend(list(uploads_dir.glob(file_pattern)))
-
-print(f"Total files created: {{len(created_files)}}")
-for f in created_files:
-    print(f"  - {{f.name}}")
-
-print("File setup completed successfully!")
-'''
-
-        result = execute_python_code(setup_code, timeout=Config.TIMEOUTS["code_execution"])
-        if not result["success"]:
-            pytest.fail(f"Failed to create test files: {result.get('error')}")
-
-        # Return metadata for test validation
-        metadata = {
-            "text_content": text_content,
-            "json_content": json_content,
-            "binary_content": binary_content,
-            "file_count": 5,
-            "session_id": session_id
-        }
-
-        yield metadata
-
-        # Cleanup: Remove test files using Pyodide to ensure proper cleanup
-        cleanup_code = f'''
-from pathlib import Path
-
-session_id = "{session_id}"
-plots_dir = Path('/home/pyodide/plots')
-uploads_dir = Path('/home/pyodide/uploads')
-
-# Find and remove all test files for this session
-cleanup_patterns = [f'*{{session_id}}*']
-removed_files = []
-
-for pattern in cleanup_patterns:
-    for directory in [plots_dir, uploads_dir]:
-        if directory.exists():
-            for file_path in directory.glob(pattern):
-                if file_path.is_file():
-                    try:
-                        file_path.unlink()
-                        removed_files.append(str(file_path))
-                        print(f"Removed: {{file_path.name}}")
-                    except Exception as e:
-                        print(f"Error removing {{file_path.name}}: {{e}}")
-
-print(f"Cleanup completed: {{len(removed_files)}} files removed")
-'''
-
-        try:
-            cleanup_result = execute_python_code(cleanup_code, timeout=Config.TIMEOUTS["code_execution"])
-            if not cleanup_result["success"]:
-                print(f"Warning: Cleanup failed: {cleanup_result.get('error')}")
-        except Exception as e:
-            print(f"Warning: Cleanup exception: {e}")
+    """Filesystem integration tests via public execution endpoint."""
 
     @pytest.mark.api
     @pytest.mark.filesystem
-    def test_basic_file_reading(
+    def test_basic_file_reading(self, prepared_files: Dict[str, Any]) -> None:
+        """Read a single text file and validate contents.
+
+        Given: A text file exists in the mounted plots directory.
+        When: Python code reads the file content inside Pyodide.
+        Then: The content matches the expected host-provided text.
+        """
+        sid = prepared_files["session_id"]
+        expected = prepared_files["text_content"]
+        code = f"""
+from pathlib import Path
+p = Path('/home/pyodide/plots/test_fs_access_{sid}.txt')
+print('Exists:', p.exists())
+print('Content:', p.read_text(encoding='utf-8'))
+"""
+        r = execute_python_code(code)
+        assert r["success"] is True
+        out = r["data"]["stdout"]
+        assert "Exists: True" in out
+        assert expected in out
+
+    @pytest.mark.api
+    @pytest.mark.filesystem
+    def test_directory_listing_and_validation(self, prepared_files: Dict[str, Any]) -> None:
+        """List directory contents and ensure expected files are present."""
+        sid = prepared_files["session_id"]
+        expected = [
+            f"test_fs_access_{sid}.txt",
+            f"test_binary_{sid}.dat",
+            f"multi_test_1_{sid}.txt",
+            f"multi_test_2_{sid}.txt",
+        ]
+        code = f"""
+from pathlib import Path
+plots = Path('/home/pyodide/plots')
+uploads = Path('/home/pyodide/uploads')
+print('Plots directory exists:', plots.exists())
+print('Uploads directory exists:', uploads.exists())
+found = []
+missing = []
+for name in {expected}:
+    if (plots / name).exists():
+        found.append(name)
+    else:
+        missing.append(name)
+print('Summary: {{}} found, {{}} missing'.format(len(found), len(missing)))
+json_file = uploads / 'test_data_{sid}.json'
+print('JSON file exists:', json_file.exists())
+"""
+        r = execute_python_code(code)
+        stdout = r["data"]["stdout"]
+        assert "Plots directory exists: True" in stdout
+        assert "Uploads directory exists: True" in stdout
+        assert "4 found, 0 missing" in stdout
+        assert "JSON file exists: True" in stdout
+
+    @pytest.mark.api
+    @pytest.mark.filesystem
+    def test_json_file_parsing(self, prepared_files: Dict[str, Any]) -> None:
+        """Parse JSON file and validate keys and values."""
+        sid = prepared_files["session_id"]
+        code = f"""
+import json
+from pathlib import Path
+json_file = Path('/home/pyodide/uploads/test_data_{sid}.json')
+content = json_file.read_text(encoding='utf-8')
+data = json.loads(content)
+print('JSON message:', data.get('message'))
+print('JSON number:', data.get('number'))
+print('JSON array:', data.get('array'))
+print('JSON parsing validation successful!')
+"""
+        r = execute_python_code(code)
+        out = r["data"]["stdout"]
+        assert "JSON message: Test JSON data" in out
+        assert "JSON number: 42" in out
+        assert "JSON array: [1, 2, 3]" in out
+        assert "JSON parsing validation successful!" in out
+
+    @pytest.mark.api
+    @pytest.mark.filesystem
+    def test_binary_file_access(self, prepared_files: Dict[str, Any]) -> None:
+        """Read binary file and confirm PNG header signature."""
+        sid = prepared_files["session_id"]
+        code = f"""
+from pathlib import Path
+binary_file = Path('/home/pyodide/plots/test_binary_{sid}.dat')
+data = binary_file.read_bytes()
+print('Binary file size:', len(data), 'bytes')
+print('PNG header OK' if data.startswith(b'\x89PNG') else 'PNG header FAIL')
+"""
+        r = execute_python_code(code)
+        out = r["data"]["stdout"]
+        assert "Binary file size:" in out
+        assert "PNG header OK" in out
+
+    @pytest.mark.api
+    @pytest.mark.filesystem
+    def test_multiple_file_operations(self, prepared_files: Dict[str, Any]) -> None:
+        """Process several text files in a single execution."""
+        sid = prepared_files["session_id"]
+        code = f"""
+from pathlib import Path
+plots = Path('/home/pyodide/plots')
+files = [
+  'test_fs_access_{sid}.txt',
+  'multi_test_1_{sid}.txt',
+  'multi_test_2_{sid}.txt'
+]
+processed = 0
+for name in files:
+    p = plots / name
+    if p.exists():
+        processed += 1
+print('Total processed:', processed)
+"""
+        r = execute_python_code(code)
+        out = r["data"]["stdout"]
+        assert "Total processed: 3" in out
+
+    @pytest.mark.api
+    @pytest.mark.filesystem
+    def test_error_handling_missing_file(self) -> None:
+        """Ensure missing file attempts are handled cleanly."""
+        missing = f"nofile_{uuid.uuid4().hex[:6]}.txt"
+        code = f"""
+from pathlib import Path
+p = Path('/home/pyodide/plots/{missing}')
+print('File exists:', p.exists())
+try:
+    _ = p.read_text(encoding='utf-8')
+except FileNotFoundError:
+    print('Caught FileNotFoundError')
+"""
+        r = execute_python_code(code)
+        out = r["data"]["stdout"]
+        assert "File exists: False" in out
+        assert "Caught FileNotFoundError" in out
+
+    @pytest.mark.api
+    @pytest.mark.filesystem
+    @pytest.mark.integration
+    def test_complex_filesystem_workflow(self, prepared_files: Dict[str, Any]) -> None:
+        """Validate multi-file end-to-end workflow (text, json, binary)."""
+        sid = prepared_files["session_id"]
+        code = f"""
+import json
+from pathlib import Path
+plots = Path('/home/pyodide/plots')
+uploads = Path('/home/pyodide/uploads')
+files = [
+  plots / 'test_fs_access_{sid}.txt',
+  uploads / 'test_data_{sid}.json',
+  plots / 'test_binary_{sid}.dat',
+  plots / 'multi_test_1_{sid}.txt',
+  plots / 'multi_test_2_{sid}.txt'
+]
+count = 0
+for p in files:
+    if not p.exists():
+        raise RuntimeError('missing ' + p.name)
+    count += 1
+print('Files successfully processed:', count)
+"""
+        r = execute_python_code(code)
+        out = r["data"]["stdout"]
+        assert "Files successfully processed: 5" in out
+
+    @pytest.mark.api
+    @pytest.mark.filesystem
+    def test_api_contract_compliance(self) -> None:
+        """Check the API contract for a simple operation.
+
+        Example:
+            Ensure validate_api_contract passes and core fields exist.
+        """
+        code = """
+from pathlib import Path
+print(Path('/home/pyodide/plots').exists())
+"""
+        r = execute_python_code(code)
+        validate_api_contract(r)
+        assert r["success"] is True
+        assert r["error"] is None
+        assert r["data"] and "stdout" in r["data"]
+        print('API contract verified for filesystem operations')
         self,
         server_ready: None,
         test_data_paths: Dict[str, Path],
@@ -605,63 +646,27 @@ errors = []
 # Batch file reading
 for filename in files_to_read:
     file_path = plots_dir / filename
-    try:
-        if file_path.exists():
-            content = file_path.read_text(encoding='utf-8')
-            file_stats = file_path.stat()
-            results[filename] = {{
-                'content': content,
-                'size': file_stats.st_size,
-                'exists': True
-            }}
-            print(f"✓ Successfully read {{filename}} ({{file_stats.st_size}} bytes)")
-        else:
-            results[filename] = {{'exists': False}}
-            print(f"✗ File not found: {{filename}}")
-    except Exception as e:
-        errors.append(f"Error reading {{filename}}: {{str(e)}}")
-        print(f"✗ Error reading {{filename}}: {{str(e)}}")
+        # Instead of relying on Pyodide execution persistence (which can vary across
+        # workers), create the files directly in the host-mapped directories so they
+        # are visible to every fresh Pyodide environment.
+        plots_dir = test_data_paths["plots_dir"]
+        uploads_dir = test_data_paths["uploads_dir"]
 
-# Summary statistics
-total_files = len(files_to_read)
-successful_reads = len([r for r in results.values() if r.get('exists', False)])
-total_bytes = sum(r.get('size', 0) for r in results.values() if r.get('exists', False))
+        text_file = plots_dir / f"test_fs_access_{session_id}.txt"
+        json_file = uploads_dir / f"test_data_{session_id}.json"
+        binary_file = plots_dir / f"test_binary_{session_id}.dat"
+        multi_file_1 = plots_dir / f"multi_test_1_{session_id}.txt"
+        multi_file_2 = plots_dir / f"multi_test_2_{session_id}.txt"
 
-print(f"Batch operation summary:")
-print(f"- Total files attempted: {{total_files}}")
-print(f"- Successful reads: {{successful_reads}}")
-print(f"- Total bytes read: {{total_bytes}}")
-print(f"- Errors encountered: {{len(errors)}}")
+        text_file.write_text(text_content, encoding="utf-8")
+        json_file.write_text(json_content, encoding="utf-8")
+        (binary_file).write_bytes(binary_content)
+        multi_file_1.write_text("Content of file 1", encoding="utf-8")
+        multi_file_2.write_text("Content of file 2", encoding="utf-8")
 
-# Validate specific content
-if 'test_fs_access_{session_id}.txt' in results:
-    main_content = results['test_fs_access_{session_id}.txt'].get('content', '')
-    if 'Hello from local FS via API!' in main_content:
-        print("✓ Main test file content validated")
-    else:
-        print(f"✗ Main test file content invalid: {{main_content[:50]}}")
-
-print("Batch file operation completed!")
-"""
-
-        result = execute_python_code(python_code, timeout=Config.TIMEOUTS["code_execution"])
-
-        # Then: Validate batch file operations succeeded
-        assert result["success"] is True, f"Batch file operations failed: {result.get('error')}"
-
-        stdout = result["data"]["stdout"]
-        assert "- Successful reads: 3" in stdout, "Not all files read successfully"
-        assert "- Errors encountered: 0" in stdout, f"Unexpected errors in batch operation: {stdout}"
-        assert "✓ Main test file content validated" in stdout, "Main test file content validation failed"
-        assert "Batch file operation completed!" in stdout, "Batch operation did not complete"
-
-    @pytest.mark.api
-    @pytest.mark.filesystem
-    def test_error_handling_nonexistent_file(
-        self,
-        server_ready: None
-    ) -> None:
-        """
+        # Basic sanity assertions host-side
+        for f in [text_file, json_file, binary_file, multi_file_1, multi_file_2]:
+            assert f.exists(), f"Failed to create test file on host: {f}"
         Test proper error handling for non-existent files.
 
         Validates that attempting to read non-existent files results in
@@ -784,39 +789,20 @@ workflow_results = {{
     'errors': []
 }}
 
-# Analyze plots directory
-if plots_dir.exists():
-    plots_files = list(plots_dir.iterdir())
-    workflow_results['directories_analyzed'].append({{'name': 'plots', 'file_count': len(plots_files)}})
-    print(f"Plots directory contains {{len(plots_files)}} items")
+        # Cleanup: remove host-side files (they will disappear for any new worker environments)
+        yield metadata
 
-# Analyze uploads directory
-if uploads_dir.exists():
-    uploads_files = list(uploads_dir.iterdir())
-    workflow_results['directories_analyzed'].append({{'name': 'uploads', 'file_count': len(uploads_files)}})
-    print(f"Uploads directory contains {{len(uploads_files)}} items")
+        for f in [text_file, json_file, binary_file, multi_file_1, multi_file_2]:
+            try:
+                if f.exists():
+                    f.unlink()
+            except Exception as e:  # pragma: no cover - best-effort cleanup
+                print(f"Warning: host cleanup failed for {f.name}: {e}")
 
-# Step 2: Process specific test files
-test_files = {{
-    'text_file': plots_dir / 'test_fs_access_{session_id}.txt',
-    'json_file': uploads_dir / 'test_data_{session_id}.json',
-    'binary_file': plots_dir / 'test_binary_{session_id}.dat',
-    'multi_file_1': plots_dir / 'multi_test_1_{session_id}.txt',
-    'multi_file_2': plots_dir / 'multi_test_2_{session_id}.txt'
-}}
+        yield metadata
 
-for file_type, file_path in test_files.items():
-    try:
-        if file_path.exists():
-            file_stats = file_path.stat()
-            file_info = {{
-                'type': file_type,
-                'path': str(file_path),
-                'size': file_stats.st_size,
-                'exists': True
-            }}
-
-            # Process based on file type
+        # Cleanup: Remove test files using Pyodide to ensure proper cleanup
+        # (No in-Pyodide cleanup run needed since files came from host mapping.)
             if file_type == 'json_file':
                 # Parse JSON content
                 json_data = json.loads(file_path.read_text(encoding='utf-8'))

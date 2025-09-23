@@ -108,8 +108,21 @@ async function executeRaw(req, res) {
       });
     }
     // Format response according to API contract
-    // For plain text endpoint, pass through the result as-is (pyodide executor handles conversion)
+    // Ensure result is always a string; if it's an object (e.g., dict from Python), JSON serialize it WITHOUT modifying contents
     let processedResult = result.result;
+    if (processedResult !== null && processedResult !== undefined) {
+      if (typeof processedResult === 'object') {
+        try {
+          processedResult = JSON.stringify(processedResult);
+        } catch {
+          processedResult = String(processedResult);
+        }
+      } else if (typeof processedResult !== 'string') {
+        processedResult = String(processedResult);
+      }
+    } else {
+      processedResult = '';
+    }
     
     res.json({
       success: result.success,

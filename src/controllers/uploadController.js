@@ -86,6 +86,18 @@ async function uploadFile(req, res) {
       timestamp: new Date().toISOString(),
     });
 
+    // Lightweight diagnostic: ensure a sentinel marker verifying host path writeability.
+    try {
+      const fs = require('node:fs');
+      const uploadsAbs = path.resolve(path.join(config.pyodideDataDir, config.pyodideBases.uploads.urlBase));
+      const sentinel = path.join(uploadsAbs, '.upload_sentinel');
+      if (!fs.existsSync(sentinel)) {
+        fs.writeFileSync(sentinel, `created:${new Date().toISOString()}`);
+      }
+    } catch (sentErr) {
+      logger.warn('Failed to create upload sentinel file', { error: sentErr.message });
+    }
+
     res.json({
       success: true,
       data: {

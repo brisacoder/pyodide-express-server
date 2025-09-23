@@ -273,8 +273,10 @@ json.dumps(final_result)
         assert validation["base64_valid"], \
             f"Base64 plot should be at least {MatplotlibTestConfig.PLOT_SETTINGS['min_base64_length']} chars"
         assert validation["base64_length"] > 0, "Should have generated base64 plot data"
-        assert validation["backend_used"] == MatplotlibTestConfig.PLOT_SETTINGS["backend"], \
-            f"Should use {MatplotlibTestConfig.PLOT_SETTINGS['backend']} backend"
+        # Backend names from matplotlib.get_backend() may differ in case (e.g. 'agg' vs 'Agg').
+        # Compare case-insensitively to avoid false negatives while still ensuring correct backend family.
+        assert validation["backend_used"].lower() == MatplotlibTestConfig.PLOT_SETTINGS["backend"].lower(), \
+            f"Should use {MatplotlibTestConfig.PLOT_SETTINGS['backend']} backend (reported: {validation['backend_used']})"
         
         # Validate plot properties
         assert validation["data_points"] == MatplotlibTestConfig.PLOT_SETTINGS["sample_size"], \
@@ -387,12 +389,13 @@ for col in correlation_matrix.columns:
     }}
 
 validation_results = {{
-    "base64_length": len(plot_base64),
-    "base64_valid": len(plot_base64) > {MatplotlibTestConfig.PLOT_SETTINGS["min_base64_length"]},
-    "matrix_shape": list(correlation_matrix.shape),
-    "diagonal_ones": all(correlation_matrix.iloc[i, i] == 1.0 for i in range(len(correlation_matrix))),
-    "symmetric_matrix": np.allclose(correlation_matrix.values, correlation_matrix.values.T),
-    "correlation_range_valid": (correlation_matrix.values >= -1).all() and (correlation_matrix.values <= 1).all()
+    "base64_length": int(len(plot_base64)),
+    "base64_valid": bool(len(plot_base64) > {MatplotlibTestConfig.PLOT_SETTINGS["min_base64_length"]}),
+    "matrix_shape": [int(x) for x in correlation_matrix.shape],
+    # Ensure plain bool types for JSON serialization (avoid numpy.bool_)
+    "diagonal_ones": bool(all(correlation_matrix.iloc[i, i] == 1.0 for i in range(len(correlation_matrix)))),
+    "symmetric_matrix": bool(np.allclose(correlation_matrix.values, correlation_matrix.values.T)),
+    "correlation_range_valid": bool((correlation_matrix.values >= -1).all() and (correlation_matrix.values <= 1).all())
 }}
 
 final_result = {{
@@ -406,7 +409,7 @@ final_result = {{
 
 print("Heatmap test completed successfully!")
 json.dumps(final_result)
-        """
+    """
 
         # When: Executing heatmap creation
         result = execute_python_code(code, timeout=matplotlib_timeout)

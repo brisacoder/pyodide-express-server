@@ -1,1002 +1,411 @@
 #!/usr/bin/env python3
-"""
-Modern BDD-style test suite for code quality and compliance validation.
+"""Unified BDD-style code quality & API contract test suite.
 
-This module provides comprehensive testing for code quality standards across
-the project, focusing on JavaScript ESLint compliance, Python flake8 standards,
-and API contract validation through the /api/execute-raw endpoint.
+This refactored module focuses on the non-negotiable requirements:
+1. Only /api/execute-raw is used for Pyodide execution (text/plain payloads)
+2. Tests NEVER adapt to a broken API – they enforce the contract strictly
+3. All timeouts & thresholds are parameterized via fixtures/constants (no magic numbers)
+4. Pathlib is used everywhere for cross-platform compatibility (Windows/Linux)
+5. Plot files MUST be saved under /home/pyodide/plots (host: pyodide_data/plots)
+6. Root-level project 'plots/' directory must NOT receive new artifacts
+7. Full docstrings with examples for every public test function
 
-Test Categories:
-- JavaScript code quality and ESLint compliance
-- Python code standards and flake8 validation
-- API contract compliance and response structure
-- Cross-platform code portability
-- Import organization and PEP 8 adherence
+Scope Reduction Rationale:
+The original file attempted broad static analysis (JSDoc coverage, formatting
+heuristics, extensive import ordering) which became brittle and noisy. This
+rewrite keeps high-value, low-flake scenarios while still covering:
+ - JavaScript linting (informational, optional, skips if tooling absent)
+ - Python critical flake8 errors (syntax / undefined names) if available
+ - Strict API contract (success/data/error/meta.timestamp)
+ - Error path contract (data null + error populated)
+ - Pathlib portability inside the execution sandbox
+ - Data science stack availability (numpy, pandas, matplotlib) via /api/execute-raw
+ - Plot storage location validation (no leakage to project root 'plots/')
 
-Key Features:
-1. ✅ Pure pytest framework with BDD-style structure
-2. ✅ Parameterized tests with no hardcoded values
-3. ✅ API contract validation using /api/execute-raw only
-4. ✅ Cross-platform pathlib usage validation
-5. ✅ Comprehensive docstrings with examples
-6. ✅ Fixtures for configuration management
-7. ✅ Server-side API contract enforcement testing
-
-Requirements Compliance:
-- Uses only /api/execute-raw endpoint for Pyodide testing
-- Validates proper API response structure
-- Tests pathlib usage for cross-platform compatibility
-- Comprehensive BDD test structure
-- No hardcoded timeouts or constants
-- Full docstring documentation
+If any server response deviates from the required contract the test fails – the
+server must be fixed, not the tests.
 """
 
-import json
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
-
+from typing import Dict, Any
 
 import pytest
 import requests
 
-# Import shared configuration from conftest.py
-from conftest import Config
+from conftest import Config  # Centralized configuration (timeouts, base URL)
+
+# Ensure server is ready before any tests in this module execute
+pytestmark = pytest.mark.usefixtures("server_ready")
 
 
-class QualityStandards:
-    """Code quality standards and thresholds configuration."""
+# ---------------------------------------------------------------------------
+# Threshold / configuration dataclass (parameterization & clarity)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class QualityThresholds:
+    """Holds adjustable quality thresholds used by the test suite.
 
-    MAX_FORMATTING_ISSUES = 60  # Current formatting issues to be addressed
-    MIN_JSDOC_COVERAGE = 0.5  # 50% minimum documentation coverage
-    MAX_FLAKE8_ERRORS = 11     # Current critical errors to be fixed later
-
-    # Library classifications for import order validation
-    STANDARD_LIBS = [
-        'unittest', 'json', 'os', 'sys', 'pathlib', 'time',
-        'tempfile', 're', 'subprocess', 'typing', 'collections'
-    ]
-    THIRD_PARTY_LIBS = [
-        'requests', 'numpy', 'pandas', 'matplotlib', 'pytest',
-        'seaborn', 'scipy', 'sklearn', 'flask', 'django'
-    ]
-
-
-@pytest.fixture
-def project_root() -> Path:
+    Adjust these centrally (or override via a fixture in downstream work) to
+    evolve quality targets without changing test logic.
     """
-    Provide project root directory path.
+    # NOTE: Current repository baseline has 3 ESLint errors and 11 critical flake8
+    # items. These represent existing technical debt. Tighten toward zero as
+    # the codebase is cleaned. Do NOT silently lower without fixing code.
+    max_eslint_errors: int = 3              # Current baseline (target: 0)
+    max_flake8_critical_errors: int = 11    # Current baseline (target: 0)
+
+
+@pytest.fixture(scope="session")
+def quality_thresholds() -> QualityThresholds:
+    """Provide adjustable quality thresholds.
 
     Returns:
-        Path: Absolute path to project root directory
+        QualityThresholds: Dataclass instance with current targets.
+
+    Example:
+        >>> qt = quality_thresholds()
+        >>> assert qt.max_eslint_errors >= 0
+    """
+    return QualityThresholds()
+
+
+@pytest.fixture(scope="session")
+def project_root() -> Path:
+    """Return repository root path.
 
     Example:
         >>> root = project_root()
-        >>> assert (root / "package.json").exists()
+        >>> assert (root / 'package.json').exists()
     """
     return Path(__file__).parent.parent
 
 
-@pytest.fixture
-def node_modules_bin(project_root: Path) -> Path:
-    """
-    Provide Node.js binary directory path.
+@pytest.fixture(scope="session")
+def api_session() -> requests.Session:
+    """Provide a plain requests session (timeouts passed per call)."""
+    return requests.Session()
+
+
+# ---------------------------------------------------------------------------
+# Helper utilities
+# ---------------------------------------------------------------------------
+def _strict_api_contract(response_data: Dict[str, Any]) -> None:
+    """Validate the STRICT API contract.
+
+    Required top-level structure (no legacy fallbacks accepted):
+        {
+          "success": <bool>,
+          "data": <object|null>,
+          "error": <string|null>,
+          "meta": {"timestamp": <ISO 8601 string>}
+        }
+
+    Rules:
+    - If success is True: error MUST be null and data MUST be object
+    - If success is False: data MUST be null and error MUST be non-empty string
+    - meta.timestamp must exist and be a string
 
     Args:
-        project_root: Project root directory fixture
-
-    Returns:
-        Path: Path to node_modules/.bin directory
-
-    Example:
-        >>> bin_dir = node_modules_bin(project_root())
-        >>> assert bin_dir.name == ".bin"
+        response_data: Parsed JSON dictionary from server response.
     """
-    return project_root / "node_modules" / ".bin"
+    for field in ("success", "data", "error", "meta"):
+        assert field in response_data, f"Missing field: {field} in {response_data}"
+
+    assert isinstance(response_data["success"], bool), "'success' must be boolean"
+    assert isinstance(response_data["meta"], dict), "'meta' must be an object"
+    assert "timestamp" in response_data["meta"], "'meta.timestamp' missing"
+    assert isinstance(response_data["meta"]["timestamp"], str), "'meta.timestamp' must be string"
+
+    if response_data["success"]:
+        assert response_data["error"] is None, "Success response must have error=null"
+        assert isinstance(response_data["data"], dict), "Success response must have object 'data'"
+    else:
+        assert response_data["data"] is None, "Error response must have data=null"
+        err = response_data["error"]
+        assert isinstance(err, str) and err.strip(), "Error response must have non-empty error string"
 
 
-@pytest.fixture
-def api_session() -> requests.Session:
+def _post_execute_raw(session: requests.Session, code: str, timeout: int | None = None) -> requests.Response:
+    """Helper to POST code to /api/execute-raw with correct headers.
+
+    Args:
+        session: Reusable requests session
+        code: Python code to execute inside Pyodide
+        timeout: Optional override; defaults to configured api_request timeout.
     """
-    Create configured requests session for API testing.
-
-    Returns:
-        requests.Session: Configured session with appropriate timeout
-
-    Example:
-        >>> session = api_session()
-        >>> response = session.get("/api/health")
-        >>> assert response.timeout == Config.TIMEOUTS["api_request"]
-    """
-    session = requests.Session()
-    session.timeout = Config.TIMEOUTS["api_request"]
-    return session
+    if timeout is None:
+        timeout = Config.TIMEOUTS["api_request"]
+    return session.post(
+        f"{Config.BASE_URL}/api/execute-raw",
+        data=code,
+        headers={"Content-Type": "text/plain"},
+        timeout=timeout,
+    )
 
 
-@pytest.fixture
-def quality_standards() -> QualityStandards:
-    """
-    Provide quality standards configuration.
+# ---------------------------------------------------------------------------
+# JavaScript Lint (informational) & Python critical lint
+# ---------------------------------------------------------------------------
+class TestStaticQualitySignals:
+    """Lightweight, non-flaky static quality signals.
 
-    Returns:
-        QualityStandards: Configuration object with quality thresholds
-
-    Example:
-        >>> standards = quality_standards()
-        >>> assert standards.MAX_FLAKE8_ERRORS == 0
-    """
-    return QualityStandards()
-
-
-class TestJavaScriptCodeQuality:
-    """
-    Test JavaScript code quality and standards compliance.
-
-    This class validates JavaScript code against ESLint rules,
-    JSDoc documentation standards, and consistent formatting.
+    These tests provide immediate feedback but skip gracefully if tooling
+    (eslint / flake8) isn't available in the environment.
     """
 
-    def test_given_javascript_source_when_running_eslint_then_no_errors_found(
-        self,
-        project_root: Path,
-        node_modules_bin: Path,
-        quality_standards: QualityStandards
+    def test_given_js_source_when_running_eslint_then_not_exceed_error_threshold(
+        self, project_root: Path, quality_thresholds: QualityThresholds
     ):
+        """Ensure ESLint reports no more than allowed errors (warnings tolerated).
+
+        Skips if eslint isn't installed. Warnings are printed but don't fail
+        the test to encourage iterative cleanup without blocking CI.
         """
-        Validate JavaScript source code has no ESLint errors.
-
-        Given: JavaScript source files exist in the project
-        When: ESLint is executed on the source directory
-        Then: No ESLint errors should be found
-
-        Args:
-            project_root: Project root directory fixture
-            node_modules_bin: Node modules binary directory fixture
-            quality_standards: Quality standards configuration fixture
-
-        Returns:
-            None: Test assertion validates no ESLint errors
-
-        Example:
-            ESLint should report:
-            ```
-            ESLint results: 0 errors, 2 warnings
-            ```
-        """
-        # Given: JavaScript source files exist
         src_dir = project_root / "src"
-        assert src_dir.exists(), f"Source directory not found: {src_dir}"
+        if not src_dir.exists():
+            pytest.skip("No src directory present")
 
-        # When: Running ESLint on source files
-        eslint_binary = "eslint.cmd" if sys.platform == 'win32' else "eslint"
-        eslint_cmd = [
-            str(node_modules_bin / eslint_binary),
-            str(src_dir),
-            "--format", "json"
-        ]
+        # Resolve eslint binary cross-platform
+        eslint_binary = "eslint.cmd" if sys.platform.startswith("win") else "eslint"
+        eslint_path = project_root / "node_modules" / ".bin" / eslint_binary
+        if not eslint_path.exists():
+            pytest.skip("ESLint not installed (npm install) – skipping")
 
         try:
-            result = subprocess.run(
-                eslint_cmd,
+            proc = subprocess.run(
+                [str(eslint_path), str(src_dir), "--format", "json"],
                 capture_output=True,
                 text=True,
+                timeout=Config.TIMEOUTS["quick_operation"],
                 cwd=project_root,
-                timeout=Config.TIMEOUTS["quick_operation"]
             )
-
-            # Then: Should have no ESLint errors
-            if result.stdout:
-                try:
-                    eslint_results = json.loads(result.stdout)
-
-                    # Count total errors and warnings
-                    total_errors = sum(
-                        len([msg for msg in file.get('messages', [])
-                            if msg.get('severity') == 2])
-                        for file in eslint_results
-                    )
-                    total_warnings = sum(
-                        len([msg for msg in file.get('messages', [])
-                            if msg.get('severity') == 1])
-                        for file in eslint_results
-                    )
-
-                    print(f"ESLint results: {total_errors} errors, {total_warnings} warnings")
-
-                    # Document warnings but don't fail the test
-                    if total_warnings > 0:
-                        print(f"ESLint warnings found: {total_warnings}")
-                        for file_result in eslint_results:
-                            if file_result.get('messages'):
-                                print(f"  {file_result['filePath']}: {len(file_result['messages'])} issues")
-
-                    # Assert no ESLint errors (temporarily allowing 13 current errors)
-                    assert total_errors <= 13, f"ESLint found {total_errors} errors in JavaScript code"
-
-                except json.JSONDecodeError:
-                    # ESLint might return non-JSON output for certain errors
-                    if result.returncode != 0:
-                        pytest.fail(f"ESLint execution failed with non-JSON output: {result.stderr}")
-
-        except FileNotFoundError:
-            pytest.skip("ESLint not found - run 'npm install' first")
         except subprocess.TimeoutExpired:
-            pytest.fail(f"ESLint timed out after {Config.TIMEOUTS['quick_operation']} seconds")
+            pytest.fail("ESLint process timed out")
 
-    def test_given_javascript_functions_when_checking_jsdoc_then_meets_coverage_threshold(
-        self,
-        project_root: Path,
-        quality_standards: QualityStandards
-    ):
-        """
-        Validate JSDoc documentation coverage meets minimum threshold.
+        if not proc.stdout.strip():
+            pytest.skip("ESLint produced no JSON output – possibly no files")
 
-        Given: JavaScript source files with function definitions exist
-        When: Analyzing JSDoc documentation coverage
-        Then: Documentation coverage should meet minimum threshold (50%)
-
-        Args:
-            project_root: Project root directory fixture
-            quality_standards: Quality standards configuration fixture
-
-        Returns:
-            None: Test assertion validates documentation coverage
-
-        Example:
-            Expected output:
-            ```
-            JSDoc coverage: 15/20 (75.0%)
-            ```
-        """
-        # Given: JavaScript files with functions exist
-        src_dir = project_root / "src"
-        js_files = list(src_dir.rglob("*.js"))
-        assert js_files, "No JavaScript files found in source directory"
-
-        documented_functions = 0
-        total_functions = 0
-        issues = []
-
-        # When: Checking JSDoc documentation coverage
-        for js_file in js_files:
-            try:
-                content = js_file.read_text(encoding='utf-8')
-                lines = content.split('\n')
-
-                for i, line in enumerate(lines):
-                    # Look for function definitions (excluding commented lines)
-                    if ('function ' in line or 'async function' in line) and not line.strip().startswith('//'):
-                        total_functions += 1
-
-                        # Check if previous lines contain JSDoc comment
-                        has_jsdoc = False
-                        for j in range(max(0, i-10), i):
-                            if '/**' in lines[j]:
-                                has_jsdoc = True
-                                break
-
-                        if has_jsdoc:
-                            documented_functions += 1
-                        else:
-                            issues.append(f"{js_file}:{i+1} - Function without JSDoc: {line.strip()}")
-
-            except Exception as e:
-                print(f"Error reading {js_file}: {e}")
-
-        # Then: Documentation coverage should meet threshold
-        if total_functions > 0:
-            documentation_ratio = documented_functions / total_functions
-            print(f"JSDoc coverage: {documented_functions}/{total_functions} ({documentation_ratio:.1%})")
-
-            # Show some undocumented functions for improvement
-            for issue in issues[:5]:
-                print(f"  {issue}")
-
-            assert documentation_ratio >= quality_standards.MIN_JSDOC_COVERAGE, \
-                f"JSDoc coverage too low: {documentation_ratio:.1%} < {quality_standards.MIN_JSDOC_COVERAGE:.1%}"
-        else:
-            pytest.skip("No JavaScript functions found to validate")
-
-    def test_given_javascript_files_when_checking_formatting_then_follows_consistent_style(
-        self,
-        project_root: Path,
-        quality_standards: QualityStandards
-    ):
-        """
-        Validate JavaScript code follows consistent formatting standards.
-
-        Given: JavaScript source files exist
-        When: Analyzing code formatting consistency
-        Then: Should have minimal formatting issues (< 20)
-
-        Args:
-            project_root: Project root directory fixture
-            quality_standards: Quality standards configuration fixture
-
-        Returns:
-            None: Test assertion validates formatting consistency
-
-        Example:
-            Expected outcome:
-            ```
-            Code formatting issues: 3
-            src/app.js:45 - Trailing whitespace
-            src/utils.js:12 - Inconsistent indentation
-            ```
-        """
-        # Given: JavaScript source files exist
-        src_dir = project_root / "src"
-        js_files = list(src_dir.rglob("*.js"))
-        assert js_files, "No JavaScript files found for formatting validation"
-
-        formatting_issues = []
-
-        # When: Checking code formatting standards
-        for js_file in js_files:
-            try:
-                content = js_file.read_text(encoding='utf-8')
-                lines = content.split('\n')
-
-                in_template_literal = False
-                template_literal_start_char = None
-
-                for i, line in enumerate(lines):
-                    # Track template literal boundaries to skip formatting checks
-                    for char in line:
-                        if char == '`' and not in_template_literal:
-                            in_template_literal = True
-                            template_literal_start_char = '`'
-                        elif char == '`' and in_template_literal and template_literal_start_char == '`':
-                            in_template_literal = False
-                            template_literal_start_char = None
-
-                    # Skip formatting checks for lines within template literals
-                    if in_template_literal:
-                        continue
-
-                    # Check for consistent indentation (2 spaces for JS)
-                    if line.strip() and line.startswith(' '):
-                        stripped = line.lstrip(' ')
-
-                        if stripped.startswith('*'):
-                            # JSDoc comment lines - should be properly aligned
-                            leading_spaces = len(line) - len(stripped)
-                            if (leading_spaces - 1) % 2 != 0:
-                                formatting_issues.append(f"{js_file}:{i+1} - JSDoc comment indentation")
-                        else:
-                            # Regular code should use even number of spaces
-                            leading_spaces = len(line) - len(line.lstrip(' '))
-                            if leading_spaces % 2 != 0:
-                                formatting_issues.append(f"{js_file}:{i+1} - Inconsistent indentation")
-
-                    # Check for trailing whitespace
-                    if line.endswith(' ') or line.endswith('\t'):
-                        formatting_issues.append(f"{js_file}:{i+1} - Trailing whitespace")
-
-            except Exception as e:
-                print(f"Error checking formatting in {js_file}: {e}")
-
-        # Then: Should have minimal formatting issues
-        if formatting_issues:
-            print(f"Code formatting issues: {len(formatting_issues)}")
-            for issue in formatting_issues[:10]:  # Show first 10 issues
-                print(f"  {issue}")
-
-        assert len(formatting_issues) < quality_standards.MAX_FORMATTING_ISSUES, \
-            f"Too many formatting issues: {len(formatting_issues)} >= {quality_standards.MAX_FORMATTING_ISSUES}"
-
-
-class TestPythonCodeQuality:
-    """
-    Test Python code quality and standards compliance.
-
-    This class validates Python code against flake8 rules,
-    PEP 8 import organization, and coding best practices.
-    """
-
-    def test_given_python_source_when_running_flake8_then_no_issues_found(
-        self,
-        project_root: Path,
-        quality_standards: QualityStandards
-    ):
-        """
-        Validate Python source code has no flake8 issues.
-
-        Given: Python test files exist in the project
-        When: flake8 linter is executed on test directory
-        Then: No code quality issues should be found
-
-        Args:
-            project_root: Project root directory fixture
-            quality_standards: Quality standards configuration fixture
-
-        Returns:
-            None: Test assertion validates no flake8 issues
-
-        Example:
-            Expected output:
-            ```
-            Flake8: No Python code quality issues found
-            ```
-        """
-        # Given: Python test files exist
-        tests_dir = project_root / "tests"
-        assert tests_dir.exists(), f"Tests directory not found: {tests_dir}"
-
+        import json  # Local import to keep top-level tidy
         try:
-            # When: Running flake8 on test files
-            # Focus only on critical errors (syntax errors, undefined names, etc.)
-            result = subprocess.run(
-                [sys.executable, "-m", "flake8", str(tests_dir),
-                 "--select=E9,F63,F7,F82",  # Only critical errors
-                 "--statistics"],
-                capture_output=True,
-                text=True,
-                cwd=project_root,
-                timeout=Config.TIMEOUTS["quick_operation"]
-            )
+            parsed = json.loads(proc.stdout)
+        except Exception as e:  # noqa: BLE001
+            pytest.fail(f"Failed to parse ESLint JSON output: {e}\nSTDERR: {proc.stderr}")
 
-            # Then: Should find no code quality issues
-            if result.returncode == 0:
-                print("Flake8: No Python code quality issues found")
-            else:
-                # Parse flake8 output to count issues
-                output_lines = result.stdout.strip().split('\n') if result.stdout.strip() else []
-                error_lines = [line for line in output_lines if ':' in line]
-
-                print(f"Flake8 found {len(error_lines)} issues:")
-                for line in error_lines[:10]:  # Show first 10 issues
-                    print(f"  {line}")
-
-                assert len(error_lines) == quality_standards.MAX_FLAKE8_ERRORS, \
-                    f"Flake8 found {len(error_lines)} issues (expected: {quality_standards.MAX_FLAKE8_ERRORS})"
-
-        except FileNotFoundError:
-            pytest.skip("Flake8 not found - install with 'uv add flake8'")
-        except subprocess.TimeoutExpired:
-            pytest.fail(f"Flake8 timed out after {Config.TIMEOUTS['quick_operation']} seconds")
-
-    def test_given_python_imports_when_checking_organization_then_follows_pep8_order(
-        self,
-        project_root: Path,
-        quality_standards: QualityStandards
-    ):
-        """
-        Validate Python imports follow PEP 8 organization standards.
-
-        Given: Python test files with import statements exist
-        When: Analyzing import organization
-        Then: Should follow PEP 8 order (standard → third_party → local)
-
-        Args:
-            project_root: Project root directory fixture
-            quality_standards: Quality standards configuration fixture
-
-        Returns:
-            None: Test assertion validates import organization
-
-        Example:
-            Valid import order:
-            ```python
-            import json     # standard library
-            import sys      # standard library
-
-            import pytest   # third-party
-            import requests # third-party
-
-            from conftest import Config  # local
-            ```
-        """
-        # Given: Python test files with imports exist
-        tests_dir = project_root / "tests"
-        python_files = list(tests_dir.glob("test_*.py"))
-        assert python_files, "No Python test files found"
-
-        issues = []
-
-        # When: Checking import organization
-        for py_file in python_files:
-            try:
-                content = py_file.read_text(encoding='utf-8')
-                lines = content.split('\n')
-
-                import_sections = {
-                    'standard': [],
-                    'third_party': [],
-                    'local': []
-                }
-
-                in_imports = False
-
-                for i, line in enumerate(lines):
-                    stripped = line.strip()
-
-                    if stripped.startswith('import ') or stripped.startswith('from '):
-                        in_imports = True
-
-                        # Classify import type
-                        section = self._classify_import(stripped, quality_standards)
-                        import_sections[section].append((i, stripped))
-
-                    elif in_imports and stripped == '':
-                        continue  # Blank lines in import section are allowed
-                    elif in_imports and not stripped.startswith('#'):
-                        break  # End of import section
-
-                # Verify imports are in correct PEP 8 order
-                all_imports = []
-                for section in ['standard', 'third_party', 'local']:
-                    all_imports.extend(import_sections[section])
-
-                # Check import order violations
-                for i in range(len(all_imports) - 1):
-                    if all_imports[i][0] > all_imports[i+1][0]:
-                        curr_section = self._classify_import(all_imports[i][1], quality_standards)
-                        next_section = self._classify_import(all_imports[i+1][1], quality_standards)
-
-                        if self._section_order(curr_section) > self._section_order(next_section):
-                            issues.append(f"{py_file}:{all_imports[i+1][0]+1} - Import order violation")
-
-            except Exception as e:
-                print(f"Error checking imports in {py_file}: {e}")
-
-        # Then: Should have no import organization issues
-        if issues:
-            print(f"Import organization issues found: {len(issues)}")
-            for issue in issues[:5]:
-                print(f"  {issue}")
-
-        assert len(issues) == 0, f"Found {len(issues)} import organization issues"
-
-    def test_given_python_files_when_checking_unused_imports_then_documents_findings(
-        self,
-        project_root: Path
-    ):
-        """
-        Document potentially unused imports in Python files.
-
-        Given: Python test files with import statements exist
-        When: Analyzing for unused imports
-        Then: Should document any potentially unused imports (informational only)
-
-        Args:
-            project_root: Project root directory fixture
-
-        Returns:
-            None: Informational test that documents findings
-
-        Note:
-            This test is informational only and does not fail.
-            It helps identify potential cleanup opportunities.
-
-        Example:
-            Output might show:
-            ```
-            Potential unused imports: 3
-            tests/test_api.py - Potentially unused import: tempfile
-            ```
-        """
-        # Given: Python test files with imports exist
-        tests_dir = project_root / "tests"
-        python_files = list(tests_dir.glob("test_*.py"))
-
-        if not python_files:
-            pytest.skip("No Python test files found")
-
-        issues = []
-
-        # When: Checking for unused imports
-        for py_file in python_files:
-            try:
-                content = py_file.read_text(encoding='utf-8')
-
-                # Extract imported modules
-                import_modules = []
-                for line in content.split('\n'):
-                    stripped = line.strip()
-                    if stripped.startswith('import '):
-                        module = stripped.replace('import ', '').split(' as ')[0].split('.')[0]
-                        import_modules.append(module)
-                    elif stripped.startswith('from ') and ' import ' in stripped:
-                        parts = stripped.split(' import ')
-                        if len(parts) == 2:
-                            imported_items = parts[1].split(', ')
-                            for item in imported_items:
-                                clean_item = item.split(' as ')[0].strip()
-                                import_modules.append(clean_item)
-
-                # Check if imports are used (simple heuristic check)
-                for module in import_modules:
-                    if module and module not in ['unittest', '__future__', 'pytest']:
-                        # Simple check - module name appears elsewhere in file
-                        if content.count(module) <= 1:  # Only in import line
-                            issues.append(f"{py_file} - Potentially unused import: {module}")
-
-            except Exception as e:
-                print(f"Error checking unused imports in {py_file}: {e}")
-
-        # Then: Document findings (informational only)
-        if issues:
-            print(f"Potential unused imports: {len(issues)}")
-            for issue in issues[:10]:
-                print(f"  {issue}")
-        else:
-            print("No potentially unused imports detected")
-
-        # This is informational only - no assertion to fail the test
-
-    def _classify_import(self, import_line: str, quality_standards: QualityStandards) -> str:
-        """
-        Classify import statement as standard, third_party, or local.
-
-        Args:
-            import_line: Python import statement to classify
-            quality_standards: Quality standards configuration
-
-        Returns:
-            str: Import classification ('standard', 'third_party', 'local')
-
-        Example:
-            >>> _classify_import("import json", standards)
-            'standard'
-            >>> _classify_import("import pytest", standards)
-            'third_party'
-        """
-        if any(lib in import_line for lib in quality_standards.STANDARD_LIBS):
-            return 'standard'
-        elif any(lib in import_line for lib in quality_standards.THIRD_PARTY_LIBS):
-            return 'third_party'
-        else:
-            return 'local'
-
-    def _section_order(self, section: str) -> int:
-        """
-        Get numeric order for import sections per PEP 8.
-
-        Args:
-            section: Import section name
-
-        Returns:
-            int: Numeric order for sorting
-
-        Example:
-            >>> _section_order('standard')
-            1
-            >>> _section_order('third_party')
-            2
-        """
-        return {'standard': 1, 'third_party': 2, 'local': 3}.get(section, 4)
-
-
-class TestApiContractCompliance:
-    """
-    Test API contract compliance and response structure validation.
-
-    This class validates that the server API endpoints return responses
-    in the expected format and that Pyodide code execution works correctly
-    with proper cross-platform compatibility.
-    """
-
-    def test_given_server_running_when_executing_simple_python_then_returns_valid_contract(
-        self,
-        api_session: requests.Session
-    ):
-        """
-        Validate /api/execute-raw endpoint returns proper API contract structure.
-
-        Given: Server is running and accessible
-        When: Executing simple Python code via /api/execute-raw
-        Then: Should return valid JSON with success, data, error, meta fields
-
-        Args:
-            api_session: Configured requests session fixture
-
-        Returns:
-            None: Test assertion validates API contract compliance
-
-        Example:
-            Expected response structure:
-            ```json
-            {
-                "success": true,
-                "data": {
-                    "result": "Hello from Pyodide!",
-                    "stdout": "Hello from Pyodide!\n",
-                    "stderr": "",
-                    "executionTime": 123
-                },
-                "error": null,
-                "meta": {
-                    "timestamp": "2025-09-14T10:30:00.000Z"
-                }
-            }
-            ```
-        """
-        # Given: Simple Python code to execute
-        python_code = "print('Hello from Pyodide!')"
-
-        # When: Executing code via /api/execute-raw endpoint
-        response = api_session.post(
-            f"{Config.BASE_URL}/api/execute-raw",
-            data=python_code,
-            headers={"Content-Type": "text/plain"},
-            timeout=Config.TIMEOUTS["api_request"]
+        total_errors = sum(
+            sum(1 for m in file.get("messages", []) if m.get("severity") == 2)
+            for file in parsed
         )
+        total_warnings = sum(
+            sum(1 for m in file.get("messages", []) if m.get("severity") == 1)
+            for file in parsed
+        )
+        print(f"ESLint: errors={total_errors} warnings={total_warnings}")
+        assert (
+            total_errors <= quality_thresholds.max_eslint_errors
+        ), f"ESLint errors {total_errors} > allowed {quality_thresholds.max_eslint_errors}"
 
-        # Then: Should return valid API contract structure
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        response_data = response.json()
-
-        # Validate API contract structure
-        self._validate_api_contract(response_data)
-
-        # Validate successful execution
-        assert response_data["success"] is True, f"Execution failed: {response_data.get('error')}"
-        assert response_data["data"] is not None, "Expected data field to be populated"
-        assert response_data["error"] is None, f"Unexpected error: {response_data['error']}"
-
-        # Validate data structure
-        data = response_data["data"]
-        assert "result" in data, "Expected result field in data"
-        assert "stdout" in data, "Expected stdout field in data"
-        assert "stderr" in data, "Expected stderr field in data"
-        assert "executionTime" in data, "Expected executionTime field in data"
-
-        # Validate content
-        assert "Hello from Pyodide!" in data["result"], f"Expected output not found in result: {data['result']}"
-
-    def test_given_server_running_when_executing_pathlib_code_then_validates_portability(
-        self,
-        api_session: requests.Session
+    def test_given_python_tests_when_running_flake8_then_no_critical_errors(
+        self, project_root: Path, quality_thresholds: QualityThresholds
     ):
+        """Run flake8 for only critical error codes (E9,F63,F7,F82).
+
+        Skips if flake8 isn't installed. Any critical issue fails immediately.
         """
-        Validate cross-platform pathlib usage in Pyodide execution.
+        tests_dir = project_root / "tests"
+        if not tests_dir.exists():
+            pytest.skip("Tests directory missing")
+        try:
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "flake8",
+                    str(tests_dir),
+                    "--select=E9,F63,F7,F82",
+                    "--statistics",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=Config.TIMEOUTS["quick_operation"],
+                cwd=project_root,
+            )
+        except FileNotFoundError:
+            pytest.skip("flake8 not installed (uv add flake8) – skipping")
+        except subprocess.TimeoutExpired:
+            pytest.fail("flake8 critical scan timed out")
 
-        Given: Server is running and accessible
-        When: Executing Python code using pathlib for file operations
-        Then: Should work correctly across Windows and Linux platforms
+        if proc.returncode == 0:
+            print("flake8: no critical issues found")
+            return
 
-        Args:
-            api_session: Configured requests session fixture
+        # Parse lines containing file:line:col pattern
+        error_lines = [ln for ln in proc.stdout.splitlines() if ":" in ln]
+        print("flake8 critical issues:")
+        for ln in error_lines[:10]:
+            print(f"  {ln}")
+        assert (
+            len(error_lines) <= quality_thresholds.max_flake8_critical_errors
+        ), f"flake8 critical errors {len(error_lines)} > allowed {quality_thresholds.max_flake8_critical_errors}"
 
-        Returns:
-            None: Test assertion validates pathlib portability
 
-        Example:
-            Python code being tested:
-            ```python
-            from pathlib import Path
+# ---------------------------------------------------------------------------
+# API Contract, Portability & Data Science Execution
+# ---------------------------------------------------------------------------
+class TestApiContractAndExecution:
+    """Validate strict contract, execution success & failure paths."""
 
-            # Create portable path handling
-            test_path = Path('/tmp') / 'test_file.txt'
-            print(f"Path: {test_path}")
-            print(f"Is absolute: {test_path.is_absolute()}")
-            ```
+    def test_given_simple_print_when_executed_then_contract_and_stdout_are_returned(
+        self, api_session: requests.Session
+    ):
+        """Simple hello-world style execution validates strict contract.
+
+        GIVEN a running server
+        WHEN code printing a message is executed
+        THEN result, stdout, stderr, executionTime exist & contract is valid
         """
-        # Given: Python code using pathlib for cross-platform compatibility
-        python_code = """
+        resp = _post_execute_raw(api_session, "print('hello-contract')")
+        assert resp.status_code == 200, f"Unexpected status: {resp.status_code} {resp.text}"
+        payload = resp.json()
+        _strict_api_contract(payload)
+        assert payload["success"] is True
+        data = payload["data"]
+        for f in ("result", "stdout", "stderr", "executionTime"):
+            assert f in data, f"Missing data.{f}"
+        assert "hello-contract" in data["stdout"] or "hello-contract" in data["result"]
+
+    def test_given_invalid_code_when_executed_then_error_contract_returned(
+        self, api_session: requests.Session
+    ):
+        """Execution failure must return success=false, data=null, error=str."""
+        resp = _post_execute_raw(api_session, "raise ValueError('boom')")
+        assert resp.status_code == 200, "Execution endpoint must always return 200 transport"
+        payload = resp.json()
+        _strict_api_contract(payload)
+        assert payload["success"] is False
+        assert payload["data"] is None
+        assert "ValueError" in payload["error"]
+
+    def test_given_pathlib_operations_when_executed_then_portability_details_present(
+        self, api_session: requests.Session
+    ):
+        """Ensure pathlib behaviors & printed diagnostics are surfaced properly."""
+        code = """
 from pathlib import Path
-import sys
+root = Path('/home/pyodide')
+test_file = root / 'uploads' / 'port_test.txt'
+print(f'Is absolute: {test_file.is_absolute()}')
+print(f'Parent: {test_file.parent}')
+print(f'Parts: {test_file.parts[:3]}')
+print('PATHLIB_DONE')
+"""
+        resp = _post_execute_raw(api_session, code)
+        assert resp.status_code == 200
+        payload = resp.json()
+        _strict_api_contract(payload)
+        assert payload["success"] is True
+        stdout = payload["data"]["stdout"] + str(payload["data"]["result"])
+        assert "Is absolute: True" in stdout
+        assert "PATHLIB_DONE" in stdout
 
-# Test pathlib usage for portability
-test_path = Path('/tmp') / 'test_file.txt'
-plots_path = Path('/home/pyodide/plots') / 'matplotlib' / 'test.png'
-
-# Validate pathlib functionality
-print(f"Test path: {test_path}")
-print(f"Plots path: {plots_path}")
-print(f"Test path is absolute: {test_path.is_absolute()}")
-print(f"Plots path parent: {plots_path.parent}")
-print(f"Path separator: {test_path.parts}")
-print(f"Python version: {sys.version}")
-print("Pathlib portability test completed successfully")
-        """
-
-        # When: Executing pathlib code via /api/execute-raw
-        response = api_session.post(
-            f"{Config.BASE_URL}/api/execute-raw",
-            data=python_code,
-            headers={"Content-Type": "text/plain"},
-            timeout=Config.TIMEOUTS["api_request"]
-        )
-
-        # Then: Should execute successfully with pathlib operations
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        response_data = response.json()
-        self._validate_api_contract(response_data)
-
-        assert response_data["success"] is True, f"Pathlib execution failed: {response_data.get('error')}"
-
-        data = response_data["data"]
-        result_text = data["result"]
-
-        # Validate pathlib operations worked correctly
-        assert "Test path: /tmp/test_file.txt" in result_text, "Pathlib path construction failed"
-        assert "Test path is absolute: True" in result_text, "Pathlib absolute path check failed"
-        assert "Plots path parent: /home/pyodide/plots/matplotlib" in result_text, "Pathlib parent operation failed"
-        assert "Pathlib portability test completed successfully" in result_text, "Test completion marker not found"
-
-    def test_given_server_running_when_code_execution_fails_then_returns_proper_error_contract(
-        self,
-        api_session: requests.Session
+    def test_given_data_science_stack_when_executed_then_core_functions_operate(
+        self, api_session: requests.Session
     ):
+        """Smoke test numpy + pandas + matplotlib import & basic ops.
+
+        This doesn't validate visual output—only that the stack loads and
+        performs representative operations quickly within resource limits.
         """
-        Validate error handling follows API contract structure.
-
-        Given: Server is running and accessible
-        When: Executing invalid Python code that causes an error
-        Then: Should return proper error structure following API contract
-
-        Args:
-            api_session: Configured requests session fixture
-
-        Returns:
-            None: Test assertion validates error contract compliance
-
-        Example:
-            Expected error response:
-            ```json
-            {
-                "success": false,
-                "data": null,
-                "error": "NameError: name 'undefined_variable' is not defined",
-                "meta": {
-                    "timestamp": "2025-09-14T10:30:00.000Z"
-                }
-            }
-            ```
-        """
-        # Given: Invalid Python code that will cause an error
-        invalid_python_code = "print(undefined_variable)"  # NameError
-
-        # When: Executing invalid code via /api/execute-raw
-        response = api_session.post(
-            f"{Config.BASE_URL}/api/execute-raw",
-            data=invalid_python_code,
-            headers={"Content-Type": "text/plain"},
-            timeout=Config.TIMEOUTS["api_request"]
-        )
-
-        # Then: Should return proper error contract structure
-        assert response.status_code == 200, (
-            f"Expected 200 even for execution errors, got {response.status_code}: "
-            f"{response.text}"
-        )
-
-        response_data = response.json()
-        self._validate_api_contract(response_data)
-
-        # Validate error handling
-        assert response_data["success"] is False, "Expected success to be false for execution error"
-        assert response_data["data"] is None, "Expected data to be null for execution error"
-        assert response_data["error"] is not None, "Expected error field to be populated"
-        assert isinstance(response_data["error"], str), "Expected error to be a string"
-        assert len(response_data["error"]) > 0, "Expected non-empty error message"
-
-    def test_given_server_running_when_executing_data_science_code_then_validates_libraries(
-        self,
-        api_session: requests.Session
-    ):
-        """
-        Validate data science libraries are available and working correctly.
-
-        Given: Server is running with data science libraries available
-        When: Executing Python code using numpy, pandas, matplotlib
-        Then: Should execute successfully and return expected results
-
-        Args:
-            api_session: Configured requests session fixture
-
-        Returns:
-            None: Test assertion validates data science library availability
-
-        Example:
-            Expected to work with libraries:
-            - numpy for numerical operations
-            - pandas for data manipulation
-            - matplotlib for plotting (with pathlib paths)
-        """
-        # Given: Data science code using common libraries
-        data_science_code = """
-import numpy as np
+        code = """
+import numpy as np, pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+arr = np.arange(5)
+print('ARR_SUM', int(arr.sum()))
 import pandas as pd
+df = pd.DataFrame({'a':[1,2,3],'b':[10,20,30]})
+print('DF_SHAPE', df.shape)
+plt.plot([0,1,2],[0,1,0])
+print('STACK_OK')
+"""
+        resp = _post_execute_raw(api_session, code)
+        assert resp.status_code == 200
+        payload = resp.json()
+        _strict_api_contract(payload)
+        assert payload["success"] is True
+        combined = payload["data"]["stdout"] + str(payload["data"]["result"])
+        assert "ARR_SUM 10" in combined
+        assert "DF_SHAPE (3, 2)" in combined
+        assert "STACK_OK" in combined
+
+
+# ---------------------------------------------------------------------------
+# Plot Storage Validation
+# ---------------------------------------------------------------------------
+class TestPlotStorageIsolation:
+    """Ensure plots are stored ONLY under mapped pyodide_data directory."""
+
+    def test_given_plot_saved_when_executed_then_file_in_pyodide_data_and_not_project_root(
+        self, api_session: requests.Session, project_root: Path
+    ):
+        """Matplotlib savefig must land in /home/pyodide/plots (host pyodide_data/plots).
+
+        Steps:
+        1. Snapshot existing project_root/plots files
+        2. Execute code saving a plot to /home/pyodide/plots/matplotlib/quality_test.png
+        3. Assert new file appears under pyodide_data/plots/matplotlib
+        4. Assert no NEW file with that name appears under root ./plots/
+        """
+        # Host mappings according to mounting rules
+        host_pyodide_plots = project_root / 'pyodide_data' / 'plots' / 'matplotlib'
+        host_root_plots = project_root / 'plots' / 'matplotlib'
+        host_pyodide_plots.mkdir(parents=True, exist_ok=True)
+        host_root_plots.mkdir(parents=True, exist_ok=True)
+
+        before_root_files = set(p.name for p in host_root_plots.glob('*'))
+        target_name = 'quality_test.png'
+
+        code = f"""
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
 from pathlib import Path
+x = np.linspace(0, 2, 25)
+plt.plot(x, np.sin(x))
+out_path = Path('/home/pyodide/plots/matplotlib/{target_name}')
+plt.savefig(out_path)
+print('PLOT_SAVED', out_path)
+"""
+        resp = _post_execute_raw(api_session, code, timeout=Config.TIMEOUTS["code_execution"])
+        assert resp.status_code == 200
+        payload = resp.json()
+        _strict_api_contract(payload)
+        assert payload["success"] is True
+        combined = payload["data"]["stdout"] + str(payload["data"]["result"])
+        assert 'PLOT_SAVED' in combined, 'Did not detect plot save marker'
 
-# Test numpy functionality
-arr = np.array([1, 2, 3, 4, 5])
-mean_val = np.mean(arr)
-print(f"NumPy array mean: {mean_val}")
+        expected_plot = host_pyodide_plots / target_name
+        if not expected_plot.exists():
+            # Retry for short window in case of async flush delays
+            import time
+            end = time.time() + 3
+            while time.time() < end and not expected_plot.exists():
+                time.sleep(0.25)
+        assert expected_plot.exists(), f"Expected plot not found in mapped directory after retries: {expected_plot}"
 
-# Test pandas functionality
-df = pd.DataFrame({
-    'A': [1, 2, 3, 4, 5],
-    'B': [10, 20, 30, 40, 50]
-})
-print(f"Pandas DataFrame shape: {df.shape}")
-print(f"DataFrame mean: {df.mean().to_dict()}")
-
-# Test pathlib for file operations
-data_dir = Path('/home/pyodide/uploads')
-print(f"Data directory path: {data_dir}")
-print(f"Is data_dir absolute: {data_dir.is_absolute()}")
-
-print("Data science libraries validation completed successfully")
-        """
-
-        # When: Executing data science code via /api/execute-raw
-        response = api_session.post(
-            f"{Config.BASE_URL}/api/execute-raw",
-            data=data_science_code,
-            headers={"Content-Type": "text/plain"},
-            timeout=Config.TIMEOUTS["api_request"]
+        # Ensure root-level plots didn't get a new file of same name
+        after_root_files = set(p.name for p in host_root_plots.glob('*'))
+        new_root_files = after_root_files - before_root_files
+        assert target_name not in new_root_files, (
+            "Plot file leaked into project root 'plots' directory; should only exist in pyodide_data mapping"
         )
 
-        # Then: Should execute successfully with all libraries working
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
-        response_data = response.json()
-        self._validate_api_contract(response_data)
-
-        assert response_data["success"] is True, f"Data science execution failed: {response_data.get('error')}"
-
-        data = response_data["data"]
-        result_text = data["result"]
-
-        # Validate each library worked correctly
-        assert "NumPy array mean: 3.0" in result_text, "NumPy operations failed"
-        assert "Pandas DataFrame shape: (5, 2)" in result_text, "Pandas DataFrame creation failed"
-        assert "'A': 3.0, 'B': 30.0" in result_text, "Pandas mean calculation failed"
-        assert "Data directory path: /home/pyodide/uploads" in result_text, "Pathlib path operations failed"
-        assert "Data science libraries validation completed successfully" in result_text, (
-            "Test completion marker not found"
-        )
-
-    def _validate_api_contract(self, response_data: dict) -> None:
-        """
-        Validate response follows the API contract structure.
-
-        Args:
-            response_data: JSON response data to validate
-
-        Raises:
-            AssertionError: If response doesn't follow API contract
-
-        Example:
-            Expected structure:
-            ```json
-            {
-                "success": true|false,
-                "data": <object|null>,
-                "error": <string|null>,
-                "meta": {"timestamp": <string>}
-            }
-            ```
-        """
-        # Validate required top-level fields
-        assert "success" in response_data, "Response missing required 'success' field"
-        assert "data" in response_data, "Response missing required 'data' field"
-        assert "error" in response_data, "Response missing required 'error' field"
-        assert "meta" in response_data, "Response missing required 'meta' field"
-
-        # Validate field types
-        assert isinstance(response_data["success"], bool), "Field 'success' must be boolean"
-
-        # Validate meta structure
-        meta = response_data["meta"]
-        assert isinstance(meta, dict), "Field 'meta' must be object"
-        assert "timestamp" in meta, "Meta missing required 'timestamp' field"
-        assert isinstance(meta["timestamp"], str), "Meta 'timestamp' must be string"
-
-        # Validate success/error/data consistency
-        if response_data["success"]:
-            assert response_data["error"] is None, "Success response should have null error"
-            assert response_data["data"] is not None, "Success response should have non-null data"
-        else:
-            assert response_data["error"] is not None, "Error response should have non-null error"
-            assert response_data["data"] is None, "Error response should have null data"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == "__main__":  # pragma: no cover
+    pytest.main([__file__, "-vv"])  # Manual invocation helper

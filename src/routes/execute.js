@@ -340,9 +340,23 @@ router.get('/status', (req, res) => {
   try {
     // Query the in-memory service for its readiness and version information.
     const status = pyodideService.getStatus();
+    // Augment with memory usage snapshot
+    let memory = null;
+    try {
+      if (pyodideService.processPool && typeof pyodideService.processPool.getMemoryUsage === 'function') {
+        memory = pyodideService.processPool.getMemoryUsage();
+      } else {
+        memory = { nodeProcess: process.memoryUsage(), timestamp: new Date().toISOString() };
+      }
+    } catch (e) {
+      memory = { error: e.message };
+    }
     res.json({
       success: true,
-      data: status,
+      data: {
+        ...status,
+        memory
+      },
       error: null,
       meta: { timestamp: new Date().toISOString() }
     });

@@ -10,10 +10,88 @@
 
 const { loadPyodide } = require('pyodide');
 const path = require('path');
+const logger = require('../utils/logger');
+
 
 let pyodide = null;
 let initialized = false;
 let contextVariableNames = new Set(); // Track context variables for cleanup
+let hostPlotsPath = null;
+let hostUploadsPath = null;
+let nodefsMountFailed = false; // Indicates whether NODEFS mounts succeeded
+
+function captureProcessMemory() {
+  const usage = process.memoryUsage();
+  return {
+    rss: usage.rss,
+    heapTotal: usage.heapTotal,
+    heapUsed: usage.heapUsed,
+    external: usage.external,
+    rssMB: Math.round(usage.rss / 1024 / 1024),
+    heapTotalMB: Math.round(usage.heapTotal / 1024 / 1024),
+    heapUsedMB: Math.round(usage.heapUsed / 1024 / 1024)
+  };
+}
+
+function relocateLegacyPlotArtifacts(projectRoot, plotsPath) {
+  try {
+    const fs = require('fs');
+    const legacyPlotsPath = path.join(projectRoot, 'plots');
+    if (!fs.existsSync(legacyPlotsPath)) {
+      return;
+    }
+
+    const ensureDir = (targetPath) => {
+      try {
+        fs.mkdirSync(targetPath, { recursive: true });
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const moveEntry = (source, destination) => {
+      try {
+        ensureDir(path.dirname(destination));
+        fs.renameSync(source, destination);
+        return;
+      } catch {
+        /* fall through */
+      }
+
+      try {
+        const stat = fs.statSync(source);
+        if (stat.isDirectory()) {
+          const entries = fs.readdirSync(source);
+          ensureDir(destination);
+          for (const entry of entries) {
+            moveEntry(path.join(source, entry), path.join(destination, entry));
+          }
+          fs.rmSync(source, { recursive: true, force: true });
+        } else {
+          const data = fs.readFileSync(source);
+          ensureDir(path.dirname(destination));
+          fs.writeFileSync(destination, data);
+          fs.rmSync(source, { force: true });
+        }
+      } catch {
+        /* ignore stubborn files */
+      }
+    };
+
+    const rootEntries = fs.readdirSync(legacyPlotsPath, { withFileTypes: true });
+    for (const entry of rootEntries) {
+      moveEntry(path.join(legacyPlotsPath, entry.name), path.join(plotsPath, entry.name));
+    }
+
+    try {
+      fs.rmSync(legacyPlotsPath, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  } catch {
+    /* ignore relocation issues */
+  }
+}
 
 /**
  * Initialize Pyodide with required packag/**
@@ -49,7 +127,7 @@ async function initializePyodide() {
   try {
     // Load Pyodide with locally available packages
     pyodide = await loadPyodide({
-      packages: ['micropip', 'numpy', 'pandas', 'matplotlib', 'scikit-learn', 'statsmodels']
+      packages: ['micropip', 'numpy', 'scipy', 'pydantic', 'Pillow', 'pandas', 'matplotlib', 'scikit-learn', 'statsmodels', 'httpx']
     });
 
     // Setup filesystem directories
@@ -66,26 +144,63 @@ async function initializePyodide() {
     // Mount host filesystem directories from pyodide_data
     // Note: /home and /home/pyodide are automatically created by VFS
     const projectRoot = path.resolve(__dirname, '../..');
-    const pyodideDataDir = path.join(projectRoot, 'pyodide_data');
+    const pyodideDataDir = process.env.PYODIDE_DATA_DIR
+      ? (path.isAbsolute(process.env.PYODIDE_DATA_DIR)
+          ? process.env.PYODIDE_DATA_DIR
+          : path.join(projectRoot, process.env.PYODIDE_DATA_DIR))
+      : path.join(projectRoot, 'pyodide_data');
     const uploadsPath = path.join(pyodideDataDir, 'uploads');
     const plotsPath = path.join(pyodideDataDir, 'plots');
+    hostUploadsPath = uploadsPath;
+    hostPlotsPath = plotsPath;
+
+    try {
+      const fs = require('fs');
+      if (!fs.existsSync(uploadsPath)) {
+        fs.mkdirSync(uploadsPath, { recursive: true });
+      }
+      if (!fs.existsSync(plotsPath)) {
+        fs.mkdirSync(plotsPath, { recursive: true });
+      }
+      relocateLegacyPlotArtifacts(projectRoot, plotsPath);
+      if (!fs.existsSync(path.join(plotsPath, 'matplotlib'))) {
+        fs.mkdirSync(path.join(plotsPath, 'matplotlib'), { recursive: true });
+      }
+      if (!fs.existsSync(path.join(plotsPath, 'seaborn'))) {
+        fs.mkdirSync(path.join(plotsPath, 'seaborn'), { recursive: true });
+      }
+      if (!fs.existsSync(path.join(plotsPath, 'base64'))) {
+        fs.mkdirSync(path.join(plotsPath, 'base64'), { recursive: true });
+      }
+    } catch (fsErr) {
+      console.warn('Pre-mount directory preparation failed:', fsErr.message);
+    }
+
+    mkdirSafe('/home/pyodide/uploads');
+    mkdirSafe('/home/pyodide/plots');
+    mkdirSafe('/home/pyodide/plots/matplotlib');
+    mkdirSafe('/home/pyodide/plots/seaborn');
+    mkdirSafe('/home/pyodide/plots/base64');
     
+    let mountSucceeded = true;
     try {
       pyodide.FS.mount(pyodide.FS.filesystems.NODEFS, { root: uploadsPath }, '/home/pyodide/uploads');
       pyodide.FS.mount(pyodide.FS.filesystems.NODEFS, { root: plotsPath }, '/home/pyodide/plots');
-      
-      // Create subdirectories after mounting (these will be created on the host filesystem)
-      mkdirSafe('/home/pyodide/plots/matplotlib');
-      mkdirSafe('/home/pyodide/plots/seaborn');
-      mkdirSafe('/home/pyodide/plots/base64');
+      logger.info('📁 Folders mounted successfully');
     } catch (err) {
-      console.warn('Failed to mount filesystem directories:', err.message);
-      // Fallback to virtual filesystem if mounting fails
-      mkdirSafe('/home/pyodide/uploads');
-      mkdirSafe('/home/pyodide/plots');
-      mkdirSafe('/home/pyodide/plots/matplotlib');
-      mkdirSafe('/home/pyodide/plots/seaborn');
-      mkdirSafe('/home/pyodide/plots/base64');
+      mountSucceeded = false;
+      console.info('Failed to mount filesystem directories:', err.message);
+    }
+    nodefsMountFailed = !mountSucceeded;
+
+
+
+    if (!mountSucceeded) {
+      try {
+        await sendMessage({ type: 'debug', mount: 'nodefs_failed', note: 'Will manually sync plot files to host after executions.', uploadsRoot: hostUploadsPath, plotsRoot: hostPlotsPath });
+      } catch {
+        /* ignore */
+      }
     }
 
     // Setup Python environment
@@ -122,7 +237,7 @@ plt.rcParams['savefig.bbox'] = 'tight'
     `);
 
     initialized = true;
-    sendMessage({ type: 'initialized', success: true });
+    await sendMessage({ type: 'initialized', success: true, memory: captureProcessMemory(), mountFallback: nodefsMountFailed });
   } catch (error) {
     sendMessage({ 
       type: 'initialized', 
@@ -163,7 +278,7 @@ if hasattr(sys, '__stdout__'):
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
       `);
-    } catch (resetError) {
+    } catch {
       // console.error('Warning: Could not reset Python streams before execution');
     }
     
@@ -220,7 +335,7 @@ sys.stderr = _captured_stderr
 sys.stdout = _original_stdout
 sys.stderr = _original_stderr
         `);
-      } catch (restoreError) {
+      } catch {
         // console.error('Failed to restore stdout/stderr after Python error:', restoreError);
         // If restoration fails, try to reinitialize the streams
         try {
@@ -243,6 +358,7 @@ sys.stderr = sys.__stderr__
         errorStack: pythonError.stack,
         stdout: stdout,
         stderr: stderr || pythonError.toString(),
+        processMemory: captureProcessMemory(),
         executionTime: Date.now() - startTime
       });
       return;
@@ -294,9 +410,18 @@ sys.stderr = _original_stderr
       result: processedResult,
       stdout: stdout || '',
       stderr: stderr || '',
+      processMemory: captureProcessMemory(),
       executionTime: Date.now() - startTime
     });
 
+
+    await sendMessage({
+      type: 'post_exec_metrics',
+      executionId,
+      tier: 0,
+      stats: { deltaMB: 0 },
+      processMemory: captureProcessMemory()
+    });
     // DETERMINISTIC: Clean up Python memory only after message is fully sent
     try {
       await lightCleanupPythonMemory();
@@ -320,9 +445,18 @@ sys.stderr = _original_stderr
       error: errorDetails,
       errorName: error.name,
       errorStack: error.stack,
+      processMemory: captureProcessMemory(),
       executionTime: Date.now() - startTime
     });
 
+
+    await sendMessage({
+      type: 'post_exec_metrics',
+      executionId,
+      tier: 0,
+      errorPath: true,
+      processMemory: captureProcessMemory()
+    });
     // DETERMINISTIC: Clean up Python memory only after message is fully sent
     try {
       await lightCleanupPythonMemory();
@@ -491,7 +625,7 @@ for name in temp_vars_to_clear:
 # Single garbage collection (not aggressive)
 gc.collect()
     `);
-  } catch (error) {
+  } catch {
     // Ignore cleanup errors in light mode
   }
 }

@@ -68,6 +68,7 @@ const logDir = process.env.LOG_DIR || path.join(__dirname, '../../logs');
 const logFile = process.env.LOG_FILE || path.join(logDir, 'server.log');
 const securityLogFile = path.join(logDir, 'security.log');
 const maxSize = parseInt(process.env.LOG_MAX_SIZE || constants.LOGGING.MAX_LOG_SIZE, 10);
+const executionHistoryLimit = Math.max(100, parseInt(process.env.LOG_EXECUTION_HISTORY_LIMIT || '600', 10));
 /**
  * In-memory execution statistics storage
  * @typedef {Object} ExecutionStatsStorage
@@ -291,18 +292,26 @@ function updateExecutionStats(data) {
     timestamp: now,
     success,
     executionTime: executionTime || 0,
-    ip,
-    userAgent: (userAgent || 'unknown').substring(0, 100),
-    codeHash: (codeHash || '').substring(0, 16),
     error: error || null,
-    memoryUsage: process.memoryUsage(),
-    cpuUsage: process.cpuUsage ? process.cpuUsage() : null,
+    codeHash: codeHash ? codeHash.substring(0, 16) : null,
   });
+
+  // Trim to configured history limit before time-based pruning
+  if (executionStats.lastHourExecutions.length > executionHistoryLimit) {
+    executionStats.lastHourExecutions.splice(
+      0,
+      executionStats.lastHourExecutions.length - executionHistoryLimit
+    );
+  }
+
   // Clean old entries (keep only last hour)
   const oneHourAgo = now - constants.TIME.HOUR;
-  executionStats.lastHourExecutions = executionStats.lastHourExecutions.filter(
-    (exec) => exec.timestamp > oneHourAgo
-  );
+  executionStats.lastHourExecutions = executionStats.lastHourExecutions
+    .filter((exec) => exec.timestamp > oneHourAgo);
+
+  if (executionStats.lastHourExecutions.length > executionHistoryLimit) {
+    executionStats.lastHourExecutions = executionStats.lastHourExecutions.slice(-executionHistoryLimit);
+  }
   // Track code patterns (first few characters for pattern detection)
   if (codeHash) {
     const pattern = codeHash.substring(0, 8); // First 8 chars of hash

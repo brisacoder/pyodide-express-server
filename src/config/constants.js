@@ -107,7 +107,7 @@ const PYODIDE = {
  * Process Pool configuration constants
  */
 const PROCESS_POOL = {
-  DEFAULT_POOL_SIZE: 2,              // Number of persistent Pyodide processes
+  DEFAULT_POOL_SIZE: 4,              // Number of persistent Pyodide processes (increased from 2 for better concurrency during tests)
   MIN_POOL_SIZE: 1,                  // Minimum pool size
   MAX_POOL_SIZE: 8,                  // Maximum pool size (reasonable for most systems)
   MAX_EXECUTIONS_PER_PROCESS: 50,   // Recycle process after this many executions

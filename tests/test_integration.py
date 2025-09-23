@@ -22,9 +22,9 @@ try:
     FILE_OPERATION_TIMEOUT = Config.TIMEOUTS["file_operation"]
     PACKAGE_INSTALL_TIMEOUT = Config.TIMEOUTS["package_install"]
     RESET_TIMEOUT = Config.TIMEOUTS["reset_operation"]
-    TEST_CSV_CONTENT = Config.TEST_DATA["csv_content"]
-    TEST_FILES = Config.TEST_DATA["test_files"]
-    PACKAGES = Config.TEST_DATA["packages"]
+    TEST_CSV_CONTENT = Config.TEST_DATA["csv_content"]  # legacy name (string in new config)
+    TEST_FILES = Config.TEST_DATA["test_files"]        # legacy mapping
+    PACKAGES = Config.TEST_DATA["packages"]            # list of packages
 except ImportError:
     from conftest import Config
     # Map old constants to new Config class
@@ -39,8 +39,38 @@ except ImportError:
     TEST_FILES = Config.TEST_DATA["test_files"]
     PACKAGES = Config.TEST_DATA["packages"]
 
+# --- Backward compatibility shims -------------------------------------------------
+# Original integration tests expected structured CSV variants and file name keys
+# such as 'simple', 'quotes', 'unicode', 'empty_fields', 'concurrent', 'data1', 'data2'.
+# The current Config now provides a single multiline CSV string instead. We recreate
+# the richer test data set here without modifying global Config to keep changes local.
+
+TEST_CSV_VARIANTS: Dict[str, str] = {
+    "simple": "name,value,category\nAlice,10,A\nBob,20,B\n",
+    "quotes": 'name,value,category\n"Charlie, Jr.",30,"C"\n',
+    "unicode": "name,value,category\nJosé,40,D\nMiyuki,50,E\n",
+    "empty_fields": "name,value,category\nAnna,,A\n,60,B\nLuke,70,\n",
+}
+
+TEST_FILE_NAMES: Dict[str, str] = {
+    "simple": "test_simple.csv",
+    "quotes": "test_quotes.csv",
+    "unicode": "test_unicode.csv",
+    "empty_fields": "test_empty_fields.csv",
+    "concurrent": "test_concurrent.csv",
+    "data1": "data1.csv",
+    "data2": "data2.csv",
+}
+
+# Override legacy variable names used throughout tests
+TEST_CSV_CONTENT = TEST_CSV_VARIANTS  # now a dict keyed by variant names
+TEST_FILES = TEST_FILE_NAMES
+
+# Choose a package known to exist in Config's package list for install persistence test
+PRIMARY_PACKAGE = PACKAGES[0] if isinstance(PACKAGES, list) and PACKAGES else "pandas"
 
 # ===== Helper Functions =====
+
 
 def create_temp_csv_file(content: str, filename: str) -> Path:
     """Create a temporary CSV file with given content."""
@@ -51,9 +81,10 @@ def create_temp_csv_file(content: str, filename: str) -> Path:
 
 def upload_csv_file(file_path: Path, filename: str) -> Dict:
     """Upload a CSV file and return the response data."""
+    # Updated to use 'upload' public endpoint key (was 'upload_csv' in older tests)
     with open(file_path, "rb") as fh:
         response = requests.post(
-            f"{BASE_URL}{ENDPOINTS['upload_csv']}",
+            f"{BASE_URL}{ENDPOINTS['upload']}",
             files={"file": (filename, fh, "text/csv")},
             timeout=UPLOAD_TIMEOUT
         )
@@ -62,7 +93,22 @@ def upload_csv_file(file_path: Path, filename: str) -> Dict:
 
 
 def execute_python_code(code: str) -> Dict:
-    """Execute Python code using the execute-raw endpoint."""
+    """Execute Python code using the public execute-raw endpoint returning full API contract.
+
+    This normalizes older tests that previously treated the raw response body as the direct
+    printed stdout. The server now (and going forward) returns a structured JSON object:
+
+    {
+      "success": bool,
+      "data": {"result": object|null, "stdout": str, "stderr": str, "executionTime": float},
+      "error": str|null,
+      "meta": {"timestamp": str}
+    }
+
+    The printed output of the executed Python code lives in data.stdout and any programmatic
+    returned value serialization (if the server captures one) is under data.result. Tests that
+    need to parse JSON emitted via print() must therefore load json from data.stdout.
+    """
     response = requests.post(
         f"{BASE_URL}{ENDPOINTS['execute_raw']}",
         data=code,
@@ -70,7 +116,7 @@ def execute_python_code(code: str) -> Dict:
         timeout=EXECUTE_TIMEOUT
     )
     response.raise_for_status()
-    return {"success": True, "result": response.text.strip()}
+    return response.json()
 
 
 def execute_python_code_full_response(code: str) -> Dict:
@@ -118,6 +164,7 @@ class TestDataConsistency:
         test_content = TEST_CSV_CONTENT["simple"]
         temp_file = create_temp_csv_file(test_content, TEST_FILES["simple"])
 
+        uploaded_filename = TEST_FILES["simple"]  # predefine for cleanup safety
         try:
             # WHEN: Upload the CSV file
             upload_data = upload_csv_file(temp_file, TEST_FILES["simple"])
@@ -143,11 +190,13 @@ except Exception as e:
 
             # THEN: Execute code and verify results
             exec_result = execute_python_code(python_code)
-            assert exec_result["success"]
+            assert exec_result["success"] is True
+            assert exec_result["error"] is None
 
-            # Parse the JSON output
+            # Parse the JSON output emitted via print (now in data.stdout)
             import json
-            result_data = json.loads(exec_result["result"])
+            stdout_json = exec_result["data"]["stdout"].strip()
+            result_data = json.loads(stdout_json)
             assert "error" not in result_data
             assert result_data["shape"] == [2, 3]  # 2 rows, 3 columns
             assert set(result_data["columns"]) == {"name", "value", "category"}
@@ -155,7 +204,8 @@ except Exception as e:
         finally:
             # Cleanup
             temp_file.unlink(missing_ok=True)
-            delete_uploaded_file(uploaded_filename)
+            if uploaded_filename:
+                delete_uploaded_file(uploaded_filename)
 
 
 class TestCSVProcessingEdgeCases:
@@ -176,6 +226,7 @@ class TestCSVProcessingEdgeCases:
         test_content = TEST_CSV_CONTENT[content_key]
         temp_file = create_temp_csv_file(test_content, TEST_FILES[content_key])
 
+        uploaded_filename = TEST_FILES[content_key]
         try:
             # WHEN: Upload the CSV file
             upload_data = upload_csv_file(temp_file, TEST_FILES[content_key])
@@ -201,17 +252,20 @@ except Exception as e:
 
             # THEN: Verify successful processing
             exec_result = execute_python_code(python_code)
-            assert exec_result["success"]
+            assert exec_result["success"] is True
+            assert exec_result["error"] is None
 
             import json
-            result_data = json.loads(exec_result["result"])
-            assert result_data["success"], f"Processing failed: {result_data.get('error')}"
+            stdout_json = exec_result["data"]["stdout"].strip()
+            result_data = json.loads(stdout_json)
+            assert result_data.get("success") is True, f"Processing failed: {result_data.get('error')}"
             assert result_data["shape"][0] == expected_rows
 
         finally:
             # Cleanup
             temp_file.unlink(missing_ok=True)
-            delete_uploaded_file(uploaded_filename)
+            if uploaded_filename:
+                delete_uploaded_file(uploaded_filename)
 
 
 class TestConcurrentOperations:
@@ -227,6 +281,7 @@ class TestConcurrentOperations:
         test_content = "x,y\n1,2\n3,4\n"
         temp_file = create_temp_csv_file(test_content, TEST_FILES["concurrent"])
 
+        uploaded_filename = TEST_FILES["concurrent"]
         try:
             upload_data = upload_csv_file(temp_file, TEST_FILES["concurrent"])
             uploaded_filename = upload_data["data"]["file"]["sanitizedOriginal"]
@@ -244,13 +299,15 @@ class TestConcurrentOperations:
             # THEN: All operations should succeed
             for code in operations:
                 exec_result = execute_python_code(code)
-                assert exec_result["success"], f"Operation failed: {code}"
-                assert exec_result["result"], "No output from operation"
+                assert exec_result["success"] is True, f"Operation failed: {code}"
+                # Ensure stdout captured
+                assert exec_result["data"]["stdout"].strip(), "No output from operation"
 
         finally:
             # Cleanup
             temp_file.unlink(missing_ok=True)
-            delete_uploaded_file(uploaded_filename)
+            if uploaded_filename:
+                delete_uploaded_file(uploaded_filename)
 
 
 class TestStatePersistence:
@@ -265,22 +322,26 @@ class TestStatePersistence:
         # GIVEN: Install a package
         install_response = requests.post(
             f"{BASE_URL}{ENDPOINTS['install_package']}",
-            json={"package": PACKAGES["beautifulsoup4"]},
+            json={"package": PRIMARY_PACKAGE},
             timeout=PACKAGE_INSTALL_TIMEOUT
         )
         assert install_response.status_code == 200
 
         # WHEN: Verify package is available
-        package_test_code = "import bs4; print('package_available')"
+        # Use dynamic import based on chosen package (assumes simple import name)
+        import_name = PRIMARY_PACKAGE.split("==")[0].split("[")[0]
+        package_test_code = f"import {import_name}; print('package_available')"
         exec_result = execute_python_code(package_test_code)
-        assert exec_result["success"]
-        assert "package_available" in exec_result["result"]
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "package_available" in exec_result["data"]["stdout"]
 
         # AND: Test that variables don't persist between executions (isolated execution)
         variable_set_code = "test_var = 'isolated_value'; print('variable_set')"
         exec_result = execute_python_code(variable_set_code)
-        assert exec_result["success"]
-        assert "variable_set" in exec_result["result"]
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "variable_set" in exec_result["data"]["stdout"]
 
         # AND: Verify variable doesn't exist in separate execution (this is correct behavior)
         variable_check_code = """
@@ -290,8 +351,9 @@ except NameError:
     print('variable_not_found')
 """
         exec_result = execute_python_code(variable_check_code)
-        assert exec_result["success"]
-        assert "variable_not_found" in exec_result["result"]
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "variable_not_found" in exec_result["data"]["stdout"]
 
         # WHEN: Reset the environment
         reset_response = requests.post(f"{BASE_URL}{ENDPOINTS['reset']}", timeout=RESET_TIMEOUT)
@@ -299,16 +361,18 @@ except NameError:
         assert reset_response.json().get("success")
 
         # THEN: Verify package is still available after reset (packages should persist)
-        package_retest_code = "import bs4; print('still_available')"
+        package_retest_code = f"import {import_name}; print('still_available')"
         exec_result = execute_python_code(package_retest_code)
-        assert exec_result["success"]
-        assert "still_available" in exec_result["result"]
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "still_available" in exec_result["data"]["stdout"]
 
         # AND: Verify reset completed successfully by checking we can still execute code
         basic_test_code = "result = 2 + 2; print(result)"
         exec_result = execute_python_code(basic_test_code)
-        assert exec_result["success"]
-        assert "4" in exec_result["result"]
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "4" in exec_result["data"]["stdout"]
 
 
 class TestComplexDataFlow:
@@ -368,10 +432,12 @@ print(json.dumps(result))
 
             # THEN: Verify the computed results are correct
             exec_result = execute_python_code(complex_code)
-            assert exec_result["success"]
+            assert exec_result["success"] is True
+            assert exec_result["error"] is None
 
             import json
-            result_data = json.loads(exec_result["result"])
+            stdout_json = exec_result["data"]["stdout"].strip()
+            result_data = json.loads(stdout_json)
             assert result_data["total_value"] == 30  # 10 + 20
             assert result_data["avg_score"] == 87.5  # (90 + 85) / 2
             assert result_data["record_count"] == 2
@@ -404,11 +470,13 @@ class TestErrorRecovery:
         # THEN: Execute code that will succeed after the error
         success_code1 = "result = 2 + 2; print(result)"
         exec_result = execute_python_code(success_code1)
-        assert exec_result["success"]
-        assert "4" in exec_result["result"]
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "4" in exec_result["data"]["stdout"]
 
         # WHEN: Try syntax error
-        error_code2 = "if True\n    print('missing colon')"
+        # Intentionally malformed syntax (missing colon) to trigger a syntax error
+        error_code2 = "if True\n    print('missing colon')"  # noqa: E501
         try:
             execute_python_code(error_code2)
         except Exception:
@@ -417,8 +485,9 @@ class TestErrorRecovery:
         # THEN: Verify system still works
         success_code2 = "print('system_recovered')"
         exec_result = execute_python_code(success_code2)
-        assert exec_result["success"]
-        assert "system_recovered" in exec_result["result"]
+        assert exec_result["success"] is True
+        assert exec_result["error"] is None
+        assert "system_recovered" in exec_result["data"]["stdout"]
 
 
 # ===== Additional BDD Test Scenarios =====
@@ -471,7 +540,7 @@ print(json.dumps(data))
 """
 
         # WHEN: Execute via execute-raw
-        exec_result = execute_python_code(code)
+        exec_result = execute_python_code_full_response(code)
 
         # THEN: Verify successful execution follows API contract
         assert exec_result["success"] is True
@@ -507,7 +576,7 @@ print("Final line")
 """
 
         # WHEN: Execute via execute-raw
-        exec_result = execute_python_code(code)
+        exec_result = execute_python_code_full_response(code)
 
         # THEN: Verify all output is captured following API contract
         assert exec_result["success"] is True

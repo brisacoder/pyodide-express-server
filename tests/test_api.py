@@ -1263,3 +1263,63 @@ class TestPerformanceBenchmarks:
             assert (
                 later_average < 3.0
             ), f"Later executions {later_average:.2f}s should be faster due to process reuse"
+
+
+# ==================== FILESYSTEM INVARIANTS (PLOTS LOCATION) ====================
+
+
+class TestFilesystemPlotLocation:
+    """Validate that plots are only created under /home/pyodide/plots and not at project root.
+
+    This enforces the mounting rule: host pyodide_data/plots <-> /home/pyodide/plots inside VFS.
+    No test or server operation should leave image files (png, jpg, svg) at the project root.
+    """
+
+    PLOT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".svg", ".pdf")
+
+    def test_given_plot_generation_when_saving_then_files_only_in_mounted_plots_directory(self, server_ready):
+        """BDD: Ensure matplotlib plot saved via pathlib ends up in correct mounted directory.
+
+        Given: A matplotlib script using pathlib and saving to /home/pyodide/plots/matplotlib
+        When: The code is executed
+        Then: The reported saved path must reside under /home/pyodide/plots and no root-level leaks occur.
+        """
+        code = """
+from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np, time
+
+plots_dir = Path('/home/pyodide/plots/matplotlib')
+plots_dir.mkdir(parents=True, exist_ok=True)
+fname = plots_dir / f'ci_plot_location_{int(time.time())}.png'
+x = np.linspace(0, 4, 50)
+plt.plot(x, x**2)
+plt.title('CI Plot Location Test')
+plt.savefig(fname)
+print(f'SAVED::{fname}')
+print(f'EXISTS::{fname.exists()}')
+""".strip()
+
+        result = execute_python_code(code)
+        validate_api_contract(result)
+        assert result["success"] is True
+        out = result["data"]["stdout"]
+        assert "SAVED::" in out and "EXISTS::True" in out
+        # Cross-check path
+        assert "/home/pyodide/plots/matplotlib/ci_plot_location_" in out
+
+    def test_given_server_filesystem_when_inspected_then_no_plots_in_project_root(self, server_ready):
+        """Scan host project root (outside VFS) for stray plot files and fail if any are found.
+
+        NOTE: This test inspects the host directory tree relative to this test file.
+        Allowed plot files must live under pyodide_data/plots.* directories only.
+        """
+        project_root = Path(__file__).resolve().parent.parent
+        disallowed = []
+        for item in project_root.iterdir():
+            if item.is_file() and item.suffix.lower() in self.PLOT_EXTENSIONS:
+                # Ignore anything inside pyodide_data (those should be under subfolders anyway)
+                disallowed.append(item.name)
+        assert not disallowed, f"Plot files should not be at project root: {disallowed}"

@@ -26,7 +26,7 @@ Requirements Compliance:
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pytest
 import requests
@@ -57,6 +57,7 @@ class Config:
         "upload": "/api/upload",
         "plots_extract": "/api/extract-plots",
         "clear_all_files": "/api/clear-all-files",
+        "pool_stats": "/api/pool-stats",
     }
     
     # Request headers
@@ -178,22 +179,38 @@ def server_ready():
         ...     response = requests.get(f"{Config.BASE_URL}/health")
         ...     assert response.status_code == 200
     """
-    def wait_for_server_ready(url: str, timeout: int) -> None:
-        """Wait for server to become available."""
+    def wait_for_server_ready(timeout: int) -> None:
+        """Wait for server health AND Pyodide readiness via /api/status."""
+        health_url = f"{Config.BASE_URL}{Config.ENDPOINTS['health']}"
+        status_url = f"{Config.BASE_URL}/api/status"
         start = time.time()
+        last_health = None
+        last_status = None
         while time.time() - start < timeout:
+            # Health check
             try:
-                response = requests.get(url, timeout=Config.TIMEOUTS["quick_operation"])
-                if response.status_code == 200:
-                    return
-            except requests.RequestException:
+                r = requests.get(health_url, timeout=Config.TIMEOUTS["quick_operation"])
+                last_health = r.status_code
+            except Exception:
+                pass
+            # Status check (looks for success + data.ready True)
+            try:
+                s = requests.get(status_url, timeout=Config.TIMEOUTS["quick_operation"])
+                if s.status_code == 200:
+                    payload = s.json()
+                    if payload.get("success") and payload.get("data", {}).get("ready") is True:
+                        return
+                    last_status = payload
+            except Exception:
                 pass
             time.sleep(1)
-        pytest.skip(f"Server at {url} not available within {timeout}s")
-    
-    # Check server health
-    health_url = f"{Config.BASE_URL}{Config.ENDPOINTS['health']}"
-    wait_for_server_ready(health_url, Config.TIMEOUTS["server_health"])
+        pytest.skip(
+            "Server not fully ready within timeout: "
+            f"health_status={last_health} status_payload={last_status}"
+        )
+
+    # Wait for combined readiness
+    wait_for_server_ready(Config.TIMEOUTS["server_start"])
     
     # Optional: Reset Pyodide environment for clean test state
     try:
@@ -280,6 +297,50 @@ def test_cleanup():
     tracker = CleanupTracker()
     yield tracker
     tracker.cleanup()
+
+
+@pytest.fixture(autouse=True)
+def capture_memory_stats(request):
+    """Automatically capture pool & memory stats after each test.
+
+    This fixture invokes the /api/pool-stats endpoint (if available) after every
+    test function and logs a concise line that can be post-processed to identify
+    memory growth culprits.
+
+    Collection is best-effort: failures to reach the endpoint won't fail tests.
+
+    Log Format (stdout):
+        MEMSTATS | test=<nodeid> | poolSize=2 active=2 avail=2 rssMB=350 execTotal=120
+
+    Where:
+      - poolSize: configured final pool size after adaptive sizing
+      - active: number of process objects alive
+      - avail: available (idle) processes
+      - rssMB: resident set size of parent process (approx indicator)
+      - execTotal: cumulative executions across pool
+    """
+    yield  # run the test first
+    try:
+        url = f"{Config.BASE_URL}{Config.ENDPOINTS['pool_stats']}?verbose=1"
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            payload = resp.json()
+            if payload.get("success") and payload.get("data"):
+                data = payload["data"]
+                pool = data.get("pool", {})
+                node_mem = data.get("node", {})
+                rss_mb = None
+                if isinstance(node_mem, dict) and "rss" in node_mem:
+                    rss_mb = round(node_mem["rss"] / 1024 / 1024, 1)
+                line = (
+                    f"MEMSTATS | test={request.node.nodeid} | poolSize={pool.get('poolSize')} "
+                    f"active={pool.get('activeProcesses')} avail={pool.get('availableProcesses')} "
+                    f"rssMB={rss_mb} execTotal={pool.get('totalExecutions')}"
+                )
+                print(line)
+        # Ignore non-200 or malformed responses silently
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # Legacy fixtures for backward compatibility
@@ -429,7 +490,9 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
                 assert field in data, f"data missing '{field}': {data}"
             
             # Validate executionTime is a positive number
-            assert isinstance(data["executionTime"], (int, float)), f"executionTime must be number: {type(data['executionTime'])}"
+            assert isinstance(
+                data["executionTime"], (int, float)
+            ), f"executionTime must be number: {type(data['executionTime'])}"
             assert data["executionTime"] >= 0, f"executionTime must be non-negative: {data['executionTime']}"
     else:
         assert response_data.get("error") is not None, "Error response should have non-null error"
@@ -438,7 +501,7 @@ def validate_api_contract(response_data: Dict[str, Any]) -> None:
         assert response_data.get("data") is None, "Error response should have null data"
 
 
-def execute_python_code(code: str, timeout: int = None) -> Dict[str, Any]:
+def execute_python_code(code: str, timeout: Optional[int] = None) -> Dict[str, Any]:
     """
     Execute Python code using the /api/execute-raw endpoint.
     

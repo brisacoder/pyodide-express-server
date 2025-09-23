@@ -198,10 +198,24 @@ router.delete('/uploaded-files/:filename', async (req, res) => {
 
     if (result.success) {
       logger.info(`Deleted file from Pyodide: ${filename}`);
+      // Also attempt to delete from host filesystem upload directory so list endpoint reflects removal
+      let hostDeleted = false;
+      try {
+        const hostPath = path.join(UPLOAD_DIR, filename);
+        if (fs.existsSync(hostPath)) {
+          fs.unlinkSync(hostPath);
+          hostDeleted = true;
+          logger.info('Deleted file from host upload directory', { component: 'file-routes', filename, hostPath });
+        }
+      } catch (hostErr) {
+        logger.warn('Failed to delete file from host upload directory', { component: 'file-routes', filename, error: hostErr.message });
+      }
       res.json({
         success: true,
         data: {
           message: result.message || `File ${filename} deleted successfully`,
+          filename,
+          hostDeleted
         },
         error: null,
         meta: {

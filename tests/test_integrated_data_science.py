@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
-"""
-BDD-style pytest tests for data science package integration and fu            "expected_error_type": "SyntaxError"
-        }
-    ]
-    
-    # Import error scenariosnality.
+"""Integrated Data Science Tests (BDD Style)
 
-This module integrates and modernizes standalone test files from the project root,
-converting them to proper pytest format with comprehensive error handling and
-API contract validation.
+This module consolidates multiple legacy root-level tests into a single
+comprehensive, BDD-oriented pytest suite that validates:
+
+1. Core & data science package discovery
+2. Syntax, import, and runtime error handling robustness
+3. Basic Python execution primitives (print, arithmetic, lists, f-strings)
+4. Cross‑platform pathlib usage
+
+It only leverages the public `/api/execute-raw` endpoint and enforces the
+project API contract (success/data/error/meta) for every response.
+
+Origin (integrated from):
+- test_packages.py
+- test_syntax_error.py
+- test_imports.py
+- simple_test.py
+- ultra_simple_test.py
 
 Integrated Tests From Root Directory:
 - test_packages.py -> Package availability and discovery testing
-- test_syntax_error.py -> Syntax error handling validation  
+- test_syntax_error.py -> Syntax error handling validation
 - test_imports.py -> Import error scenarios
 - simple_test.py -> Basic functionality validation
 - ultra_simple_test.py -> Minimal operation testing
@@ -85,7 +94,7 @@ class IntegratedTestConfig:
         {
             "name": "missing_bracket",
             "code": 'data = [1, 2, 3\nprint(data)',
-            "expected_error_type": "SyntaxError" 
+            "expected_error_type": "SyntaxError"
         },
         {
             "name": "invalid_indentation",
@@ -99,7 +108,7 @@ class IntegratedTestConfig:
         }
     ]
     
-    # Import error scenarios  
+    # Import error scenarios
     IMPORT_ERROR_SCENARIOS = [
         {
             "name": "nonexistent_module",
@@ -444,23 +453,26 @@ class TestErrorScenarioHandling:
         """
         # Given: Various syntax error scenarios
         for scenario in IntegratedTestConfig.SYNTAX_ERROR_SCENARIOS:
-            with pytest.raises(AssertionError, match=".*") or True:
-                # When: Executing code with syntax errors
-                result = execute_python_code(scenario["code"], timeout=quick_timeout)
-                
-                # Then: Validate API contract is maintained even for errors
-                validate_api_contract(result)
-                
-                # Should indicate failure
-                assert result["success"] is False, f"Syntax error should cause success=False for {scenario['name']}"
-                
-                # Should have error information
-                assert result["error"] is not None, f"Should have error details for {scenario['name']}"
-                
-                # Error should contain expected error type
-                error_msg = result["error"].lower()
-                expected_type = scenario["expected_error_type"].lower()
-                assert expected_type in error_msg, f"Error should mention {expected_type} for {scenario['name']}"
+            # When: Executing code with syntax errors
+            result = execute_python_code(scenario["code"], timeout=quick_timeout)
+
+            # Then: Validate API contract is maintained even for errors
+            validate_api_contract(result)
+
+            # Should indicate failure
+            assert result["success"] is False, (
+                f"Syntax error should cause success=False for {scenario['name']} | response={result}"
+            )
+
+            # Should have error information
+            assert result["error"], f"Should have error details for {scenario['name']}"
+
+            # Error should contain expected error type (case-insensitive)
+            error_msg = result["error"].lower()
+            expected_type = scenario["expected_error_type"].lower()
+            assert expected_type in error_msg, (
+                f"Error should mention {expected_type} for {scenario['name']} | error='{result['error']}'"
+            )
 
     def test_given_import_error_scenarios_when_executed_then_proper_error_responses(
         self, server_ready, quick_timeout
@@ -593,22 +605,27 @@ class TestBasicFunctionalityValidation:
             },
             {
                 "name": "variable_assignment",
-                "code": 'x = 42\\nprint(f"Value: {x}")',
+                # Use a real newline in the code string (previous version used an escaped backslash+n sequence
+                # which produced a SyntaxError: "unexpected character after line continuation character").
+                "code": 'x = 42\nprint(f"Value: {x}")',
                 "expected_stdout": "Value: 42"
             },
             {
                 "name": "arithmetic_operations",
-                "code": 'result = 2 + 3 * 4\\nprint(f"Result: {result}")',
+                # Correct newline usage for arithmetic operation test
+                "code": 'result = 2 + 3 * 4\nprint(f"Result: {result}")',
                 "expected_stdout": "Result: 14"
             },
             {
                 "name": "string_operations",
-                "code": 'name = "Python"\\nprint(f"Hello, {name}!")',
+                # Correct newline usage for string operation test
+                "code": 'name = "Python"\nprint(f"Hello, {name}!")',
                 "expected_stdout": "Hello, Python!"
             },
             {
                 "name": "list_operations",
-                "code": 'data = [1, 2, 3]\\nprint(f"Sum: {sum(data)}")',
+                # Correct newline usage for list operation test
+                "code": 'data = [1, 2, 3]\nprint(f"Sum: {sum(data)}")',
                 "expected_stdout": "Sum: 6"
             }
         ]
@@ -619,6 +636,16 @@ class TestBasicFunctionalityValidation:
             
             # Then: Validate successful execution
             validate_api_contract(result)
+            # Debug print for visibility during CI to inspect any failures
+            stdout_fragment = ""
+            if result.get('data') and isinstance(result['data'], dict):
+                stdout_fragment = (result['data'].get('stdout') or '').strip().split('\n')[0][:80]
+            print(
+                f"DEBUG basic_test name={test['name']} success={result['success']} "
+                f"error={result.get('error')} stdout_first_line={stdout_fragment}"
+            )
+            if not result["success"]:
+                print(f"DEBUG basic_test_full_result name={test['name']} result={result}")
             assert result["success"], f"Basic test should succeed: {test['name']}"
             
             # Should have expected output

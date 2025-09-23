@@ -49,7 +49,7 @@
     "helmet": "^8.1.0",
     "multer": "^2.0.0",
     "pm2": "^6.0.10",
-    "pyodide": "^0.28.2",
+    "pyodide": "^0.28.3",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
     "uuid": "^9.0.0"

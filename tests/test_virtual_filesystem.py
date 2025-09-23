@@ -23,7 +23,8 @@ All tests use the /api/execute-raw endpoint and follow the API contract:
 import pytest
 import json
 import time
-from tests.conftest import execute_python_code, validate_api_contract
+# Import shared utilities from local conftest (relative import to avoid ModuleNotFoundError)
+from conftest import execute_python_code, validate_api_contract
 
 
 class VirtualFilesystemTestConfig:

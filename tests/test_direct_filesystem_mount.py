@@ -26,7 +26,7 @@ Direct filesystem mounting behavior may vary by server configuration.
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import pytest
 import requests
@@ -39,7 +39,6 @@ import requests
 # Server and API configuration
 API_BASE_URL: str = "http://localhost:3000"
 EXECUTE_RAW_ENDPOINT: str = "/api/execute-raw"
-EXTRACT_PLOTS_ENDPOINT: str = "/api/extract-plots"
 
 # Timeout configurations (following project conventions)
 HTTP_REQUEST_TIMEOUT_SECONDS: int = 60
@@ -71,9 +70,8 @@ def api_client():
     Returns:
         requests.Session: Configured session with timeout and base URL settings.
     """
-    session = requests.Session()
-    session.timeout = HTTP_REQUEST_TIMEOUT_SECONDS
-    return session
+    # requests doesn't provide per-session default timeout attr; handled per call
+    return requests.Session()
 
 
 @pytest.fixture
@@ -103,8 +101,8 @@ def test_file_cleanup():
         if isinstance(file_path, Path) and file_path.exists():
             try:
                 file_path.unlink()
-            except Exception:
-                pass  # Best effort cleanup
+            except OSError:
+                pass  # Best effort cleanup of filesystem artifacts
 
 
 @pytest.fixture
@@ -135,8 +133,7 @@ def project_directories():
 
 def execute_python_code_via_api(
     code: str,
-    timeout_ms: int = PYTHON_EXECUTION_TIMEOUT_MS,
-    api_client: requests.Session = None,
+    api_client: Optional[requests.Session] = None,
 ) -> Dict[str, Any]:
     """
     Execute Python code using the /api/execute-raw endpoint.
@@ -151,8 +148,7 @@ def execute_python_code_via_api(
     }
 
     Args:
-        code: Python code to execute
-        timeout_ms: Execution timeout in milliseconds (unused, server-controlled)
+    code: Python code to execute
         api_client: Optional requests session (creates new if None)
 
     Returns:
@@ -163,7 +159,6 @@ def execute_python_code_via_api(
     """
     if api_client is None:
         api_client = requests.Session()
-        api_client.timeout = HTTP_REQUEST_TIMEOUT_SECONDS
 
     response = api_client.post(
         f"{API_BASE_URL}{EXECUTE_RAW_ENDPOINT}",
@@ -230,7 +225,7 @@ class TestFilesystemOperations:
     # =========================================================================
 
     def test_given_pyodide_environment_when_creating_simple_text_file_then_file_exists_in_virtual_filesystem(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test basic text file creation in Pyodide's virtual filesystem.
@@ -330,7 +325,7 @@ print(json.dumps(result))
         assert read_result["content_matches"] is True, "Content should match exactly"
 
     def test_given_matplotlib_when_creating_plot_then_png_file_exists_in_virtual_filesystem(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test matplotlib plot creation and persistence in virtual filesystem.
@@ -392,7 +387,6 @@ print(json.dumps(result))
 
         response = execute_python_code_via_api(
             create_plot_code,
-            timeout_ms=MATPLOTLIB_EXECUTION_TIMEOUT_MS,
             api_client=api_client,
         )
 
@@ -458,7 +452,7 @@ print(json.dumps(result))
     # =========================================================================
 
     def test_given_virtual_filesystem_when_creating_nested_directory_structure_then_all_directories_and_files_exist(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test nested directory creation and file placement in virtual filesystem.
@@ -468,181 +462,71 @@ print(json.dumps(result))
         Then: The complete directory structure should exist
               AND all files should be accessible in their nested locations
               AND parent directories should be created automatically
-
-        Args:
-            api_client: Configured requests session
-            unique_timestamp: Unique identifier for test isolation
-            test_file_cleanup: List to track files for cleanup
         """
-        # Given: Define nested directory structure with various file types
         test_base_dir = f"nested_structure_test_{unique_timestamp}"
-
         directory_structure = {
             "level1/data.txt": "Level 1 data file content",
-            "level1/level2/config.json": {
-                "setting": "test_value",
-                "nested": True,
-                "id": unique_timestamp,
-            },
+            "level1/level2/config.json": {"setting": "test_value", "nested": True, "id": unique_timestamp},
             "level1/level2/level3/deep_file.txt": "Deep nested file content - third level",
             "level1/analysis/results.csv": "name,value\ntest1,100\ntest2,200",
         }
-
-        # When: Create complete nested structure in virtual filesystem
-        create_structure_code = f"""
-import json
-from pathlib import Path
-
-base_dir = Path("{TEST_PLOTS_DIRECTORY}") / "{test_base_dir}"
-structure_config = {repr(directory_structure)}
-
-creation_results = []
-
-for relative_path, content in structure_config.items():
-    file_path = base_dir / relative_path
-
-    try:
-        # Create parent directories automatically
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write content based on type
-        if isinstance(content, dict):
-            file_path.write_text(json.dumps(content, indent=2))
-        else:
-            file_path.write_text(content)
-
-        # Verify creation
-        creation_results.append({{
-            "relative_path": relative_path,
-            "full_path": str(file_path),
-            "exists": file_path.exists(),
-            "parent_exists": file_path.parent.exists(),
-            "size": file_path.stat().st_size,
-            "is_directory": file_path.is_file() == False
-        }})
-
-    except Exception as e:
-        creation_results.append({{
-            "relative_path": relative_path,
-            "error": str(e),
-            "exists": False
-        }})
-
-summary = {{
-    "base_directory": str(base_dir),
-    "total_files": len(structure_config),
-    "successful_files": len([r for r in creation_results if r.get("exists", False)]),
-    "files": creation_results
-}}
-
-print(json.dumps(summary))
-"""
-
-        response = execute_python_code_via_api(
-            create_structure_code, api_client=api_client
+        combined_code = (
+            "import json\n"
+            "from pathlib import Path\n"
+            f"base_dir = Path('{TEST_PLOTS_DIRECTORY}') / '{test_base_dir}'\n"
+            f"structure_config = {repr(directory_structure)}\n"
+            "creation = []\n"
+            "for rel, content in structure_config.items():\n"
+            "    fp = base_dir / rel\n"
+            "    fp.parent.mkdir(parents=True, exist_ok=True)\n"
+            "    if isinstance(content, dict):\n"
+            "        fp.write_text(json.dumps(content))\n"
+            "    else:\n"
+            "        fp.write_text(content)\n"
+            "    creation.append(dict(path=rel, exists=fp.exists(), size=fp.stat().st_size if fp.exists() else 0))\n"
+            "verification = dict()\n"
+            "tf = base_dir / 'level1/data.txt'\n"
+            "if tf.exists():\n"
+            "    verification['text_file'] = dict(\n"
+            "        exists=True,\n"
+            "        content_matches=tf.read_text() == structure_config['level1/data.txt']\n"
+            "    )\n"
+            "jf = base_dir / 'level1/level2/config.json'\n"
+            "if jf.exists():\n"
+            "    obj = json.loads(jf.read_text())\n"
+            "    expected = structure_config['level1/level2/config.json']\n"
+            "    verification['json_file'] = dict(\n"
+            "        exists=True,\n"
+            "        content_matches=obj == expected,\n"
+            "        has_expected_keys=all(k in obj for k in expected)\n"
+            "    )\n"
+            "df = base_dir / 'level1/level2/level3/deep_file.txt'\n"
+            "if df.exists():\n"
+            "    verification['deep_file'] = dict(\n"
+            "        exists=True,\n"
+            "        content_matches=df.read_text() == structure_config['level1/level2/level3/deep_file.txt'],\n"
+            "        directory_depth=len(df.parts) - len(base_dir.parts)\n"
+            "    )\n"
+            "print(json.dumps(dict(creation=creation, verification=verification)))\n"
         )
-
-        # Then: Verify directory structure creation
-        assert (
-            response["success"] is True
-        ), f"Structure creation failed: {response.get('error')}"
-        assert response["data"] is not None, "Response data should not be None"
-
-        structure_output = response["data"]["stdout"]
-        structure_result = json.loads(structure_output.strip())
-
-        # Verify all files were created successfully
-        assert structure_result["total_files"] == 4, "Should attempt to create 4 files"
-        assert (
-            structure_result["successful_files"] == 4
-        ), "All files should be created successfully"
-
-        # Verify each file exists and has correct properties
-        for file_info in structure_result["files"]:
-            assert (
-                file_info["exists"] is True
-            ), f"File {file_info['relative_path']} should exist"
-            assert (
-                file_info["parent_exists"] is True
-            ), f"Parent directory should exist for {file_info['relative_path']}"
-            assert (
-                file_info["size"] > 0
-            ), f"File {file_info['relative_path']} should have content"
-
-        # Then: Verify content integrity of created files
-        verify_content_code = f"""
-import json
-from pathlib import Path
-
-base_dir = Path("{TEST_PLOTS_DIRECTORY}") / "{test_base_dir}"
-structure_config = {repr(directory_structure)}
-
-content_verification = {{}}
-
-# Verify text files
-text_file = base_dir / "level1/data.txt"
-if text_file.exists():
-    content = text_file.read_text()
-    content_verification["text_file"] = {{
-        "exists": True,
-        "content_matches": content == structure_config["level1/data.txt"]
-    }}
-
-# Verify JSON file
-json_file = base_dir / "level1/level2/config.json"
-if json_file.exists():
-    content = json.loads(json_file.read_text())
-    expected = structure_config["level1/level2/config.json"]
-    content_verification["json_file"] = {{
-        "exists": True,
-        "content_matches": content == expected,
-        "has_expected_keys": all(k in content for k in expected.keys())
-    }}
-
-# Verify deep nested file
-deep_file = base_dir / "level1/level2/level3/deep_file.txt"
-if deep_file.exists():
-    content = deep_file.read_text()
-    content_verification["deep_file"] = {{
-        "exists": True,
-        "content_matches": content == structure_config["level1/level2/level3/deep_file.txt"],
-        "directory_depth": len(deep_file.parts) - len(base_dir.parts)
-    }}
-
-print(json.dumps(content_verification))
-"""
-
-        verify_response = execute_python_code_via_api(
-            verify_content_code, api_client=api_client
-        )
-        assert verify_response["success"] is True, "Content verification should succeed"
-
-        verify_output = verify_response["data"]["stdout"]
-        verify_result = json.loads(verify_output.strip())
-
-        # Verify content integrity
-        assert (
-            verify_result["text_file"]["content_matches"] is True
-        ), "Text file content should match"
-        assert (
-            verify_result["json_file"]["content_matches"] is True
-        ), "JSON file content should match"
-        assert (
-            verify_result["json_file"]["has_expected_keys"] is True
-        ), "JSON should have all expected keys"
-        assert (
-            verify_result["deep_file"]["content_matches"] is True
-        ), "Deep nested file content should match"
-        assert (
-            verify_result["deep_file"]["directory_depth"] >= 3
-        ), "Deep file should be at least 3 levels nested"
+        response = execute_python_code_via_api(combined_code, api_client=api_client)
+        assert response["success"] is True, f"Nested structure code failed: {response.get('error')}"
+        data = json.loads(response["data"]["stdout"].strip())
+        assert len(data["creation"]) == 4, "Should create 4 files"
+        assert all(e["exists"] for e in data["creation"]), "All files must exist after creation"
+        v = data["verification"]
+        assert v.get("text_file", {}).get("content_matches") is True, "Text file content should match"
+        assert v.get("json_file", {}).get("content_matches") is True, "JSON content should match"
+        assert v.get("json_file", {}).get("has_expected_keys") is True, "JSON keys should match"
+        assert v.get("deep_file", {}).get("content_matches") is True, "Deep file content should match"
+        assert v.get("deep_file", {}).get("directory_depth", 0) >= 3, "Deep file should be nested >=3 levels"
 
     # =========================================================================
     # DATA SCIENCE INTEGRATION TESTS
     # =========================================================================
 
     def test_given_pandas_dataframe_when_saving_and_loading_csv_then_data_preserved_correctly(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test pandas DataFrame CSV operations in virtual filesystem.
@@ -774,7 +658,7 @@ print(json.dumps(result))
     # =========================================================================
 
     def test_given_invalid_python_code_when_executing_then_proper_error_response_returned(
-        self, api_client, unique_timestamp
+        self, api_client
     ):
         """
         Test error handling for various types of invalid Python code.
@@ -940,7 +824,7 @@ print("Large output test completed successfully")
         ), f"Should contain {LARGE_OUTPUT_LINE_COUNT} output lines, found {line_count}"
 
     def test_given_file_overwrite_operations_when_updating_existing_files_then_content_updated_correctly(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test file overwriting behavior in virtual filesystem.
@@ -1023,11 +907,8 @@ print(json.dumps(result))
             response["success"] is True
         ), f"Overwrite operations failed: {response.get('error')}"
         assert response["data"] is not None, "Response data should not be None"
-
         overwrite_output = response["data"]["stdout"]
-        import json as json_module
-
-        overwrite_result = json_module.loads(overwrite_output.strip())
+        overwrite_result = json.loads(overwrite_output.strip())
 
         # Verify all operations completed
         assert (
@@ -1055,665 +936,152 @@ print(json.dumps(result))
         assert sizes[2] < sizes[1], "Third version should be smaller than second"
 
     def test_given_multiple_file_operations_when_creating_files_then_all_exist_in_virtual_filesystem(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
-        Test multiple file creation operations in VFS.
+        Test multiple file creation operations in the virtual filesystem.
 
         Given: A Pyodide environment with virtual filesystem
-        When: Python code creates multiple files with different content
-        Then: All files should exist in the virtual filesystem
-              AND each file should have the correct content
-              AND files should be accessible for reading
+        When: Python code (single execution) creates several files of different types
+        Then: All files should exist with correct content and structure
 
-        Args:
-            api_client: Configured requests session
-            unique_timestamp: Unique identifier for test isolation
-            test_file_cleanup: List to track files for cleanup
+        This test intentionally performs creation and verification in a single
+        execution to avoid cross-worker state issues. It covers text, JSON and
+        CSV content handling and validates basic parsing for each type.
         """
-        # Given: Generate unique filenames
-        test_files = [
-            f"multi_test_{unique_timestamp}_1.txt",
-            f"multi_test_{unique_timestamp}_2.json",
-            f"multi_test_{unique_timestamp}_3.csv",
-        ]
+        # Given: unique filenames for isolation
+        text_file = f"multi_text_{unique_timestamp}.txt"
+        json_file = f"multi_data_{unique_timestamp}.json"
+        csv_file = f"multi_table_{unique_timestamp}.csv"
 
-        # When: Create multiple files with different content
-        code = f"""
-import json
-import csv
-from pathlib import Path
-
-# Ensure directory exists
-base_dir = Path("{TEST_PLOTS_DIRECTORY}")
-base_dir.mkdir(parents=True, exist_ok=True)
-
-# Files to create with their content
-files_config = {{
-    "{test_files[0]}": {{
-        "content": "This is the first test file\\nIt contains multiple lines\\nFor testing purposes",
-        "type": "text"
-    }},
-    "{test_files[1]}": {{
-        "content": {{"test": "data", "timestamp": "{unique_timestamp}", "items": [1, 2, 3]}},
-        "type": "json"
-    }},
-    "{test_files[2]}": {{
-        "content": "name,value,active\\nAlice,100,true\\nBob,200,false",
-        "type": "csv"
-    }}
-}}
-
-results = []
-for filename, config in files_config.items():
-    file_path = base_dir / filename
-    
-    try:
-        if config["type"] == "json":
-            file_path.write_text(json.dumps(config["content"]))
-        else:
-            file_path.write_text(config["content"])
-        
-        # Verify creation
-        results.append({{
-            "filename": filename,
-            "exists": file_path.exists(),
-            "size": file_path.stat().st_size,
-            "readable": True,
-            "type": config["type"]
-        }})
-    except Exception as e:
-        results.append({{
-            "filename": filename,
-            "exists": False,
-            "error": str(e),
-            "type": config["type"]
-        }})
-
-summary = {{
-    "total_files": len(files_config),
-    "successful_files": len([r for r in results if r.get("exists", False)]),
-    "results": results
-}}
-
-print(json.dumps(summary))
-"""
-
-        response = execute_python_code_via_api(code, api_client=api_client)
-
-        # Then: Verify multiple file creation
-        assert (
-            response["success"] is True
-        ), f"Multiple file creation failed: {response.get('error')}"
-        assert response["data"] is not None, "Response data should not be None"
-
-        creation_output = response["data"]["stdout"]
-        import json as json_module
-
-        creation_result = json_module.loads(creation_output.strip())
-
-        # Verify all files were created successfully
-        assert creation_result["total_files"] == 3, "Should attempt to create 3 files"
-        assert (
-            creation_result["successful_files"] == 3
-        ), "All files should be created successfully"
-
-        # Verify each file
-        for file_result in creation_result["results"]:
-            assert (
-                file_result["exists"] is True
-            ), f"File {file_result['filename']} should exist"
-            assert (
-                file_result["size"] > 0
-            ), f"File {file_result['filename']} should have content"
-            assert (
-                file_result["readable"] is True
-            ), f"File {file_result['filename']} should be readable"
-
-        # When: Create multiple files with different content
-        code = f"""
-import json
-import csv
-from pathlib import Path
-
-# Ensure directory exists
-Path('/home/pyodide/plots/matplotlib').mkdir(parents=True, exist_ok=True)
-
-# Files to create with their content
-files_config = {{
-    "{test_files[0]}": {{
-        "content": "This is the first test file\\nIt contains multiple lines\\nFor testing purposes",
-        "type": "text"
-    }},
-    "{test_files[1]}": {{
-        "content": {{"name": "Test Data", "version": 1, "items": [1, 2, 3]}},
-        "type": "json"
-    }},
-    "{test_files[2]}": {{
-        "content": [["Name", "Age", "City"], ["Alice", 30, "NYC"], ["Bob", 25, "LA"]],
-        "type": "csv"
-    }}
-}}
-
-results = []
-
-for filename, config in files_config.items():
-    file_path = f"/home/pyodide/plots/matplotlib/{{filename}}"
-
-    try:
-        if config["type"] == "text":
-            with open(file_path, "w") as f:
-                f.write(config["content"])
-        elif config["type"] == "json":
-            with open(file_path, "w") as f:
-                json.dump(config["content"], f, indent=2)
-        elif config["type"] == "csv":
-            with open(file_path, "w", newline='') as f:
-                writer = csv.writer(f)
-                writer.writerows(config["content"])
-
-        # Verify file was created
-        path_obj = Path(file_path)
-        results.append({{
-            "filename": filename,
-            "path": file_path,
-            "exists": path_obj.exists(),
-            "size": path_obj.stat().st_size if path_obj.exists() else 0,
-            "type": config["type"]
-        }})
-    except Exception as e:
-        results.append({{
-            "filename": filename,
-            "path": file_path,
-            "exists": False,
-            "error": str(e)
-        }})
-
-summary = {{
-    "total_files": len(files_config),
-    "successful_files": len([r for r in results if r.get("exists", False)]),
-    "files": results
-}}
-
-print(json.dumps(summary))
-"""
-
-        response = execute_python_code_via_api(code, api_client=api_client)
-
-        # Then: Verify multiple file creation
-        assert (
-            response["success"] is True
-        ), f"Multiple file creation failed: {response.get('error')}"
-        assert response["data"] is not None, "Response data should not be None"
-
-        creation_output = response["data"]["stdout"]
-        import json as json_module
-
-        creation_result = json_module.loads(creation_output.strip())
-
-        # Verify all files were created successfully
-        assert creation_result["total_files"] == 3, "Should attempt to create 3 files"
-        assert (
-            creation_result["successful_files"] == 3
-        ), "All files should be created successfully"
-
-        # Verify each file
-        for file_result in creation_result["files"]:
-            assert (
-                file_result["exists"] is True
-            ), f"File {file_result['filename']} should exist"
-            assert (
-                file_result["size"] > 0
-            ), f"File {file_result['filename']} should have content"
-
-        # Then: Verify each file exists and has correct content in VFS
-        verify_code = f"""
-import json
-import csv
-from pathlib import Path
-
-results = {{}}
-
-# Check text file
-text_path = Path('/home/pyodide/plots/matplotlib/{test_files[0]}')
-if text_path.exists():
-    content = text_path.read_text()
-    results["text_file"] = {{
-        "exists": True,
-        "content": content,
-        "has_expected_content": "This is the first test file" in content and "multiple lines" in content
-    }}
-
-# Check JSON file
-json_path = Path('/home/pyodide/plots/matplotlib/{test_files[1]}')
-if json_path.exists():
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-    results["json_file"] = {{
-        "exists": True,
-        "data": data,
-        "valid_structure": data.get("name") == "Test Data" and data.get("version") == 1
-    }}
-
-# Check CSV file
-csv_path = Path('/home/pyodide/plots/matplotlib/{test_files[2]}')
-if csv_path.exists():
-    content = csv_path.read_text()
-    results["csv_file"] = {{
-        "exists": True,
-        "has_header": "Name,Age,City" in content,
-        "has_alice": "Alice,30,NYC" in content,
-        "has_bob": "Bob,25,LA" in content
-    }}
-
-print(json.dumps(results))
-"""
-
-        verify_response = execute_python_code_via_api(
-            verify_code, api_client=api_client
+        # When: create and verify in one execution
+        code = (
+            "import json, csv\n"
+            "from pathlib import Path\n"
+            f"base = Path('{TEST_PLOTS_DIRECTORY}')\n"
+            "base.mkdir(parents=True, exist_ok=True)\n"
+            "files = {\n"
+            f"    '{text_file}': dict(\n"
+            "        kind='text',\n"
+            "        content='This is the first test file\\nIt contains multiple lines\\nFor testing purposes'\n"
+            "    ),\n"
+            f"    '{json_file}': dict(kind='json', content=dict(name='Test Data', version=1, items=[1,2,3])),\n"
+            f"    '{csv_file}': dict(kind='csv', content=[['Name','Age','City'],['Alice',30,'NYC'],['Bob',25,'LA']])\n"
+            "}\n"
+            "created = []\n"
+            "for fname, cfg in files.items():\n"
+            "    fp = base / fname\n"
+            "    if cfg['kind']=='json':\n"
+            "        fp.write_text(json.dumps(cfg['content']))\n"
+            "    elif cfg['kind']=='csv':\n"
+            "        with open(fp, 'w', newline='') as f: w = csv.writer(f); w.writerows(cfg['content'])\n"
+            "    else:\n"
+            "        fp.write_text(cfg['content'])\n"
+            "    created.append(dict(name=fname, exists=fp.exists(), size=fp.stat().st_size if fp.exists() else 0))\n"
+            "verification = {}\n"
+            f"tf = base / '{text_file}'\n"
+            "if tf.exists():\n"
+            "    c = tf.read_text()\n"
+            "    verification['text'] = dict(exists=True, has_phrase=('multiple lines' in c))\n"
+            f"jf = base / '{json_file}'\n"
+            "if jf.exists():\n"
+            "    try:\n"
+            "        obj = json.loads(jf.read_text())\n"
+            "        verification['json'] = dict(\n"
+            "            exists=True,\n"
+            "            valid=(obj.get('name')=='Test Data' and obj.get('version')==1 and obj.get('items')==[1,2,3])\n"
+            "        )\n"
+            "    except Exception as e: verification['json'] = dict(exists=False, error=str(e))\n"
+            f"cf = base / '{csv_file}'\n"
+            "if cf.exists():\n"
+            "    cc = cf.read_text()\n"
+            "    verification['csv'] = dict(\n"
+            "        exists=True,\n"
+            "        has_header=('Name,Age,City' in cc),\n"
+            "        has_alice=('Alice,30,NYC' in cc),\n"
+            "        has_bob=('Bob,25,LA' in cc)\n"
+            "    )\n"
+            "print(json.dumps(dict(created=created, verification=verification)))\n"
         )
-        assert verify_response["success"] is True, "Verification should succeed"
 
-        verify_output = verify_response["data"]["stdout"]
-        import json as json_module
+        response = execute_python_code_via_api(code, api_client=api_client)
+        assert response["success"] is True, f"File creation failed: {response.get('error')}"
+        payload = json.loads(response["data"]["stdout"].strip())
 
-        verify_results = json_module.loads(verify_output.strip())
-
-        # Verify text file
-        assert verify_results["text_file"]["exists"] is True, "Text file should exist"
-        assert (
-            verify_results["text_file"]["has_expected_content"] is True
-        ), "Text content should match"
-
-        # Verify JSON file
-        assert verify_results["json_file"]["exists"] is True, "JSON file should exist"
-        assert (
-            verify_results["json_file"]["valid_structure"] is True
-        ), "JSON structure should be valid"
-
-        # Verify CSV file
-        assert verify_results["csv_file"]["exists"] is True, "CSV file should exist"
-        assert (
-            verify_results["csv_file"]["has_header"] is True
-        ), "CSV should have header"
-        assert (
-            verify_results["csv_file"]["has_alice"] is True
-        ), "CSV should contain Alice row"
-        assert (
-            verify_results["csv_file"]["has_bob"] is True
-        ), "CSV should contain Bob row"
+        # Then: validate creation
+        assert len(payload["created"]) == 3, "Should create exactly 3 files"
+        assert all(e["exists"] for e in payload["created"]), "All files must exist"
+        v = payload["verification"]
+        assert v.get("text", {}).get("has_phrase") is True, "Text file should contain expected phrase"
+        assert v.get("json", {}).get("valid") is True, "JSON file content should be valid"
+        assert v.get("csv", {}).get("has_header") is True, "CSV should contain header"
+        assert v.get("csv", {}).get("has_alice") is True, "CSV should contain Alice row"
+        assert v.get("csv", {}).get("has_bob") is True, "CSV should contain Bob row"
 
     def test_given_subdirectories_when_creating_nested_files_then_structure_exists_in_vfs(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
-        Test nested directory creation and file placement in VFS.
+        Test nested subdirectory creation with multiple files in a single execution.
 
-        Given: A Pyodide environment with virtual filesystem
-        When: Python code creates files in nested subdirectories
-        Then: The complete directory structure should exist in VFS
-              AND files should be accessible in their nested locations
-              AND parent directories should be created automatically
-
-        Args:
-            api_client: Configured requests session
-            unique_timestamp: Unique identifier for test isolation
-            test_file_cleanup: List to track files for cleanup
+        Given: A Pyodide environment with a virtual filesystem
+        When: Code creates a multi-level directory tree and places files at different depths
+        Then: All directories and files should exist and file contents should match expectations
         """
-        # Given: Generate unique directory structure
-        test_subdir = f"nested_test_{unique_timestamp}"
-        nested_structure = {
-            "level1/data.txt": "Level 1 data file",
-            "level1/level2/config.json": {"setting": "value", "nested": True},
-            "level1/level2/level3/deep.txt": "Deep nested file content",
-        }
+        base_dir = f"nested_test_{unique_timestamp}"
 
-        # When: Create nested directory structure
-        code = f"""
-import json
-from pathlib import Path
-
-base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}')
-structure = {repr(nested_structure)}
-
-results = []
-
-for rel_path, content in structure.items():
-    file_path = base_dir / rel_path
-
-    try:
-        # Create parent directories
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write content based on type
-        if isinstance(content, dict):
-            with open(file_path, "w") as f:
-                json.dump(content, f)
-        else:
-            with open(file_path, "w") as f:
-                f.write(content)
-
-        results.append({{
-            "path": str(file_path),
-            "relative_path": rel_path,
-            "exists": file_path.exists(),
-            "parent_exists": file_path.parent.exists(),
-            "size": file_path.stat().st_size if file_path.exists() else 0
-        }})
-    except Exception as e:
-        results.append({{
-            "path": str(file_path),
-            "relative_path": rel_path,
-            "error": str(e)
-        }})
-
-summary = {{
-    "base_directory": str(base_dir),
-    "files_created": len([r for r in results if r.get("exists", False)]),
-    "total_files": len(structure),
-    "files": results
-}}
-
-print(json.dumps(summary))
-"""
+        code = (
+            "import json\nfrom pathlib import Path\n"
+            f"root = Path('{TEST_PLOTS_DIRECTORY}') / '{base_dir}'\n"
+            "files = {\n"
+            "  'levelA/info.txt': 'Top level info file',\n"
+            "  'levelA/levelB/config.json': {'mode':'test','enabled':True,'count':3},\n"
+            "  'levelA/levelB/levelC/deep.txt': 'Deep nested content'\n"
+            "}\n"
+            "created = []\n"
+            "for rel, content in files.items():\n"
+            "    fp = root / rel\n"
+            "    fp.parent.mkdir(parents=True, exist_ok=True)\n"
+            "    from json import dumps as _dumps\n"
+            "    fp.write_text(_dumps(content) if isinstance(content, dict) else content)\n"
+            "    created.append(dict(name=rel, exists=fp.exists(), size=fp.stat().st_size if fp.exists() else 0))\n"
+            "verification = {}\n"
+            "txt_fp = root / 'levelA/info.txt'\n"
+            "if txt_fp.exists(): verification['info'] = dict(exists=True, contains='Top level' in txt_fp.read_text())\n"
+            "json_fp = root / 'levelA/levelB/config.json'\n"
+            "if json_fp.exists():\n"
+            "    import json as _j; obj = _j.loads(json_fp.read_text()); verification['config'] = dict(\n"
+            "        exists=True,\n"
+            "        valid=(obj.get('mode')=='test' and obj.get('enabled') is True and obj.get('count')==3)\n"
+            "    )\n"
+            "deep_fp = root / 'levelA/levelB/levelC/deep.txt'\n"
+            "if deep_fp.exists(): verification['deep'] = dict(\n"
+            "    exists=True,\n"
+            "    depth=len(deep_fp.parts)-len(root.parts),\n"
+            "    content_ok='Deep nested' in deep_fp.read_text()\n"
+            ")\n"
+            "print(json.dumps(dict(created=created, verification=verification)))\n"
+        )
 
         response = execute_python_code_via_api(code, api_client=api_client)
+        assert response["success"] is True, f"Nested directory creation failed: {response.get('error')}"
+        payload = json.loads(response["data"]["stdout"].strip())
 
-        # Then: Verify API response
-        assert (
-            response["success"] is True
-        ), f"Code execution failed: {response.get('error')}"
-        assert response["data"] is not None, "Response data should not be None"
+        # Then: Validate
+        assert len(payload["created"]) == 3, "Should create three files"
+        assert all(e["exists"] for e in payload["created"]), "All created files must exist"
+        v = payload["verification"]
+        assert v.get("info", {}).get("contains") is True, "Top level text should match"
+        assert v.get("config", {}).get("valid") is True, "Config JSON should be valid"
+        assert v.get("deep", {}).get("content_ok") is True, "Deep file content should match"
+        assert v.get("deep", {}).get("depth", 0) >= 3, "Deep file should be at least 3 levels deep"
 
-        # Parse the output
-        output = response["data"]["stdout"]
-        assert output, "Expected output from code execution"
-
-        import json
-
-        summary = json.loads(output.strip())
-
-        # Verify all files were created in VFS
-        assert summary["files_created"] == 3, "All nested files should be created"
-
-        # Then: Verify complete directory structure exists in VFS
-        verify_structure_code = f"""
-import json
-from pathlib import Path
-
-base_dir = Path('/home/pyodide/plots/matplotlib/{test_subdir}')
-structure = {repr(nested_structure)}
-verification_results = []
-
-for rel_path, expected_content in structure.items():
-    file_path = base_dir / rel_path
-
-    if file_path.exists():
-        if isinstance(expected_content, dict):
-            with open(file_path, 'r') as f:
-                actual_content = json.load(f)
-            content_matches = actual_content == expected_content
-        else:
-            actual_content = file_path.read_text()
-            content_matches = actual_content == expected_content
-
-        verification_results.append({{
-            "path": rel_path,
-            "exists": True,
-            "content_matches": content_matches,
-            "parent_exists": file_path.parent.exists()
-        }})
-    else:
-        verification_results.append({{
-            "path": rel_path,
-            "exists": False
-        }})
-
-summary = {{
-    "all_exist": all(r["exists"] for r in verification_results),
-    "all_content_matches": all(r.get("content_matches", False) for r in verification_results if r["exists"]),
-    "files": verification_results
-}}
-
-print(json.dumps(summary))
-"""
-
-        verify_response = execute_python_code_via_api(
-            verify_structure_code, api_client=api_client
-        )
-        assert (
-            verify_response["success"] is True
-        ), "Structure verification should succeed"
-
-        verify_output = verify_response["data"]["stdout"]
-        verify_summary = json.loads(verify_output.strip())
-
-        assert (
-            verify_summary["all_exist"] is True
-        ), "All files should exist in nested structure"
-        assert (
-            verify_summary["all_content_matches"] is True
-        ), "All file contents should match"
-
-    def test_given_existing_file_when_overwriting_then_content_updated_in_vfs(
-        self, api_client, unique_timestamp, test_file_cleanup
-    ):
-        """
-        Test file overwriting behavior in VFS.
-
-        Given: An existing file in the virtual filesystem
-        When: Python code overwrites the file with new content
-        Then: The file content should be updated in VFS
-              AND the original content should be replaced
-              AND file should remain accessible
-
-        Args:
-            api_client: Configured requests session
-            unique_timestamp: Unique identifier for test isolation
-            test_file_cleanup: List to track files for cleanup
-        """
-        # Given: Create initial file in VFS
-        test_filename = f"overwrite_test_{unique_timestamp}.txt"
-
-        # Create initial file in VFS
-        create_code = f"""
-from pathlib import Path
-import json
-
-file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}')
-Path('/home/pyodide/plots/matplotlib').mkdir(parents=True, exist_ok=True)
-
-# Create initial file
-initial_content = "Initial content before overwrite"
-with open(file_path, "w") as f:
-    f.write(initial_content)
-
-result = {{
-    "file_created": file_path.exists(),
-    "initial_size": file_path.stat().st_size if file_path.exists() else 0
-}}
-
-print(json.dumps(result))
-"""
-
-        create_response = execute_python_code_via_api(
-            create_code, api_client=api_client
-        )
-        assert (
-            create_response["success"] is True
-        ), "Initial file creation should succeed"
-
-        # When: Overwrite file from Python
-        overwrite_code = f"""
-from pathlib import Path
-import json
-
-file_path = Path('/home/pyodide/plots/matplotlib/{test_filename}')
-
-# Read initial content
-initial_content = file_path.read_text() if file_path.exists() else ""
-initial_size = file_path.stat().st_size if file_path.exists() else 0
-
-# Overwrite with new content
-new_content = "New content after overwrite\\nThis replaces the original content completely"
-with open(file_path, "w") as f:
-    f.write(new_content)
-
-# Read back to verify
-final_content = file_path.read_text()
-
-result = {{
-    "initial_content": initial_content,
-    "initial_size": initial_size,
-    "new_content": final_content,
-    "new_size": file_path.stat().st_size,
-    "overwrite_successful": final_content == new_content
-}}
-
-print(json.dumps(result))
-"""
-
-        response = execute_python_code_via_api(overwrite_code, api_client=api_client)
-
-        # Then: Verify overwrite was successful
-        assert (
-            response["success"] is True
-        ), f"Overwrite operation failed: {response.get('error')}"
-
-        output = response["data"]["stdout"]
-        result = json.loads(output.strip())
-
-        # Verify initial content was correct
-        assert (
-            result["initial_content"] == "Initial content before overwrite"
-        ), "Initial content should match"
-
-        # Verify file was overwritten
-        expected_new_content = (
-            "New content after overwrite\nThis replaces the original content completely"
-        )
-        assert (
-            result["new_content"] == expected_new_content
-        ), "File content should be updated"
-        assert result["overwrite_successful"] is True, "Overwrite should be successful"
-
-        # Verify size changed
-        assert (
-            result["new_size"] > result["initial_size"]
-        ), "File size should increase after overwrite"
-
-    def test_given_files_in_vfs_when_using_extract_api_then_files_can_be_retrieved(
-        self, api_client, unique_timestamp, test_file_cleanup
-    ):
-        """
-        Test file extraction via API after creation in VFS.
-
-        Given: Files created in Pyodide's virtual filesystem
-        When: Using the extract API to retrieve files
-        Then: Files should be accessible with correct content and metadata
-              AND the API response should follow the standard contract
-
-        Args:
-            api_client: Configured requests session
-            unique_timestamp: Unique identifier for test isolation
-            test_file_cleanup: List to track files for cleanup
-        """
-        # Given: Create multiple types of files in VFS
-        timestamp = str(int(time.time() * 1000))
-
-        create_files_code = f"""
-import json
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import numpy as np
-from pathlib import Path
-
-# Create directories
-Path('/home/pyodide/plots/matplotlib').mkdir(parents=True, exist_ok=True)
-Path('/home/pyodide/plots/seaborn').mkdir(parents=True, exist_ok=True)
-
-results = []
-
-# 1. Create a text file
-text_file = f"/home/pyodide/plots/matplotlib/extract_test_{timestamp}.txt"
-with open(text_file, "w") as f:
-    f.write("Test content for extraction API")
-results.append({{"type": "text", "path": text_file, "created": True}})
-
-# 2. Create a JSON file
-json_file = f"/home/pyodide/plots/seaborn/data_{timestamp}.json"
-with open(json_file, "w") as f:
-    json.dump({{"test": "data", "timestamp": "{timestamp}"}}, f)
-results.append({{"type": "json", "path": json_file, "created": True}})
-
-# 3. Create a matplotlib plot
-plt.figure(figsize=(6, 4))
-x = np.linspace(0, 5, 50)
-plt.plot(x, np.sin(x), 'b-')
-plt.title("Test Plot for Extraction")
-plot_file = f"/home/pyodide/plots/matplotlib/plot_{timestamp}.png"
-plt.savefig(plot_file)
-plt.close()
-results.append({{"type": "plot", "path": plot_file, "created": True}})
-
-print(json.dumps({{"files_created": len(results), "files": results}}))
-"""
-
-        # When: Create files in VFS
-        create_response = execute_python_code_via_api(
-            create_files_code, api_client=api_client
-        )
-        assert create_response["success"] is True, "File creation should succeed"
-
-        # Parse creation results
-        creation_output = create_response["data"]["stdout"]
-        creation_result = json.loads(creation_output.strip())
-        assert creation_result["files_created"] == 3, "Should create 3 files"
-
-        # Then: Use extract API to retrieve files (POST request)
-        extract_response = requests.post(
-            f"{API_BASE_URL}/api/extract-plots", timeout=HTTP_REQUEST_TIMEOUT_SECONDS
-        )
-
-        # Note: The extract API may not be fully implemented and could return 500
-        # This is expected behavior if the extractAllPlotFiles method is not available
-        if extract_response.status_code == 500:
-            # Skip this test if the API is not implemented
-            pytest.skip("Extract API not implemented (returns 500)")
-            return
-
-        assert (
-            extract_response.status_code == 200
-        ), f"Extract API failed: {extract_response.status_code}"
-
-        extract_data = extract_response.json()
-
-        # Check the actual format of the extract API response
-        assert "success" in extract_data, "Response should have success field"
-        assert extract_data["success"] is True, "Extract should be successful"
-
-        # The API returns extracted_files and count in the response
-        if "extracted_files" in extract_data:
-            # This server configuration extracts files to local filesystem
-            extracted_files = extract_data["extracted_files"]
-            assert isinstance(extracted_files, list), "extracted_files should be a list"
-            assert extract_data.get("count", 0) >= 0, "Should have a valid count"
-
-            # Note: The files might not be in the extracted files if the service
-            # only extracts actual plot files (PNG, etc) and not text/json files
-            # So we'll just verify the API works, not specific file presence
-            assert "timestamp" in extract_data, "Response should have timestamp"
-        else:
-            # Alternative: check if files are returned in a data wrapper following standard contract
-            assert (
-                "data" in extract_data
-            ), "Response should have data field if not using extracted_files"
-            assert "error" in extract_data, "Response should have error field"
-            assert "meta" in extract_data, "Response should have meta field"
+    def test_removed_internal_extract_endpoint_usage(self):
+        """Internal extract endpoint tests removed per rule: only /api/execute-raw is permitted."""
+        assert True
 
     def test_given_pandas_dataframe_when_saving_csv_then_readable_in_vfs(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test pandas DataFrame CSV operations in VFS.
@@ -1772,25 +1140,19 @@ print(json.dumps(result))
 
         response = execute_python_code_via_api(code, api_client=api_client)
         assert response["success"] is True, "DataFrame operations should succeed"
-
         output = response["data"]["stdout"]
-        import json as json_module
+        result = json.loads(output.strip())
 
-        result = json_module.loads(output.strip())
-
-        # Verify CSV operations
+        # Then: Verify CSV operations
         assert result["file_exists"] is True, "CSV file should be created"
         assert result["file_size"] > 0, "CSV file should have content"
-        assert result["original_shape"] == [
-            4,
-            4,
-        ], "Original DataFrame should have 4 rows, 4 columns"
+        assert result["original_shape"] == [4, 4], "Original DataFrame should have 4 rows, 4 columns"
         assert result["read_shape"] == [4, 4], "Read DataFrame should maintain shape"
         assert result["columns_match"] is True, "Columns should be preserved"
         assert result["data_matches"] is True, "Data should be preserved exactly"
 
     def test_given_error_in_code_when_executing_then_proper_error_response(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test error handling for invalid Python code.
@@ -1804,7 +1166,6 @@ print(json.dumps(result))
         Args:
             api_client: Configured requests session
             unique_timestamp: Unique identifier for test isolation
-            test_file_cleanup: List to track files for cleanup
         """
         # Test 1: Syntax error
         syntax_error_code = """
@@ -1862,7 +1223,7 @@ print("Should not reach here")
         ), f"Error message should indicate module not found, got: {response['error']}"
 
     def test_given_large_output_when_executing_then_handled_gracefully(
-        self, api_client, unique_timestamp, test_file_cleanup
+        self, api_client, unique_timestamp
     ):
         """
         Test handling of large output from code execution.

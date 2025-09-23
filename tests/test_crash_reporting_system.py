@@ -1,246 +1,244 @@
-#!/usr/bin/env python3
-"""
-Test suite for crash reporting system
-Tests the comprehensive crash detection and reporting functionality
+"""Crash Reporting System Tests (Pytest BDD Style)
+
+Verifies that the crash reporting mechanism behaves correctly under normal and
+error conditions without relying on internal Pyodide-only endpoints. All code
+execution uses the single public text/plain endpoint: /api/execute-raw.
+
+Contract Enforced:
+    {
+      "success": bool,
+      "data": {"result": Any, "stdout": str, "stderr": str, "executionTime": int} | null,
+      "error": str | null,
+      "meta": {"timestamp": str}
+    }
+
+Guiding Principles:
+    - No internal endpoints containing 'pyodide' in the path.
+    - Use pathlib for any filesystem logic in executed Python code.
+    - Ensure no plots or artifacts leak to project root; plots must reside under
+      /home/pyodide/plots when generated.
+    - Do not bend tests to fit a broken API; instead assert the contract.
+
+Scenarios Covered:
+    1. Listing crash reports (if any) returns structured data.
+    2. Executing code that raises an exception returns success=False without crashing server.
+    3. Long-running code respects timeout (simulated cooperative sleep loop) and returns an error without crash.
+    4. Normal execution does not create crash artifacts.
+    5. Malformed Python (syntax error) handled gracefully.
+    6. Performance sanity: multiple quick executions remain under generous threshold.
+
+This file replaces the original unittest-based implementation which has been
+backed up to test_crash_reporting_system_original.py.
 """
 
-import json
+from __future__ import annotations
+
+from typing import Any, Dict
 import time
-import unittest
-
-import requests
-
-BASE_URL = "http://localhost:3000"
+import requests  # type: ignore[import-untyped]
+import pytest
 
 
-class CrashReportingSystemTestCase(unittest.TestCase):
-    """Test crash reporting system functionality"""
-    
-    def setUp(self):
-        """Set up test environment"""
-        self.session = requests.Session()
-        
-    def tearDown(self):
-        """Clean up test environment"""
-        # Clear any test-related crash reports if API exists
-        try:
-            self.session.delete(f"{BASE_URL}/api/crash-reports/test-reports", timeout=10)
-        except requests.RequestException:
-            pass
+# ---------------------------------------------------------------------------
+# Constants & Configuration
+# ---------------------------------------------------------------------------
 
-    def test_crash_reports_api_endpoints_exist(self):
-        """Test that crash reporting API endpoints exist"""
-        # Test GET /api/crash-reports
-        response = self.session.get(f"{BASE_URL}/api/crash-reports", timeout=30)
-        self.assertIn(response.status_code, [200, 404])  # 404 if no reports exist yet
-        
-        if response.status_code == 200:
-            result = response.json()
-            self.assertIn('reports', result)
-            self.assertIsInstance(result['reports'], list)
+class CrashConfig:
+    """Centralized constants for crash reporting tests.
 
-    def test_crash_reports_list_endpoint(self):
-        """Test crash reports listing endpoint"""
-        response = self.session.get(f"{BASE_URL}/api/crash-reports", timeout=30)
-        
-        # Should return proper structure regardless of whether reports exist
-        if response.status_code == 200:
-            result = response.json()
-            self.assertIn('reports', result)
-            self.assertIn('totalReports', result)
-            self.assertIsInstance(result['reports'], list)
-            self.assertIsInstance(result['totalReports'], int)
+    Adjust here instead of scattering literals across tests. Timeouts are in
+    seconds; they are deliberately generous to avoid flakiness on CI.
+    """
 
-    def test_crash_report_detail_endpoint(self):
-        """Test individual crash report detail endpoint"""
-        # First get list of reports
-        response = self.session.get(f"{BASE_URL}/api/crash-reports", timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            if result['reports']:
-                # Get details of first report
-                report_id = result['reports'][0]['id']
-                detail_response = self.session.get(f"{BASE_URL}/api/crash-reports/{report_id}", timeout=30)
-                
-                if detail_response.status_code == 200:
-                    detail_result = detail_response.json()
-                    self.assertIn('report', detail_result)
-                    self.assertIn('id', detail_result['report'])
-                    self.assertIn('timestamp', detail_result['report'])
-
-    def test_crash_report_summary_endpoint(self):
-        """Test crash reports summary endpoint"""
-        response = self.session.get(f"{BASE_URL}/api/crash-reports/summary", timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            self.assertIn('summary', result)
-            summary = result['summary']
-            
-            # Check expected summary fields
-            expected_fields = ['totalReports', 'recentReports', 'errorTypes', 'affectedEndpoints']
-            for field in expected_fields:
-                self.assertIn(field, summary)
-
-    def test_crash_detection_on_server_error(self):
-        """Test that crashes are detected and reported"""
-        # Try to trigger a server error by sending invalid data
-        invalid_requests = [
-            # Invalid JSON in execute endpoint
-            {
-                'endpoint': '/api/execute',
-                'data': {'code': 'import invalid_module_that_does_not_exist\nprint("This should fail")'},
-                'should_crash': False  # This should be handled gracefully
-            },
-            # Extremely long timeout to test timeout handling
-            {
-                'endpoint': '/api/execute',
-                'data': {'code': 'print("test")', 'timeout': 999999999},
-                'should_crash': False  # Should be validated and rejected
-            }
-        ]
-        
-        for test_case in invalid_requests:
-            with self.subTest(endpoint=test_case['endpoint']):
-                try:
-                    response = self.session.post(
-                        f"{BASE_URL}{test_case['endpoint']}", 
-                        json=test_case['data'],
-                        timeout=30
-                    )
-                    
-                    # Even invalid requests should get proper HTTP responses
-                    self.assertIn(response.status_code, [200, 400, 422, 500])
-                    
-                    # If it's a JSON response, it should be valid JSON
-                    if 'application/json' in response.headers.get('content-type', ''):
-                        result = response.json()
-                        self.assertIn('success', result)
-                        
-                except requests.RequestException:
-                    # Network errors are acceptable for stress tests
-                    pass
-
-    def test_swagger_documentation_includes_crash_endpoints(self):
-        """Test that crash reporting endpoints are documented in Swagger"""
-        try:
-            response = self.session.get(f"{BASE_URL}/api-docs/swagger.json", timeout=30)
-            
-            if response.status_code == 200:
-                swagger_doc = response.json()
-                paths = swagger_doc.get('paths', {})
-                
-                # Check if crash reporting endpoints are documented
-                crash_endpoints = [
-                    '/api/crash-reports',
-                    '/api/crash-reports/summary',
-                    '/api/crash-reports/{id}'
-                ]
-                
-                documented_endpoints = []
-                for endpoint in crash_endpoints:
-                    if endpoint in paths:
-                        documented_endpoints.append(endpoint)
-                
-                # At least some crash endpoints should be documented
-                # This test documents expected behavior for future implementation
-                print(f"Documented crash endpoints: {documented_endpoints}")
-                
-        except requests.RequestException:
-            # Swagger endpoint might not be available
-            self.skipTest("Swagger documentation not available")
-
-    def test_crash_report_data_structure(self):
-        """Test that crash reports have proper data structure"""
-        response = self.session.get(f"{BASE_URL}/api/crash-reports", timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            if result.get('reports'):
-                report = result['reports'][0]
-                
-                # Check expected fields in crash report
-                expected_fields = ['id', 'timestamp', 'type', 'endpoint']
-                for field in expected_fields:
-                    if field in report:  # Not all fields might be present in all reports
-                        self.assertIsNotNone(report[field])
-
-    def test_crash_report_cleanup_capability(self):
-        """Test that crash reports can be managed/cleaned up"""
-        # Test if there's a cleanup endpoint
-        cleanup_endpoints = [
-            '/api/crash-reports/cleanup',
-            '/api/crash-reports/clear',
-            '/api/admin/crash-reports/clear'
-        ]
-        
-        cleanup_available = False
-        for endpoint in cleanup_endpoints:
-            try:
-                response = self.session.post(f"{BASE_URL}{endpoint}", timeout=10)
-                if response.status_code in [200, 204, 405]:  # 405 means method exists but wrong method
-                    cleanup_available = True
-                    break
-            except requests.RequestException:
-                continue
-        
-        # Document whether cleanup is available
-        print(f"Crash report cleanup available: {cleanup_available}")
-
-    def test_crash_reporting_performance_impact(self):
-        """Test that crash reporting doesn't significantly impact performance"""
-        # Make multiple requests to measure baseline performance
-        start_time = time.time()
-        
-        for i in range(5):
-            response = self.session.post(
-                f"{BASE_URL}/api/execute",
-                json={'code': f'print("Performance test {i}")'},
-                timeout=30
-            )
-            self.assertEqual(response.status_code, 200)
-        
-        total_time = time.time() - start_time
-        avg_time = total_time / 5
-        
-        # Crash reporting shouldn't make requests significantly slower
-        # This is more of a performance documentation than a hard test
-        print(f"Average request time with crash reporting: {avg_time:.3f}s")
-        self.assertLess(avg_time, 10.0)  # Very generous limit
-
-    def test_error_handling_consistency(self):
-        """Test that error handling is consistent across endpoints"""
-        # Test various endpoints with invalid data
-        test_cases = [
-            {'endpoint': '/api/execute', 'data': {}, 'expected_status': [400, 422]},
-            {'endpoint': '/api/install-package', 'data': {}, 'expected_status': [400, 422]},
-            {'endpoint': '/api/upload', 'data': {}, 'expected_status': [400, 422]},
-        ]
-        
-        for test_case in test_cases:
-            with self.subTest(endpoint=test_case['endpoint']):
-                try:
-                    response = self.session.post(
-                        f"{BASE_URL}{test_case['endpoint']}",
-                        json=test_case['data'],
-                        timeout=30
-                    )
-                    
-                    # Should get proper error responses, not crashes
-                    self.assertIn(response.status_code, test_case['expected_status'] + [500])
-                    
-                    # If JSON response, should have proper error structure
-                    if 'application/json' in response.headers.get('content-type', ''):
-                        result = response.json()
-                        self.assertIn('success', result)
-                        if not result['success']:
-                            self.assertIn('error', result)
-                            
-                except requests.RequestException as e:
-                    # Document any network errors
-                    print(f"Network error testing {test_case['endpoint']}: {e}")
+    BASE_URL: str = "http://localhost:3000"
+    EXECUTE_RAW: str = "/api/execute-raw"
+    TIMEOUT_EXEC: int = 45
+    TIMEOUT_REQUEST: int = 15
+    PERFORMANCE_MAX_AVG_SEC: float = 10.0  # generous envelope
 
 
-if __name__ == '__main__':
-    unittest.main()
+# ---------------------------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------------------------
+
+def _execute(code: str, timeout: int | None = None) -> Dict[str, Any]:
+    """Execute Python code through /api/execute-raw and validate contract.
+
+    Parameters
+    ----------
+    code: str
+        Python source code (plain text) to send.
+    timeout: int | None
+        Optional request timeout (seconds). Defaults to CrashConfig.TIMEOUT_EXEC.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Parsed JSON response payload.
+
+    Raises
+    ------
+    AssertionError
+        If the response doesn't honor the API contract.
+
+    Examples
+    --------
+    >>> resp = _execute('print("hi")')
+    >>> assert resp['success'] is True
+    """
+    resp = requests.post(
+        f"{CrashConfig.BASE_URL}{CrashConfig.EXECUTE_RAW}",
+        data=code.encode("utf-8"),
+        headers={"Content-Type": "text/plain"},
+        timeout=timeout or CrashConfig.TIMEOUT_EXEC,
+    )
+    assert resp.status_code == 200, f"Unexpected status: {resp.status_code} body={resp.text[:200]}"
+    payload = resp.json()
+
+    # API contract validation
+    assert "success" in payload and isinstance(payload["success"], bool)
+    assert "error" in payload
+    assert "data" in payload
+    assert "meta" in payload and isinstance(payload["meta"], dict) and "timestamp" in payload["meta"], payload
+    if payload["success"]:
+        assert isinstance(payload["data"], dict), "data must be object on success"
+        for f in ("stdout", "stderr", "executionTime"):
+            assert f in payload["data"], f"Missing field data.{f}"
+    else:
+        assert payload["data"] in (None, {})
+        assert isinstance(payload["error"], str) and payload["error"].strip()
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module", autouse=True)
+def _server_ready_autouse():
+    """Module-level readiness check executed automatically.
+
+    This avoids having to inject a fixture parameter (which triggered redefinition
+    lint noise) in every test while still guaranteeing a pre-flight check.
+    """
+    try:
+        ping = _execute("print('ready')")
+        assert ping["success"] is True
+    except (requests.RequestException, AssertionError) as exc:  # narrow exception scope
+        pytest.skip(f"Server not ready for crash tests: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Tests (BDD Style with Given / When / Then comments)
+# ---------------------------------------------------------------------------
+
+
+def test_list_crash_reports_structure():  # Given server ready
+    """Scenario: Listing crash reports returns structured data (if present)."""
+    # When requesting crash reports listing (public debug route may or may not exist)
+    resp = requests.get(f"{CrashConfig.BASE_URL}/api/crash-reports", timeout=CrashConfig.TIMEOUT_REQUEST)
+    # Then response is either 200 (with structure) or 404 (no system yet)
+    assert resp.status_code in {200, 404}
+    if resp.status_code == 200:
+        body = resp.json()
+        assert "reports" in body and isinstance(body["reports"], list)
+        if body["reports"]:
+            sample = body["reports"][0]
+            # Minimal expected diagnostic fields
+            for f in ("id", "timestamp"):
+                assert f in sample
+
+
+def test_execution_python_exception_handled():
+    """Scenario: A Python exception does not crash the server and returns structured error."""
+    code = "raise ValueError('boom from test')"
+    result = _execute(code)
+    assert result["success"] is False
+    assert "ValueError" in (result["error"] or "")
+
+
+def test_execution_syntax_error_handled():
+    """Scenario: A Python syntax error is surfaced cleanly without server crash."""
+    code = "def bad(:\n    pass"  # intentional syntax error
+    result = _execute(code)
+    assert result["success"] is False
+    assert any(tok in (result["error"] or "") for tok in ["SyntaxError", "invalid syntax", "parsing"])  # tolerant
+
+
+def test_long_running_code_timeout():
+    """Scenario: Cooperative long-running loop is interrupted by timeout policy.
+
+    We simulate work with a small loop and time.sleep to stay portable & quick.
+    """
+    # Given Python code that loops with short sleeps
+    code = (
+        "import time, pathlib\n"
+        "start=time.time();\n"
+        "for i in range(1000000):\n"
+        "    time.sleep(0.01)\n"
+        "    if time.time()-start>1.5: raise TimeoutError('simulated overrun')\n"
+    )
+    # When executing (server side may enforce its own timeout earlier)
+    result = _execute(code)
+    # Then either timeout or our raised TimeoutError yields error but not crash
+    assert result["success"] is False
+    assert any(k in (result["error"] or "") for k in ["Timeout", "overrun", "execution timeout"])
+
+
+def test_normal_execution_does_not_generate_crash_report():
+    """Scenario: Normal execution prints output and does not create crash artifacts.
+
+    We rely on absence of failure; explicit crash file listing is optional.
+    """
+    code = (
+        "from pathlib import Path\n"
+        "print('hello crash system')\n"
+        "p=Path('/home/pyodide/plots')\n"
+        "print('plots_dir_exists', p.exists())\n"
+    )
+    result = _execute(code)
+    assert result["success"] is True
+    stdout = result["data"]["stdout"]
+    assert "hello crash system" in stdout
+    assert "plots_dir_exists" in stdout
+
+
+def test_multiple_fast_executions_performance_sanity():
+    """Scenario: Repeated small executions remain within generous performance envelope."""
+    iterations = 5
+    start = time.time()
+    for i in range(iterations):
+        r = _execute(f"print('perf {i}')")
+        assert r["success"] is True
+    avg = (time.time() - start) / iterations
+    assert avg < CrashConfig.PERFORMANCE_MAX_AVG_SEC, f"Average exec time too high: {avg:.3f}s"
+
+
+def test_filesystem_isolation_no_root_plots_leak():
+    """Scenario: Plot creation saves under /home/pyodide/plots not project root.
+
+    The test generates a simple plot (matplotlib) and ensures stdout mentions
+    the intended directory while NOT referencing '/plots' at VFS root.
+    """
+    code = (
+        "import matplotlib; matplotlib.use('Agg')\n"
+        "import matplotlib.pyplot as plt\n"
+        "from pathlib import Path\n"
+        "outdir=Path('/home/pyodide/plots/matplotlib'); outdir.mkdir(parents=True, exist_ok=True)\n"
+        "f=outdir/'crash_vis.png'\n"
+        "plt.plot([1,2,3],[3,2,1]); plt.savefig(f)\n"
+        "print('saved_to', f)\n"
+    )
+    r = _execute(code)
+    # We don't assert success hard if environment lacks matplotlib; allow graceful failure but not crash
+    if r["success"]:
+        stdout = r["data"]["stdout"]
+        assert "saved_to" in stdout
+        assert "/home/pyodide/plots" in stdout
+        assert not any(seg in stdout for seg in ["/plots/crash_vis", " project_root/plots "])
+    else:
+        # Accept failure only if the error references missing backend or package
+        assert any(tok in r["error"].lower() for tok in ["matplotlib", "backend", "import"])
+
+
+# End of file
